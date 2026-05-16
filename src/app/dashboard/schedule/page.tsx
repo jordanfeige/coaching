@@ -1,36 +1,71 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { format, startOfWeek, addDays, isSameDay, setHours } from 'date-fns'
+import { CalendarPlus, Clock, Link2, User } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Calendar, Clock, User, Trash2, Link as LinkIcon } from 'lucide-react'
-import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { cn } from '@/lib/utils'
+
+const HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+
+type CellAction = { day: Date; hour: number; x: number; y: number }
+type LessonForm = { player_id: string | null; duration_mins: string | null; notes: string }
+
+function hourLabel(hour: number) {
+  if (hour === 12) return '12pm'
+  if (hour > 12) return `${hour - 12}pm`
+  return `${hour}am`
+}
 
 export default function SchedulePage() {
+  const router = useRouter()
   const [lessons, setLessons] = useState<any[]>([])
   const [availability, setAvailability] = useState<any[]>([])
   const [players, setPlayers] = useState<any[]>([])
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
-  const [openLesson, setOpenLesson] = useState(false)
-  const [openSlot, setOpenSlot] = useState(false)
+  const [cellAction, setCellAction] = useState<CellAction | null>(null)
+  const [lessonModal, setLessonModal] = useState<{ day: Date; hour: number } | null>(null)
+  const [selectedSlot, setSelectedSlot] = useState<any>(null)
+  const [lessonForm, setLessonForm] = useState<LessonForm>({ player_id: null, duration_mins: '60', notes: '' })
   const [saving, setSaving] = useState(false)
-  const [lessonForm, setLessonForm] = useState({ player_id: '', starts_at: '', duration_mins: '60' })
-  const [slotForm, setSlotForm] = useState({ starts_at: '', ends_at: '' })
   const [copied, setCopied] = useState(false)
   const supabase = createClient()
 
-  useEffect(() => { loadAll() }, [weekStart])
+  useEffect(() => {
+    loadAll()
+  }, [weekStart])
+
+  useEffect(() => {
+    function handleClick() {
+      setCellAction(null)
+    }
+    window.addEventListener('click', handleClick)
+    return () => window.removeEventListener('click', handleClick)
+  }, [])
 
   async function loadAll() {
     const weekEnd = addDays(weekStart, 7)
     const { data: l } = await supabase
       .from('lessons')
-      .select('*, players(name)')
+      .select('*, players(id, name)')
       .gte('starts_at', weekStart.toISOString())
       .lte('starts_at', weekEnd.toISOString())
       .order('starts_at')
@@ -46,244 +81,446 @@ export default function SchedulePage() {
     setPlayers(p || [])
   }
 
-  async function addLesson() {
-    if (!lessonForm.player_id || !lessonForm.starts_at) return
+  function handleCellClick(e: React.MouseEvent, day: Date, hour: number) {
+    e.stopPropagation()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setCellAction({ day, hour, x: rect.left, y: rect.top })
+  }
+
+  function handleAddLesson(day: Date, hour: number) {
+    setCellAction(null)
+    setLessonModal({ day, hour })
+    setLessonForm({ player_id: null, duration_mins: '60', notes: '' })
+  }
+
+  async function handleAddSlot(day: Date, hour: number) {
+    setCellAction(null)
+    setSaving(true)
+    await supabase.from('availability').insert({
+      starts_at: setHours(day, hour).toISOString(),
+      ends_at: setHours(day, hour + 1).toISOString(),
+      is_booked: false,
+    })
+    setSaving(false)
+    loadAll()
+  }
+
+  async function saveLesson() {
+    if (!lessonModal || !lessonForm.player_id) return
     setSaving(true)
     await supabase.from('lessons').insert({
       player_id: lessonForm.player_id,
-      starts_at: new Date(lessonForm.starts_at).toISOString(),
-      duration_mins: parseInt(lessonForm.duration_mins),
-      status: 'scheduled'
+      starts_at: setHours(lessonModal.day, lessonModal.hour).toISOString(),
+      duration_mins: parseInt(lessonForm.duration_mins ?? '60'),
+      status: 'scheduled',
+      notes: lessonForm.notes,
     })
-    setLessonForm({ player_id: '', starts_at: '', duration_mins: '60' })
-    setOpenLesson(false)
+    setLessonModal(null)
     setSaving(false)
-    loadAll()
-  }
-
-  async function addSlot() {
-    if (!slotForm.starts_at || !slotForm.ends_at) return
-    setSaving(true)
-    await supabase.from('availability').insert({
-      starts_at: new Date(slotForm.starts_at).toISOString(),
-      ends_at: new Date(slotForm.ends_at).toISOString(),
-      is_booked: false
-    })
-    setSlotForm({ starts_at: '', ends_at: '' })
-    setOpenSlot(false)
-    setSaving(false)
-    loadAll()
-  }
-
-  async function deleteLesson(id: string) {
-    await supabase.from('lessons').delete().eq('id', id)
     loadAll()
   }
 
   async function deleteSlot(id: string) {
     await supabase.from('availability').delete().eq('id', id)
-    loadAll()
-  }
-
-  async function updateStatus(id: string, status: string) {
-    await supabase.from('lessons').update({ status }).eq('id', id)
+    setSelectedSlot(null)
     loadAll()
   }
 
   function copyBookingLink() {
-    const url = `${window.location.origin}/book`
-    navigator.clipboard.writeText(url)
+    navigator.clipboard.writeText(`${window.location.origin}/book`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 
-  const statusColor: Record<string, string> = {
-    scheduled: 'bg-blue-100 text-blue-800',
-    completed: 'bg-green-100 text-green-800',
-    cancelled: 'bg-red-100 text-red-800',
+  function getLessonForCell(day: Date, hour: number) {
+    return lessons.find(l => {
+      const d = new Date(l.starts_at)
+      return isSameDay(d, day) && d.getHours() === hour
+    })
   }
 
+  function getSlotForCell(day: Date, hour: number) {
+    return availability.find(a => {
+      const d = new Date(a.starts_at)
+      return isSameDay(d, day) && d.getHours() === hour
+    })
+  }
+
+  const weekLabel = `${format(weekDays[0], 'MMM d')} – ${format(weekDays[6], 'MMM d, yyyy')}`
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Schedule</h1>
-          <p className="text-muted-foreground mt-1">
-            Week of {format(weekStart, 'MMM d, yyyy')}
-          </p>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">Schedule</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{weekLabel}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={copyBookingLink} className="flex items-center gap-2">
-            <LinkIcon size={14} />
-            {copied ? 'Copied!' : 'Copy booking link'}
+        <Button variant="outline" size="sm" className="gap-2 shrink-0 rounded-xl" onClick={copyBookingLink}>
+          <Link2 className="size-4" />
+          {copied ? 'Copied!' : 'Copy booking link'}
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-xl border border-border bg-muted/40 p-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="rounded-lg px-3"
+            onClick={() => setWeekStart(addDays(weekStart, -7))}
+          >
+            ← Prev
           </Button>
-          <Button variant="outline" onClick={() => setOpenSlot(true)} className="flex items-center gap-2">
-            <Clock size={14} /> Add open slot
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="rounded-lg px-3"
+            onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}
+          >
+            Today
           </Button>
-          <Button onClick={() => setOpenLesson(true)} className="flex items-center gap-2">
-            <Plus size={14} /> Book lesson
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="rounded-lg px-3"
+            onClick={() => setWeekStart(addDays(weekStart, 7))}
+          >
+            Next →
           </Button>
+        </div>
+        <span className="hidden text-xs text-muted-foreground sm:inline">Click an empty slot to book or mark open.</span>
+      </div>
+
+      {/* Desktop calendar */}
+      <div className="hidden overflow-hidden rounded-2xl border border-border bg-card shadow-sm md:block">
+        <div
+          className="grid border-b border-border bg-muted/30"
+          style={{ gridTemplateColumns: '52px repeat(7, 1fr)' }}
+        >
+          <div className="border-r border-border" />
+          {weekDays.map(day => {
+            const isToday = isSameDay(day, new Date())
+            return (
+              <div
+                key={day.toISOString()}
+                className={cn(
+                  'border-r border-border py-3 text-center last:border-r-0',
+                  isToday && 'bg-primary/[0.06]'
+                )}
+              >
+                <p className={cn('text-xs font-semibold uppercase tracking-wide', isToday ? 'text-primary' : 'text-muted-foreground')}>
+                  {format(day, 'EEE')}
+                </p>
+                <p className={cn('mt-0.5 text-xl font-bold tabular-nums', isToday ? 'text-primary' : 'text-foreground')}>
+                  {format(day, 'd')}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+        <div className="grid" style={{ gridTemplateColumns: '52px repeat(7, 1fr)' }}>
+          <div>
+            {HOURS.map(hour => (
+              <div
+                key={hour}
+                style={{ height: 56 }}
+                className="flex items-start justify-end border-b border-border pr-2 pt-1 last:border-b-0"
+              >
+                <span className="text-xs tabular-nums text-muted-foreground">{hourLabel(hour)}</span>
+              </div>
+            ))}
+          </div>
+          {weekDays.map(day => (
+            <div key={day.toISOString()} className="relative border-l border-border">
+              {HOURS.map(hour => {
+                const lesson = getLessonForCell(day, hour)
+                const slot = getSlotForCell(day, hour)
+                const isToday = isSameDay(day, new Date())
+                return (
+                  <div
+                    key={hour}
+                    style={{ height: 56 }}
+                    className={cn(
+                      'group relative border-b border-border last:border-b-0',
+                      isToday && 'bg-primary/[0.03]',
+                      !lesson && !slot && 'cursor-pointer hover:bg-muted/40'
+                    )}
+                    onClick={e => !lesson && !slot && handleCellClick(e, day, hour)}
+                  >
+                    {!lesson && !slot && (
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                        <span className="text-xl font-light text-primary/40">+</span>
+                      </div>
+                    )}
+                    {slot && !lesson && (
+                      <button
+                        type="button"
+                        className="absolute inset-x-1 top-1 z-[1] min-h-[46px] cursor-pointer rounded-lg border border-dashed border-primary/35 bg-primary/[0.06] px-2 py-1 text-left transition-colors hover:bg-primary/10"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setSelectedSlot(slot)
+                        }}
+                      >
+                        <p className="text-xs font-semibold text-primary">Open slot</p>
+                        <p className="text-xs text-muted-foreground">{format(new Date(slot.starts_at), 'h:mm a')}</p>
+                      </button>
+                    )}
+                    {lesson && (
+                      <button
+                        type="button"
+                        className={cn(
+                          'absolute inset-x-1 top-1 z-[2] cursor-pointer rounded-lg px-2 py-1.5 text-left shadow-sm transition-opacity hover:opacity-95',
+                          lesson.status === 'completed' && 'border border-primary/25 bg-primary/15 text-foreground',
+                          lesson.status === 'cancelled' && 'border border-destructive/30 bg-destructive/10 text-destructive',
+                          lesson.status === 'scheduled' && 'bg-primary text-primary-foreground'
+                        )}
+                        style={{
+                          height: Math.max((lesson.duration_mins / 60) * 56, 56) - 4,
+                        }}
+                        onClick={e => {
+                          e.stopPropagation()
+                          router.push(`/dashboard/lessons/${lesson.id}`)
+                        }}
+                      >
+                        <p className="truncate text-xs font-bold">{lesson.players?.name?.split(' ')[0]}</p>
+                        <p
+                          className={cn(
+                            'text-xs opacity-90',
+                            lesson.status === 'scheduled' && 'text-primary-foreground/90'
+                          )}
+                        >
+                          {format(new Date(lesson.starts_at), 'h:mm a')} · {lesson.duration_mins}m
+                        </p>
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Week navigation */}
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="sm" onClick={() => setWeekStart(addDays(weekStart, -7))}>← Prev week</Button>
-        <Button variant="outline" size="sm" onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}>Today</Button>
-        <Button variant="outline" size="sm" onClick={() => setWeekStart(addDays(weekStart, 7))}>Next week →</Button>
-      </div>
-
-      {/* Weekly grid */}
-      <div className="grid grid-cols-7 gap-2">
+      {/* Mobile day list */}
+      <div className="space-y-3 md:hidden">
         {weekDays.map(day => {
           const dayLessons = lessons.filter(l => isSameDay(new Date(l.starts_at), day))
           const daySlots = availability.filter(a => isSameDay(new Date(a.starts_at), day))
           const isToday = isSameDay(day, new Date())
-
           return (
-            <div key={day.toISOString()} className={`min-h-32 rounded-lg border p-2 ${isToday ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}`}>
-              <p className={`text-xs font-semibold mb-2 ${isToday ? 'text-blue-600' : 'text-gray-500'}`}>
-                {format(day, 'EEE')}<br />
-                <span className={`text-lg ${isToday ? 'text-blue-600' : 'text-gray-900'}`}>
-                  {format(day, 'd')}
-                </span>
-              </p>
-              <div className="space-y-1">
-                {daySlots.map(slot => (
-                  <div key={slot.id} className="text-xs bg-gray-100 rounded p-1 flex items-center justify-between">
-                    <span className="text-gray-500">{format(new Date(slot.starts_at), 'h:mm a')}</span>
-                    <button onClick={() => deleteSlot(slot.id)} className="text-gray-400 hover:text-red-500 ml-1">×</button>
-                  </div>
-                ))}
-                {dayLessons.map(lesson => (
-                  <div key={lesson.id} className="text-xs bg-blue-600 text-white rounded p-1 space-y-0.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium truncate">{lesson.players?.name}</span>
-                      <button onClick={() => deleteLesson(lesson.id)} className="text-blue-200 hover:text-white ml-1">×</button>
-                    </div>
-                    <div>{format(new Date(lesson.starts_at), 'h:mm a')}</div>
-                    <select
-                      value={lesson.status}
-                      onChange={e => updateStatus(lesson.id, e.target.value)}
-                      className="w-full bg-blue-700 text-white text-xs rounded px-1 py-0.5 mt-1"
-                    >
-                      <option value="scheduled">Scheduled</option>
-                      <option value="completed">Completed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-                ))}
+            <div
+              key={day.toISOString()}
+              className={cn(
+                'overflow-hidden rounded-2xl border bg-card shadow-sm',
+                isToday ? 'border-primary/35 ring-1 ring-primary/15' : 'border-border'
+              )}
+            >
+              <div className={cn('flex items-center justify-between px-4 py-3', isToday ? 'bg-primary/[0.06]' : 'bg-muted/30')}>
+                <p className={cn('text-sm font-semibold', isToday ? 'text-primary' : 'text-foreground')}>
+                  {format(day, 'EEE, MMM d')}
+                  {isToday && <span className="ml-2 text-xs font-normal text-muted-foreground">Today</span>}
+                </p>
+                <Button size="sm" className="h-8 rounded-lg px-3 text-xs" onClick={() => handleAddLesson(day, 9)}>
+                  + Add
+                </Button>
               </div>
+              {dayLessons.length === 0 && daySlots.length === 0 ? (
+                <p className="px-4 py-3 text-xs text-muted-foreground">Nothing scheduled — tap + Add or use desktop grid.</p>
+              ) : (
+                <div>
+                  {daySlots.map(slot => (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      className="flex w-full items-center gap-2 border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                      onClick={() => setSelectedSlot(slot)}
+                    >
+                      <span className="size-2 shrink-0 rounded-full bg-primary" />
+                      <span className="text-xs font-medium text-primary">Open slot</span>
+                      <span className="text-xs text-muted-foreground">{format(new Date(slot.starts_at), 'h:mm a')}</span>
+                    </button>
+                  ))}
+                  {dayLessons.map(lesson => (
+                    <button
+                      key={lesson.id}
+                      type="button"
+                      className="flex w-full items-center justify-between border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted/40"
+                      onClick={() => router.push(`/dashboard/lessons/${lesson.id}`)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                          {lesson.players?.name?.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{lesson.players?.name?.split(' ')[0]}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(lesson.starts_at), 'h:mm a')} · {lesson.duration_mins} min
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-1 text-xs font-medium capitalize',
+                          lesson.status === 'scheduled' && 'bg-primary/15 text-primary',
+                          lesson.status === 'completed' && 'bg-muted text-foreground',
+                          lesson.status === 'cancelled' && 'bg-destructive/10 text-destructive'
+                        )}
+                      >
+                        {lesson.status}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })}
       </div>
 
-      {/* Upcoming lessons list */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Calendar size={16} /> This week's lessons
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {lessons.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No lessons this week.</p>
-          ) : (
-            <div className="space-y-2">
-              {lessons.map(lesson => (
-                <div key={lesson.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <User size={16} className="text-muted-foreground" />
-                    <div>
-                      <p className="font-medium text-sm">{lesson.players?.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {format(new Date(lesson.starts_at), 'EEEE, MMM d • h:mm a')} · {lesson.duration_mins} min
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor[lesson.status]}`}>
-                      {lesson.status}
-                    </span>
-                    <Button variant="ghost" size="sm" onClick={() => deleteLesson(lesson.id)}
-                      className="text-muted-foreground hover:text-destructive">
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span className="size-3 rounded-sm bg-primary" />
+          Booked
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="size-3 rounded-sm border border-dashed border-primary/40 bg-primary/[0.06]" />
+          Open slot
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="size-3 rounded-sm bg-primary/20 ring-1 ring-primary/25" />
+          Completed
+        </div>
+      </div>
 
-      {/* Book lesson dialog */}
-      <Dialog open={openLesson} onOpenChange={setOpenLesson}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Book a lesson</DialogTitle></DialogHeader>
-          <div className="space-y-4">
+      {/* Cell action popup */}
+      {cellAction && (
+        <div
+          className="fixed z-50 w-52 rounded-2xl border border-border bg-popover p-3 shadow-xl"
+          style={{
+            top: cellAction.y - 10,
+            left: Math.min(cellAction.x, typeof window !== 'undefined' ? window.innerWidth - 220 : cellAction.x),
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <p className="mb-2 px-1 text-xs font-semibold text-muted-foreground">
+            {format(cellAction.day, 'EEE MMM d')} · {hourLabel(cellAction.hour)}
+          </p>
+          <Button
+            type="button"
+            className="mb-2 w-full gap-2 rounded-xl"
+            size="sm"
+            onClick={() => handleAddLesson(cellAction.day, cellAction.hour)}
+          >
+            <User className="size-4" />
+            Book lesson
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-2 rounded-xl border-primary/30 bg-primary/[0.04] text-primary hover:bg-primary/10"
+            size="sm"
+            onClick={() => handleAddSlot(cellAction.day, cellAction.hour)}
+          >
+            <Clock className="size-4" />
+            Mark open slot
+          </Button>
+        </div>
+      )}
+
+      <Dialog open={!!lessonModal} onOpenChange={o => !o && setLessonModal(null)}>
+        <DialogContent className="gap-0 rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Book a lesson</DialogTitle>
+            <DialogDescription>
+              {lessonModal &&
+                `${format(lessonModal.day, 'EEEE, MMMM d')} at ${lessonModal.hour > 12 ? `${lessonModal.hour - 12}:00 pm` : lessonModal.hour === 12 ? '12:00 pm' : `${lessonModal.hour}:00 am`}`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Player</Label>
-              <Select value={lessonForm.player_id} onValueChange={v => setLessonForm({ ...lessonForm, player_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select a player" /></SelectTrigger>
+              <Select
+                value={lessonForm.player_id ?? ''}
+                onValueChange={v => setLessonForm({ ...lessonForm, player_id: v })}
+              >
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder="Select a player…" />
+                </SelectTrigger>
                 <SelectContent>
-                  {players.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  {players.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name.split(' ')[0]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Date & time</Label>
-              <Input type="datetime-local" value={lessonForm.starts_at}
-                onChange={e => setLessonForm({ ...lessonForm, starts_at: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>Duration (minutes)</Label>
-              <Select value={lessonForm.duration_mins} onValueChange={v => setLessonForm({ ...lessonForm, duration_mins: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Label>Duration</Label>
+              <Select
+                value={lessonForm.duration_mins ?? '60'}
+                onValueChange={v => setLessonForm({ ...lessonForm, duration_mins: v })}
+              >
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="30">30 min</SelectItem>
-                  <SelectItem value="60">60 min</SelectItem>
-                  <SelectItem value="90">90 min</SelectItem>
-                  <SelectItem value="120">120 min</SelectItem>
+                  <SelectItem value="30">30 minutes</SelectItem>
+                  <SelectItem value="60">60 minutes</SelectItem>
+                  <SelectItem value="90">90 minutes</SelectItem>
+                  <SelectItem value="120">120 minutes</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setOpenLesson(false)}>Cancel</Button>
-              <Button onClick={addLesson} disabled={saving || !lessonForm.player_id || !lessonForm.starts_at}>
-                {saving ? 'Saving...' : 'Book lesson'}
-              </Button>
+            <div className="space-y-2">
+              <Label htmlFor="lesson-notes">Notes (optional)</Label>
+              <Textarea
+                id="lesson-notes"
+                value={lessonForm.notes}
+                onChange={e => setLessonForm({ ...lessonForm, notes: e.target.value })}
+                placeholder="Focus areas, reminders…"
+                rows={3}
+                className="resize-none rounded-xl"
+              />
             </div>
           </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" className="rounded-xl" onClick={() => setLessonModal(null)}>
+              Cancel
+            </Button>
+            <Button className="rounded-xl" onClick={saveLesson} disabled={saving || !lessonForm.player_id}>
+              {saving ? 'Saving…' : 'Book lesson'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Add open slot dialog */}
-      <Dialog open={openSlot} onOpenChange={setOpenSlot}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Add open availability slot</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">Players will see this slot on your public booking page.</p>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Start time</Label>
-              <Input type="datetime-local" value={slotForm.starts_at}
-                onChange={e => setSlotForm({ ...slotForm, starts_at: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>End time</Label>
-              <Input type="datetime-local" value={slotForm.ends_at}
-                onChange={e => setSlotForm({ ...slotForm, ends_at: e.target.value })} />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setOpenSlot(false)}>Cancel</Button>
-              <Button onClick={addSlot} disabled={saving || !slotForm.starts_at || !slotForm.ends_at}>
-                {saving ? 'Saving...' : 'Add slot'}
-              </Button>
-            </div>
-          </div>
+      <Dialog open={!!selectedSlot} onOpenChange={o => !o && setSelectedSlot(null)}>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading flex items-center gap-2">
+              <CalendarPlus className="size-5 text-primary" />
+              Open slot
+            </DialogTitle>
+            <DialogDescription>
+              {selectedSlot &&
+                `${format(new Date(selectedSlot.starts_at), 'EEEE, MMM d')} · ${format(new Date(selectedSlot.starts_at), 'h:mm a')} – ${format(new Date(selectedSlot.ends_at), 'h:mm a')}`}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">This window appears on your public booking page.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedSlot(null)}>
+              Close
+            </Button>
+            <Button variant="destructive" className="rounded-xl" onClick={() => selectedSlot && deleteSlot(selectedSlot.id)}>
+              Remove slot
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

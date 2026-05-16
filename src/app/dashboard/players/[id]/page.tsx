@@ -1,38 +1,108 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Plus, BookOpen, Dumbbell, Trash2 } from 'lucide-react'
-import Link from 'next/link'
 import { format } from 'date-fns'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
+import { ArrowLeft, Plus, Trash2, Sparkles, Video, BookOpen, Dumbbell, Clock, RefreshCw, X } from 'lucide-react'
+import Link from 'next/link'
+import { Badge } from '@/components/ui/badge'
+import { Button, buttonVariants } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import VideoAnalysisDialog, {
+  analysisPreviewHeadline,
+  issueSeverityCounts,
+} from '@/components/video/VideoAnalysisDialog'
+import { cn } from '@/lib/utils'
+
+/** Legacy rows may still store `baseball`; treat as pickleball for focuses / AI. */
+function normalizeSportKey(s?: string | null): string {
+  if (!s) return 'tennis'
+  if (s === 'baseball') return 'pickleball'
+  return s
+}
+
+const SPORT_CONFIG: Record<string, { focuses: string[]; lessonTypes: string[] }> = {
+  tennis: {
+    focuses: ['Forehand', 'Backhand', 'Serve', 'Volleys', 'Footwork', 'Return', 'Strategy'],
+    lessonTypes: ['Technical', 'Match play', 'Conditioning', 'Mental', 'Mixed'],
+  },
+  golf: {
+    focuses: ['Drive', 'Iron play', 'Short game', 'Putting', 'Bunker', 'Setup', 'Course management'],
+    lessonTypes: ['Technical', 'On-course', 'Short game focus', 'Mental game', 'Fitness', 'Mixed'],
+  },
+  pickleball: {
+    focuses: ['Serve', 'Return', 'Dinking', 'Volleys', 'Third-shot drop', 'Drives', 'Kitchen play', 'Doubles positioning'],
+    lessonTypes: ['Technical', 'Drills', 'Game scenarios', 'Conditioning', 'Mixed'],
+  },
+  basketball: {
+    focuses: ['Shooting', 'Ball handling', 'Defense', 'Passing', 'Footwork', 'Post play'],
+    lessonTypes: ['Technical', 'Scrimmage', 'Conditioning', 'Film study', 'Mixed'],
+  },
+}
+
+function skillBadgeVariant(level: string): 'default' | 'secondary' | 'destructive' {
+  if (level === 'advanced') return 'destructive'
+  if (level === 'intermediate') return 'secondary'
+  return 'default'
+}
+
+function lessonStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+  if (status === 'completed') return 'secondary'
+  if (status === 'cancelled') return 'destructive'
+  return 'outline'
+}
 
 export default function PlayerDetailPage() {
   const { id } = useParams()
+  const router = useRouter()
   const [player, setPlayer] = useState<any>(null)
   const [entries, setEntries] = useState<any[]>([])
   const [drills, setDrills] = useState<any[]>([])
+  const [lessons, setLessons] = useState<any[]>([])
+  const [videos, setVideos] = useState<any[]>([])
+  const [tab, setTab] = useState<'journal' | 'drills' | 'history' | 'video'>('journal')
   const [newEntry, setNewEntry] = useState('')
-  const [newDrill, setNewDrill] = useState({ title: '', description: '' })
   const [saving, setSaving] = useState(false)
+  const [completeModal, setCompleteModal] = useState<any>(null)
+  const [completeNote, setCompleteNote] = useState('')
+  const [drillForm, setDrillForm] = useState({
+    age: '', focuses: ['Forehand'], lessonTypes: ['Technical'],
+    duration: '60', workOn: '', skillLevel: 'intermediate'
+  })
+  const [generatedPlan, setGeneratedPlan] = useState<any>(null)
+  const [generating, setGenerating] = useState(false)
+  const [analyzingVideo, setAnalyzingVideo] = useState<string | null>(null)
+  const [videoAnalysis, setVideoAnalysis] = useState<Record<string, any>>({})
+  const [videoUrls, setVideoUrls] = useState<Record<string, string>>({})
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareVideoId, setCompareVideoId] = useState<string | null>(null)
+  const [sheetVideo, setSheetVideo] = useState<any>(null)
+
   const supabase = createClient()
 
-  useEffect(() => {
-    loadAll()
-  }, [id])
+  useEffect(() => { loadAll() }, [id])
 
   async function loadAll() {
     const { data: p } = await supabase.from('players').select('*').eq('id', id).single()
     const { data: e } = await supabase.from('journal_entries').select('*').eq('player_id', id).order('created_at', { ascending: false })
     const { data: d } = await supabase.from('drills').select('*').eq('player_id', id).order('created_at', { ascending: false })
+    const { data: l } = await supabase.from('lessons').select('*, journal_entries(content, created_at)').eq('player_id', id).order('starts_at', { ascending: false })
+    const { data: v } = await supabase.from('videos').select('*').eq('player_id', id).order('recorded_at', { ascending: false })
     setPlayer(p)
     setEntries(e || [])
     setDrills(d || [])
+    setLessons(l || [])
+    setVideos(v || [])
   }
 
   async function addEntry() {
@@ -49,11 +119,59 @@ export default function PlayerDetailPage() {
     loadAll()
   }
 
-  async function addDrill() {
-    if (!newDrill.title.trim()) return
+  async function completeLesson() {
+    if (!completeNote.trim() || !completeModal) return
     setSaving(true)
-    await supabase.from('drills').insert({ player_id: id, ...newDrill })
-    setNewDrill({ title: '', description: '' })
+    await supabase.from('lessons').update({ status: 'completed' }).eq('id', completeModal.id)
+    await supabase.from('journal_entries').insert({ player_id: id, lesson_id: completeModal.id, content: completeNote })
+    setCompleteModal(null)
+    setCompleteNote('')
+    setSaving(false)
+    loadAll()
+  }
+
+  async function generateDrills() {
+    if (!drillForm.workOn) return
+    setGenerating(true)
+    setGeneratedPlan(null)
+    try {
+      const res = await fetch('/api/drills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerName: player?.name, sport: normalizeSportKey(player?.sport) || 'tennis', ...drillForm }),
+      })
+      if (!res.ok) { const err = await res.json(); alert(`Error: ${err.error}`); return }
+      const reader = res.body?.getReader()
+      const decoder = new TextDecoder()
+      let fullText = ''
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          fullText += decoder.decode(value, { stream: true })
+        }
+      }
+      const clean = fullText.replace(/```json|```/g, '').trim()
+      setGeneratedPlan(JSON.parse(clean))
+    } catch (e: any) {
+      alert('Failed to generate drills. Please try again.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function saveDrillPlan() {
+    if (!generatedPlan) return
+    setSaving(true)
+    for (const drill of generatedPlan.drills) {
+      await supabase.from('drills').insert({
+        player_id: id,
+        title: drill.title,
+        description: `${drill.description}\n\nCoaching cues: ${drill.coaching_cues?.join(', ')}`,
+        steps: JSON.stringify({ duration_mins: drill.duration_mins, equipment: drill.equipment }),
+      })
+    }
+    setGeneratedPlan(null)
     setSaving(false)
     loadAll()
   }
@@ -63,132 +181,641 @@ export default function PlayerDetailPage() {
     loadAll()
   }
 
-  if (!player) return <div className="p-8 text-muted-foreground">Loading...</div>
-
-  const skillColor: Record<string, string> = {
-    beginner: 'bg-green-100 text-green-800',
-    intermediate: 'bg-yellow-100 text-yellow-800',
-    advanced: 'bg-red-100 text-red-800',
+  async function getVideoUrl(path: string) {
+    const { data } = await supabase.storage.from('videos').createSignedUrl(path, 3600)
+    return data?.signedUrl || ''
   }
 
+  async function openAnalysisSheet(video: any) {
+    setSheetVideo(video)
+    if (!videoUrls[video.id]) {
+      const u = await getVideoUrl(video.storage_path)
+      if (u) setVideoUrls(prev => ({ ...prev, [video.id]: u }))
+    }
+  }
+
+  async function analyzeVideo(video: any, compareVideo?: any) {
+    setAnalyzingVideo(video.id)
+    try {
+      const url = await getVideoUrl(video.storage_path)
+      if (!url) {
+        alert('Could not access this video (missing signed URL). Reload the page and try again.')
+        return
+      }
+      setVideoUrls(prev => ({ ...prev, [video.id]: url }))
+
+      const compareUrl = compareVideo ? await getVideoUrl(compareVideo.storage_path) : undefined
+      if (compareVideo && !compareUrl) {
+        alert('Could not access the comparison video. Reload and try again.')
+        return
+      }
+      const playerHistory = entries.slice(0, 3).map(e => e.content).join('\n---\n')
+
+      const apiRes = await fetch('/api/video-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl: url,
+          ...(compareUrl ? { compareVideoUrl: compareUrl } : {}),
+          playerName: player?.name,
+          sport: normalizeSportKey(player?.sport) || 'tennis',
+          playerHistory,
+          cameraAngle: 'side-on',
+        }),
+      })
+
+      const analysis = await apiRes.json()
+      if (analysis.error) {
+        alert(`Analysis failed: ${analysis.error}`)
+        return
+      }
+      await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
+      setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
+    } catch (e: any) {
+      alert(`Analysis failed: ${e.message}`)
+    } finally {
+      setAnalyzingVideo(null)
+      setCompareMode(false)
+      setCompareVideoId(null)
+      loadAll()
+    }
+  }
+
+  const tabs = [
+    { key: 'journal', label: 'Journal', icon: BookOpen },
+    { key: 'drills', label: 'Drills', icon: Dumbbell },
+    { key: 'history', label: 'Lesson history', icon: Clock },
+    { key: 'video', label: 'Videos', icon: Video },
+  ]
+
+  if (!player) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>
+
+  const sportConfig = SPORT_CONFIG[normalizeSportKey(player?.sport)] || SPORT_CONFIG.tennis
+  const SKILL_FOCUSES = sportConfig.focuses
+  const LESSON_TYPES = sportConfig.lessonTypes
   return (
-    <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center gap-4">
-        <Link href="/dashboard/players">
-          <Button variant="outline" size="sm" className="flex items-center gap-2">
-            <ArrowLeft size={14} /> Back
-          </Button>
+    <div className="max-w-4xl space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-4">
+        <Link
+          href="/dashboard/players"
+          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'w-fit gap-2 rounded-xl')}
+        >
+          <ArrowLeft size={14} /> Back
         </Link>
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-            <span className="text-blue-600 font-bold text-lg">
-              {player.name.charAt(0).toUpperCase()}
-            </span>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/15 text-lg font-bold text-primary">
+            {player.name.charAt(0).toUpperCase()}
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{player.name}</h1>
-            <div className="flex items-center gap-2 mt-1">
+          <div className="min-w-0">
+            <h1 className="font-heading text-xl font-bold tracking-tight text-foreground">{player.name}</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
               {player.email && <span className="text-sm text-muted-foreground">{player.email}</span>}
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${skillColor[player.skill_level] || 'bg-gray-100'}`}>
+              <Badge variant={skillBadgeVariant(player.skill_level)} className="capitalize">
                 {player.skill_level}
-              </span>
+              </Badge>
+              <Badge variant="outline" className="capitalize">
+                {(normalizeSportKey(player.sport || 'tennis')).replace(/^./, c => c.toUpperCase())}
+              </Badge>
             </div>
           </div>
         </div>
       </div>
 
-      <Tabs defaultValue="journal">
-        <TabsList>
-          <TabsTrigger value="journal" className="flex items-center gap-2">
-            <BookOpen size={14} /> Journal
-          </TabsTrigger>
-          <TabsTrigger value="drills" className="flex items-center gap-2">
-            <Dumbbell size={14} /> Drills
-          </TabsTrigger>
-        </TabsList>
+      {/* Tabs */}
+      <div className="flex w-full gap-1 overflow-x-auto rounded-xl border border-border bg-muted/50 p-1 md:w-fit">
+        {tabs.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key as any)}
+            className={cn(
+              'flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors',
+              tab === key
+                ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Icon size={14} /> {label}
+          </button>
+        ))}
+      </div>
 
-        <TabsContent value="journal" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">New journal entry</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea
-                placeholder="Notes from today's lesson — what went well, what to work on..."
-                value={newEntry}
-                onChange={e => setNewEntry(e.target.value)}
-                rows={4}
-              />
-              <Button onClick={addEntry} disabled={saving || !newEntry.trim()} className="flex items-center gap-2">
-                <Plus size={14} /> Add entry
-              </Button>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-3">
-            {entries.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No journal entries yet.</p>
-            ) : entries.map(entry => (
-              <Card key={entry.id}>
-                <CardContent className="p-4">
+      {/* Journal tab */}
+      {tab === 'journal' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <h3 className="mb-3 text-sm font-semibold text-foreground">New entry</h3>
+            <Textarea
+              value={newEntry}
+              onChange={e => setNewEntry(e.target.value)}
+              placeholder="Notes from today's lesson — what went well, what to work on..."
+              rows={4}
+              className="resize-none rounded-xl"
+            />
+            <Button className="mt-3 gap-2 rounded-xl" onClick={addEntry} disabled={saving || !newEntry.trim()}>
+              <Plus size={14} /> Add entry
+            </Button>
+          </div>
+          {entries.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">No journal entries yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {entries.map(entry => (
+                <div key={entry.id} className="rounded-2xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="text-xs text-muted-foreground mb-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="mb-2 text-xs text-muted-foreground">
                         {format(new Date(entry.created_at), 'MMMM d, yyyy • h:mm a')}
                       </p>
-                      <p className="text-sm whitespace-pre-wrap">{entry.content}</p>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap text-foreground">{entry.content}</p>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => deleteEntry(entry.id)}
-                      className="text-muted-foreground hover:text-destructive shrink-0">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteEntry(entry.id)}
+                    >
                       <Trash2 size={14} />
                     </Button>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
-        <TabsContent value="drills" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Add a drill</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Input placeholder="Drill name e.g. Cross-court forehand rally"
-                value={newDrill.title} onChange={e => setNewDrill({ ...newDrill, title: e.target.value })} />
-              <Textarea placeholder="Description, instructions, or cues..."
-                value={newDrill.description} onChange={e => setNewDrill({ ...newDrill, description: e.target.value })}
-                rows={3} />
-              <Button onClick={addDrill} disabled={saving || !newDrill.title.trim()} className="flex items-center gap-2">
-                <Plus size={14} /> Add drill
-              </Button>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-3">
-            {drills.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No drills assigned yet.</p>
-            ) : drills.map(drill => (
-              <Card key={drill.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">{drill.title}</p>
-                      {drill.description && (
-                        <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{drill.description}</p>
+      {/* Drills tab */}
+      {tab === 'drills' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <Sparkles size={16} className="text-primary" />
+              <h3 className="text-sm font-semibold text-foreground">AI drill builder</h3>
+            </div>
+            <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <Label className="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  Skill focus <span className="font-normal normal-case text-muted-foreground/80">(select multiple)</span>
+                </Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {SKILL_FOCUSES.map(f => {
+                    const active = drillForm.focuses.includes(f)
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() =>
+                          setDrillForm({
+                            ...drillForm,
+                            focuses: active ? drillForm.focuses.filter(x => x !== f) : [...drillForm.focuses, f],
+                          })
+                        }
+                        className={cn(
+                          'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                          active
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                        )}
+                      >
+                        {f}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <Label className="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                  Lesson type <span className="font-normal normal-case text-muted-foreground/80">(select multiple)</span>
+                </Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {LESSON_TYPES.map(t => {
+                    const active = drillForm.lessonTypes.includes(t)
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() =>
+                          setDrillForm({
+                            ...drillForm,
+                            lessonTypes: active ? drillForm.lessonTypes.filter(x => x !== t) : [...drillForm.lessonTypes, t],
+                          })
+                        }
+                        className={cn(
+                          'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                          active
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-muted/50 text-muted-foreground hover:bg-muted'
+                        )}
+                      >
+                        {t}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="mb-4 grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label className="text-xs">Player age</Label>
+                <Input
+                  value={drillForm.age}
+                  onChange={e => setDrillForm({ ...drillForm, age: e.target.value })}
+                  placeholder="e.g. 12"
+                  className="rounded-xl text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Duration</Label>
+                <div className="flex gap-1">
+                  {['30', '60', '90'].map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setDrillForm({ ...drillForm, duration: d })}
+                      className={cn(
+                        'flex-1 rounded-xl border py-2 text-xs font-medium transition-colors',
+                        drillForm.duration === d
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted'
                       )}
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {format(new Date(drill.created_at), 'MMM d, yyyy')}
-                      </p>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => deleteDrill(drill.id)}
-                      className="text-muted-foreground hover:text-destructive shrink-0">
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    >
+                      {d}m
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Skill level</Label>
+                <div className="flex gap-1">
+                  {['beginner', 'intermediate', 'advanced'].map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setDrillForm({ ...drillForm, skillLevel: s })}
+                      className={cn(
+                        'flex-1 rounded-xl border py-2 text-xs font-medium capitalize transition-colors',
+                        drillForm.skillLevel === s
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted'
+                      )}
+                    >
+                      {s.charAt(0)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="mb-4 space-y-2">
+              <Label className="text-xs">What to focus on most</Label>
+              <Input
+                value={drillForm.workOn}
+                onChange={e => setDrillForm({ ...drillForm, workOn: e.target.value })}
+                placeholder="e.g. Inconsistent topspin, rushes net too early..."
+                className="rounded-xl text-sm"
+              />
+            </div>
+            <Button className="gap-2 rounded-xl" onClick={generateDrills} disabled={generating || !drillForm.workOn}>
+              <Sparkles size={14} />
+              {generating ? 'Generating…' : 'Generate drill plan'}
+            </Button>
           </div>
-        </TabsContent>
-      </Tabs>
+
+          {generatedPlan && (
+            <div className="rounded-2xl border border-primary/25 bg-primary/[0.03] p-5 shadow-sm">
+              <div className="mb-1 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} className="text-primary" />
+                  <span className="text-sm font-semibold text-foreground">AI-generated plan</span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {generatedPlan.total_mins} min · {generatedPlan.drills?.length} drills
+                </span>
+              </div>
+              <p className="mb-4 text-xs text-muted-foreground">{generatedPlan.summary}</p>
+              <div className="mb-4 space-y-2">
+                {generatedPlan.drills?.map((drill: any, i: number) => (
+                  <div key={i} className="flex gap-3 rounded-xl bg-card p-3 ring-1 ring-border">
+                    <Badge variant="secondary" className="h-fit shrink-0 px-2 py-1">
+                      {drill.duration_mins}m
+                    </Badge>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{drill.title}</p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{drill.description}</p>
+                      {drill.coaching_cues?.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {drill.coaching_cues.map((cue: string, j: number) => (
+                            <Badge key={j} variant="outline" className="text-xs font-normal">
+                              {cue}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="gap-2 rounded-xl" onClick={generateDrills}>
+                  <RefreshCw size={13} /> Regenerate
+                </Button>
+                <Button className="rounded-xl" onClick={saveDrillPlan} disabled={saving}>
+                  Save to player
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {drills.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-foreground">Saved drills</h3>
+              {drills.map(drill => (
+                <div
+                  key={drill.id}
+                  className="flex items-start justify-between gap-4 rounded-xl border border-border bg-card p-4 shadow-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{drill.title}</p>
+                    {drill.description && (
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{drill.description.split('\n')[0]}</p>
+                    )}
+                    <p className="mt-1 text-xs text-muted-foreground">{format(new Date(drill.created_at), 'MMM d, yyyy')}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => deleteDrill(drill.id)}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* History tab */}
+      {tab === 'history' && (
+        <div className="space-y-3">
+          {lessons.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">No lessons yet.</div>
+          ) : (
+            lessons.map(lesson => {
+              const journalEntry = lesson.journal_entries?.[0]
+              return (
+                <div
+                  key={lesson.id}
+                  className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 text-left"
+                      onClick={() => router.push(`/dashboard/lessons/${lesson.id}`)}
+                    >
+                      <p className="text-sm font-medium text-foreground">
+                        {format(new Date(lesson.starts_at), 'EEEE, MMM d yyyy')}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {format(new Date(lesson.starts_at), 'h:mm a')} · {lesson.duration_mins} min
+                      </p>
+                      {journalEntry && (
+                        <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{journalEntry.content}</p>
+                      )}
+                    </button>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <Badge variant={lessonStatusVariant(lesson.status)} className="capitalize">
+                        {lesson.status}
+                      </Badge>
+                      {lesson.status === 'scheduled' && (
+                        <Button
+                          size="sm"
+                          className="rounded-lg px-3 text-xs"
+                          onClick={e => {
+                            e.stopPropagation()
+                            setCompleteModal(lesson)
+                            setCompleteNote('')
+                          }}
+                        >
+                          Complete
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
+
+      {/* Video tab */}
+      {tab === 'video' && (
+        <div className="space-y-4">
+          {videos.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              No videos yet. Upload from the Video page.
+            </div>
+          ) : (
+            <>
+              {compareMode && (
+                <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4">
+                  <p className="text-sm font-medium text-blue-700">Compare mode</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Pick a second clip. Both videos are sent to Gemini for comparison.
+                  </p>
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {videos.map(video => {
+                  const analysis =
+                    videoAnalysis[video.id] ||
+                    (video.ai_analysis ? JSON.parse(video.ai_analysis as string) : null)
+                  const isAnalyzing = analyzingVideo === video.id
+                  const counts = issueSeverityCounts(analysis)
+                  const headline = analysisPreviewHeadline(analysis)
+                  return (
+                    <div
+                      key={video.id}
+                      className={cn(
+                        'overflow-hidden rounded-2xl border bg-card transition-all',
+                        compareVideoId === video.id ? 'border-blue-500 ring-2 ring-blue-500/25' : 'border-border'
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className="relative flex aspect-video w-full items-center justify-center bg-muted"
+                        onClick={() => openAnalysisSheet(video)}
+                      >
+                        <Video className="size-8 text-muted-foreground/40" />
+                        {analysis && (
+                          <span className="absolute bottom-2 left-2 rounded-md bg-background/95 px-2 py-1 text-[10px] font-semibold text-muted-foreground shadow-sm backdrop-blur-sm">
+                            Tap for breakdown
+                          </span>
+                        )}
+                      </button>
+                      <div className="space-y-3 p-4">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{video.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(video.recorded_at), 'MMM d, yyyy • h:mm a')}
+                          </p>
+                        </div>
+
+                        {isAnalyzing && (
+                          <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+                            <Sparkles size={12} className="animate-pulse text-primary" />
+                            Sending video to Gemini for analysis…
+                          </div>
+                        )}
+
+                        {analysis && !isAnalyzing && (
+                          <div className="space-y-2 border-t border-border pt-3">
+                            <div className="flex flex-wrap gap-1.5">
+                              {analysis.overall_rating && (
+                                <Badge variant="secondary">{String(analysis.overall_rating)}</Badge>
+                              )}
+                              {analysis.confidence && (
+                                <Badge variant="outline">{String(analysis.confidence)} confidence</Badge>
+                              )}
+                              {counts.total > 0 && counts.critical > 0 && (
+                                <Badge variant="destructive">{counts.critical} critical</Badge>
+                              )}
+                              {counts.moderate > 0 && (
+                                <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100">
+                                  {counts.moderate} moderate
+                                </Badge>
+                              )}
+                              {counts.minor > 0 && <Badge variant="outline">{counts.minor} minor</Badge>}
+                            </div>
+                            {headline && (
+                              <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{headline}</p>
+                            )}
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => openAnalysisSheet(video)}
+                            >
+                              View analysis
+                            </Button>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          {!compareMode ? (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="min-h-9 flex-1 gap-1"
+                                disabled={isAnalyzing}
+                                onClick={() => analyzeVideo(video)}
+                              >
+                                <Sparkles size={12} />
+                                {isAnalyzing ? 'Analyzing…' : analysis ? 'Re-analyze' : 'Analyze'}
+                              </Button>
+                              {videos.length > 1 && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="min-h-9 flex-1"
+                                  onClick={() => {
+                                    setCompareMode(true)
+                                    setCompareVideoId(video.id)
+                                  }}
+                                >
+                                  Compare
+                                </Button>
+                              )}
+                            </>
+                          ) : compareVideoId !== video.id ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="min-h-9 flex-1 bg-blue-600 text-white hover:bg-blue-600/90"
+                              onClick={() => {
+                                const baseVideo = videos.find(v => v.id === compareVideoId)
+                                if (baseVideo) analyzeVideo(baseVideo, video)
+                              }}
+                            >
+                              Compare with this
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="min-h-9 flex-1"
+                              onClick={() => {
+                                setCompareMode(false)
+                                setCompareVideoId(null)
+                              }}
+                            >
+                              <X size={12} /> Cancel
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <VideoAnalysisDialog
+        open={!!sheetVideo}
+        onOpenChange={v => {
+          if (!v) setSheetVideo(null)
+        }}
+        title={sheetVideo?.title ?? ''}
+        recordedLabel={
+          sheetVideo ? format(new Date(sheetVideo.recorded_at), 'MMM d, yyyy • h:mm a') : ''
+        }
+        videoUrl={sheetVideo ? videoUrls[sheetVideo.id] ?? null : null}
+        analysis={
+          sheetVideo
+            ? videoAnalysis[sheetVideo.id] ??
+              (typeof sheetVideo.ai_analysis === 'string'
+                ? JSON.parse(sheetVideo.ai_analysis)
+                : sheetVideo.ai_analysis)
+            : null
+        }
+      />
+
+      <Dialog open={!!completeModal} onOpenChange={o => !o && setCompleteModal(null)}>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Complete lesson</DialogTitle>
+            <DialogDescription>Add a session note before marking this lesson complete.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={completeNote}
+            onChange={e => setCompleteNote(e.target.value)}
+            placeholder="What did we work on? What went well? What to focus on next time..."
+            rows={5}
+            className="resize-none rounded-xl"
+          />
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" className="rounded-xl" onClick={() => setCompleteModal(null)}>
+              Cancel
+            </Button>
+            <Button className="rounded-xl" onClick={completeLesson} disabled={saving || !completeNote.trim()}>
+              {saving ? 'Saving…' : 'Complete lesson'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

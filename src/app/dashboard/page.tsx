@@ -1,194 +1,139 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Plus, BookOpen, Dumbbell, Trash2 } from 'lucide-react'
+import { CalendarDays, Users, Video, Dumbbell, Clock, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
-import { useParams } from 'next/navigation'
+import { Badge } from '@/components/ui/badge'
 
-export default function PlayerDetailPage() {
-  const { id } = useParams()
-  const [player, setPlayer] = useState<any>(null)
-  const [entries, setEntries] = useState<any[]>([])
-  const [drills, setDrills] = useState<any[]>([])
-  const [newEntry, setNewEntry] = useState('')
-  const [newDrill, setNewDrill] = useState({ title: '', description: '' })
-  const [saving, setSaving] = useState(false)
+export default function DashboardPage() {
+  const [lessons, setLessons] = useState<any[]>([])
+  const [playerCount, setPlayerCount] = useState(0)
+  const [videoCount, setVideoCount] = useState(0)
+  const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
   useEffect(() => {
-    loadAll()
-  }, [id])
+    async function load() {
+      const { data: l } = await supabase
+        .from('lessons')
+        .select('*, players(name)')
+        .gte('starts_at', new Date().toISOString())
+        .order('starts_at', { ascending: true })
+        .limit(5)
+      const { count: pc } = await supabase.from('players').select('*', { count: 'exact', head: true })
+      const { count: vc } = await supabase.from('videos').select('*', { count: 'exact', head: true })
+      setLessons(l || [])
+      setPlayerCount(pc || 0)
+      setVideoCount(vc || 0)
+      setLoading(false)
+    }
+    load()
+  }, [])
 
-  async function loadAll() {
-    const { data: p } = await supabase.from('players').select('*').eq('id', id).single()
-    const { data: e } = await supabase.from('journal_entries').select('*').eq('player_id', id).order('created_at', { ascending: false })
-    const { data: d } = await supabase.from('drills').select('*').eq('player_id', id).order('created_at', { ascending: false })
-    setPlayer(p)
-    setEntries(e || [])
-    setDrills(d || [])
-  }
+  const stats = [
+    { label: 'Players', value: playerCount, icon: Users, href: '/dashboard/players' },
+    { label: 'Upcoming', value: lessons.length, icon: CalendarDays, href: '/dashboard/schedule' },
+    { label: 'Videos', value: videoCount, icon: Video, href: '/dashboard/video' },
+  ]
 
-  async function addEntry() {
-    if (!newEntry.trim()) return
-    setSaving(true)
-    await supabase.from('journal_entries').insert({ player_id: id, content: newEntry })
-    setNewEntry('')
-    setSaving(false)
-    loadAll()
-  }
-
-  async function deleteEntry(entryId: string) {
-    await supabase.from('journal_entries').delete().eq('id', entryId)
-    loadAll()
-  }
-
-  async function addDrill() {
-    if (!newDrill.title.trim()) return
-    setSaving(true)
-    await supabase.from('drills').insert({ player_id: id, ...newDrill })
-    setNewDrill({ title: '', description: '' })
-    setSaving(false)
-    loadAll()
-  }
-
-  async function deleteDrill(drillId: string) {
-    await supabase.from('drills').delete().eq('id', drillId)
-    loadAll()
-  }
-
-  if (!player) return <div className="p-8 text-muted-foreground">Loading...</div>
-
-  const skillColor: Record<string, string> = {
-    beginner: 'bg-green-100 text-green-800',
-    intermediate: 'bg-yellow-100 text-yellow-800',
-    advanced: 'bg-red-100 text-red-800',
-  }
+  const hour = new Date().getHours()
+  const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center gap-4">
-        <Link href="/dashboard/players">
-          <Button variant="outline" size="sm" className="flex items-center gap-2">
-            <ArrowLeft size={14} /> Back
-          </Button>
-        </Link>
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-            <span className="text-blue-600 font-bold text-lg">
-              {player.name.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{player.name}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              {player.email && <span className="text-sm text-muted-foreground">{player.email}</span>}
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${skillColor[player.skill_level] || 'bg-gray-100'}`}>
-                {player.skill_level}
-              </span>
-            </div>
-          </div>
-        </div>
+    <div className="mx-auto max-w-5xl space-y-8">
+      <div>
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+          {greet}, Coach
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Here&apos;s a snapshot of Playvia today.
+        </p>
       </div>
 
-      <Tabs defaultValue="journal">
-        <TabsList>
-          <TabsTrigger value="journal" className="flex items-center gap-2">
-            <BookOpen size={14} /> Journal
-          </TabsTrigger>
-          <TabsTrigger value="drills" className="flex items-center gap-2">
-            <Dumbbell size={14} /> Drills
-          </TabsTrigger>
-        </TabsList>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {stats.map(({ label, value, icon: Icon, href }) => (
+          <Link
+            key={label}
+            href={href}
+            className="group flex flex-col rounded-2xl border border-border bg-card p-5 shadow-sm transition-all hover:border-primary/25 hover:shadow-md"
+          >
+            <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Icon className="size-5" />
+            </div>
+            <p className="font-heading text-3xl font-bold tabular-nums text-card-foreground">
+              {loading ? '—' : value}
+            </p>
+            <p className="mt-1 text-xs font-medium text-muted-foreground">{label}</p>
+            <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100">
+              Open <ArrowRight className="size-3" />
+            </span>
+          </Link>
+        ))}
+      </div>
 
-        <TabsContent value="journal" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">New journal entry</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea
-                placeholder="Notes from today's lesson — what went well, what to work on..."
-                value={newEntry}
-                onChange={e => setNewEntry(e.target.value)}
-                rows={4}
-              />
-              <Button onClick={addEntry} disabled={saving || !newEntry.trim()} className="flex items-center gap-2">
-                <Plus size={14} /> Add entry
-              </Button>
-            </CardContent>
-          </Card>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: 'Schedule', href: '/dashboard/schedule', icon: CalendarDays },
+          { label: 'Players', href: '/dashboard/players', icon: Users },
+          { label: 'Drills', href: '/dashboard/drills', icon: Dumbbell },
+          { label: 'Video', href: '/dashboard/video', icon: Video },
+        ].map(({ label, href, icon: Icon }) => (
+          <Link
+            key={href}
+            href={href}
+            className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 shadow-sm transition-all hover:border-primary/30 hover:bg-muted/30"
+          >
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted text-primary">
+              <Icon className="size-5" />
+            </div>
+            <span className="font-medium text-card-foreground">{label}</span>
+          </Link>
+        ))}
+      </div>
 
-          <div className="space-y-3">
-            {entries.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No journal entries yet.</p>
-            ) : entries.map(entry => (
-              <Card key={entry.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="text-xs text-muted-foreground mb-2">
-                        {format(new Date(entry.created_at), 'MMMM d, yyyy • h:mm a')}
-                      </p>
-                      <p className="text-sm whitespace-pre-wrap">{entry.content}</p>
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="font-heading text-sm font-semibold text-foreground">Upcoming lessons</h2>
+          <Link href="/dashboard/schedule" className="text-xs font-semibold text-primary hover:underline">
+            Full schedule
+          </Link>
+        </div>
+        <div>
+          {loading ? (
+            <div className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : lessons.length === 0 ? (
+            <div className="px-5 py-12 text-center text-sm text-muted-foreground">
+              No upcoming lessons.{' '}
+              <Link href="/dashboard/schedule" className="font-medium text-primary hover:underline">
+                Open schedule
+              </Link>
+            </div>
+          ) : (
+            lessons.map(lesson => (
+              <Link key={lesson.id} href={`/dashboard/lessons/${lesson.id}`}>
+                <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/40">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
+                      {lesson.players?.name?.charAt(0).toUpperCase()}
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => deleteEntry(entry.id)}
-                      className="text-muted-foreground hover:text-destructive shrink-0">
-                      <Trash2 size={14} />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="drills" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Add a drill</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Input placeholder="Drill name e.g. Cross-court forehand rally"
-                value={newDrill.title} onChange={e => setNewDrill({ ...newDrill, title: e.target.value })} />
-              <Textarea placeholder="Description, instructions, or cues..."
-                value={newDrill.description} onChange={e => setNewDrill({ ...newDrill, description: e.target.value })}
-                rows={3} />
-              <Button onClick={addDrill} disabled={saving || !newDrill.title.trim()} className="flex items-center gap-2">
-                <Plus size={14} /> Add drill
-              </Button>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-3">
-            {drills.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-8">No drills assigned yet.</p>
-            ) : drills.map(drill => (
-              <Card key={drill.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">{drill.title}</p>
-                      {drill.description && (
-                        <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{drill.description}</p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {format(new Date(drill.created_at), 'MMM d, yyyy')}
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-foreground">{lesson.players?.name}</p>
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="size-3 shrink-0" />
+                        {format(new Date(lesson.starts_at), 'EEE, MMM d • h:mm a')}
                       </p>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => deleteDrill(drill.id)}
-                      className="text-muted-foreground hover:text-destructive shrink-0">
-                      <Trash2 size={14} />
-                    </Button>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-      </Tabs>
+                  <Badge variant="secondary" className="shrink-0 capitalize">
+                    {lesson.status}
+                  </Badge>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,18 +1,18 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { format } from 'date-fns'
+import { CheckCircle, Clock, ChevronRight } from 'lucide-react'
+import { BrandMark } from '@/components/brand/BrandMark'
+import { cn } from '@/lib/utils'
 
 export default function BookingPage() {
   const [slots, setSlots] = useState<any[]>([])
   const [selected, setSelected] = useState<any>(null)
-  const [form, setForm] = useState({ name: '', email: '', phone: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', skill_level: 'beginner', sport: 'tennis' })
   const [step, setStep] = useState<'pick' | 'details' | 'confirm'>('pick')
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
   useEffect(() => {
@@ -24,6 +24,7 @@ export default function BookingPage() {
         .gte('starts_at', new Date().toISOString())
         .order('starts_at')
       setSlots(data || [])
+      setLoading(false)
     }
     loadSlots()
   }, [])
@@ -41,7 +42,7 @@ export default function BookingPage() {
     if (!player) {
       const { data: newPlayer } = await supabase
         .from('players')
-        .insert({ name: form.name, email: form.email, phone: form.phone, skill_level: 'beginner' })
+        .insert({ name: form.name, email: form.email, phone: form.phone, skill_level: form.skill_level, sport: form.sport })
         .select('id')
         .single()
       player = newPlayer
@@ -61,77 +62,196 @@ export default function BookingPage() {
     setStep('confirm')
   }
 
+  const fieldClass =
+    'w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:outline-none'
+
+  const sports = [
+    { value: 'tennis', label: '🎾 Tennis' },
+    { value: 'golf', label: '⛳ Golf' },
+    { value: 'pickleball', label: '🏓 Pickleball' },
+    { value: 'basketball', label: '🏀 Basketball' },
+  ] as const
+
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-lg space-y-6">
+
+        {/* Header */}
         <div className="text-center">
-          <div className="text-4xl mb-2">🎾</div>
-          <h1 className="text-2xl font-bold">Book a Tennis Lesson</h1>
-          <p className="text-muted-foreground mt-1">Pick a time that works for you</p>
+          <BrandMark variant="public" />
+          <h1 className="font-heading mt-6 text-2xl font-bold text-foreground">Book a lesson</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Pick a time that works for you</p>
         </div>
 
-        {step === 'confirm' ? (
-          <Card>
-            <CardContent className="p-8 text-center space-y-3">
-              <div className="text-4xl">✅</div>
-              <h2 className="text-xl font-semibold">You're booked!</h2>
-              <p className="text-muted-foreground">
-                Your lesson on {selected && format(new Date(selected.starts_at), 'EEEE, MMMM d at h:mm a')} is confirmed.
-              </p>
-              <p className="text-sm text-muted-foreground">See you on the court!</p>
-            </CardContent>
-          </Card>
-        ) : step === 'pick' ? (
-          <Card>
-            <CardHeader><CardTitle>Available times</CardTitle></CardHeader>
-            <CardContent>
-              {slots.length === 0 ? (
-                <p className="text-muted-foreground text-sm text-center py-6">No available slots right now. Check back soon!</p>
+        {/* Progress indicator */}
+        {step !== 'confirm' && (
+          <div className="flex items-center justify-center gap-2">
+            {['pick', 'details'].map((s, i) => (
+              <div key={s} className="flex items-center gap-2">
+                <div
+                  className={cn(
+                    'flex size-6 items-center justify-center rounded-full text-xs font-bold transition-all',
+                    step === s || (step === 'details' && s === 'pick')
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                  )}
+                >
+                  {i + 1}
+                </div>
+                {i === 0 && <div className="h-px w-8 bg-border" />}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Confirmation */}
+        {step === 'confirm' && (
+          <div className="space-y-4 rounded-2xl border border-primary/25 bg-card p-8 text-center">
+            <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-primary/15">
+              <CheckCircle className="size-8 text-primary" />
+            </div>
+            <h2 className="text-xl font-bold text-foreground">You&apos;re booked!</h2>
+            <p className="text-sm text-muted-foreground">
+              Your lesson on{' '}
+              <span className="font-medium text-foreground">
+                {selected && format(new Date(selected.starts_at), 'EEEE, MMMM d at h:mm a')}
+              </span>{' '}
+              is confirmed.
+            </p>
+            <p className="text-sm text-muted-foreground">See you at your lesson!</p>
+          </div>
+        )}
+
+        {/* Pick a slot */}
+        {step === 'pick' && (
+          <div className="overflow-hidden rounded-2xl border border-border bg-card">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Clock className="size-4 text-primary" strokeWidth={2} /> Available times
+              </h2>
+            </div>
+            <div>
+              {loading ? (
+                <p className="px-5 py-8 text-center text-sm text-muted-foreground">Loading available times…</p>
+              ) : slots.length === 0 ? (
+                <div className="space-y-2 px-5 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">No available slots right now.</p>
+                  <p className="text-xs text-muted-foreground">Check back soon or contact your coach directly.</p>
+                </div>
               ) : (
-                <div className="space-y-2">
+                <div className="divide-y divide-border">
                   {slots.map(slot => (
-                    <button key={slot.id} onClick={() => { setSelected(slot); setStep('details') }}
-                      className="w-full text-left p-3 rounded-lg border hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                      <p className="font-medium">{format(new Date(slot.starts_at), 'EEEE, MMMM d')}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {format(new Date(slot.starts_at), 'h:mm a')} – {format(new Date(slot.ends_at), 'h:mm a')}
-                      </p>
+                    <button
+                      key={slot.id}
+                      type="button"
+                      onClick={() => {
+                        setSelected(slot)
+                        setStep('details')
+                      }}
+                      className="group flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-muted/50"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{format(new Date(slot.starts_at), 'EEEE, MMMM d')}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {format(new Date(slot.starts_at), 'h:mm a')} – {format(new Date(slot.ends_at), 'h:mm a')}
+                        </p>
+                      </div>
+                      <ChevronRight className="size-4 text-muted-foreground transition-colors group-hover:text-primary" />
                     </button>
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Your details</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {selected && format(new Date(selected.starts_at), 'EEEE, MMMM d at h:mm a')}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Full name *</Label>
-                <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Jane Smith" />
+            </div>
+          </div>
+        )}
+
+        {/* Details form */}
+        {step === 'details' && (
+          <div className="overflow-hidden rounded-2xl border border-border bg-card">
+            <div className="border-b border-border px-5 py-4">
+              <h2 className="text-sm font-semibold text-foreground">Your details</h2>
+              {selected && <p className="mt-1 text-xs font-medium text-primary">{format(new Date(selected.starts_at), 'EEEE, MMMM d at h:mm a')}</p>}
+            </div>
+            <div className="space-y-4 p-5">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Full name *</label>
+                <input
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  placeholder="Jane Smith"
+                  className={fieldClass}
+                />
               </div>
-              <div className="space-y-2">
-                <Label>Email *</Label>
-                <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="jane@email.com" />
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Email *</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={e => setForm({ ...form, email: e.target.value })}
+                  placeholder="jane@email.com"
+                  className={fieldClass}
+                />
               </div>
-              <div className="space-y-2">
-                <Label>Phone</Label>
-                <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="555-555-5555" />
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Skill level</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['beginner', 'intermediate', 'advanced'] as const).map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setForm({ ...form, skill_level: s })}
+                      className={cn(
+                        'rounded-xl border px-2 py-2.5 text-xs font-medium capitalize transition-colors',
+                        form.skill_level === s
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted'
+                      )}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setStep('pick')}>Back</Button>
-                <Button className="flex-1" onClick={handleBook}
-                  disabled={saving || !form.name || !form.email}>
-                  {saving ? 'Booking...' : 'Confirm booking'}
-                </Button>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Sport</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {sports.map(s => (
+                    <button
+                      key={s.value}
+                      type="button"
+                      onClick={() => setForm({ ...form, sport: s.value })}
+                      className={cn(
+                        'rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition-colors',
+                        form.sport === s.value
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted'
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </CardContent>
-          </Card>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setStep('pick')}
+                  className="flex-1 rounded-xl border border-border bg-muted/40 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBook}
+                  disabled={saving || !form.name || !form.email}
+                  className="flex-1 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-50"
+                >
+                  {saving ? 'Booking…' : 'Confirm booking'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

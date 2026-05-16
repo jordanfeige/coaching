@@ -4,18 +4,16 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { CalendarDays, Users, Dumbbell, Video, LogOut, Trophy } from 'lucide-react'
+import { CalendarDays, Dumbbell, Video, LogOut, Trophy } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 
 const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: Trophy },
-  { href: '/dashboard/schedule', label: 'Schedule', icon: CalendarDays },
-  { href: '/dashboard/players', label: 'Players', icon: Users },
-  { href: '/dashboard/drills', label: 'Drills', icon: Dumbbell },
-  { href: '/dashboard/video', label: 'Video', icon: Video },
+  { href: '/player', label: 'Dashboard', icon: Trophy },
+  { href: '/player/drills', label: 'My Drills', icon: Dumbbell },
+  { href: '/player/videos', label: 'My Videos', icon: Video },
 ]
 
-export default function Sidebar() {
+export default function PlayerSidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
@@ -30,12 +28,11 @@ export default function Sidebar() {
       {/* Desktop sidebar */}
       <aside className="hidden min-h-screen w-64 flex-col border-r border-border bg-card md:flex">
         <div className="border-b border-border p-5">
-          <BrandMark variant="sidebar" href="/dashboard" />
+          <BrandMark variant="sidebar" audience="Player" href="/player" />
         </div>
         <nav className="flex-1 space-y-0.5 p-3">
           {nav.map(({ href, label, icon: Icon }) => {
-            const active =
-              pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+            const active = pathname === href
             return (
               <Link
                 key={href}
@@ -66,24 +63,22 @@ export default function Sidebar() {
 
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-border bg-card px-2 py-2 md:hidden">
-        {nav
-          .filter(n => n.href !== '/dashboard')
-          .map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || pathname.startsWith(href + '/')
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  'flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 transition-colors',
-                  active ? 'text-primary' : 'text-muted-foreground'
-                )}
-              >
-                <Icon size={20} />
-                <span className="text-xs font-medium">{label}</span>
-              </Link>
-            )
-          })}
+        {nav.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                'flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 transition-colors',
+                active ? 'text-primary' : 'text-muted-foreground'
+              )}
+            >
+              <Icon size={20} />
+              <span className="text-xs font-medium">{label}</span>
+            </Link>
+          )
+        })}
         <button
           onClick={handleSignOut}
           className="flex flex-col items-center gap-0.5 px-3 py-1.5 text-muted-foreground"

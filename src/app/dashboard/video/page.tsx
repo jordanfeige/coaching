@@ -22,8 +22,8 @@ export default function VideoPage() {
   const [openUpload, setOpenUpload] = useState(false)
   const [openRecord, setOpenRecord] = useState(false)
   const [openPlay, setOpenPlay] = useState<any>(null)
-  const [uploadForm, setUploadForm] = useState({ player_id: '', title: '', file: null as File | null })
-  const [recordForm, setRecordForm] = useState({ player_id: '', title: '' })
+  const [uploadForm, setUploadForm] = useState<{ player_id: string | null, title: string, file: File | null }>({ player_id: '', title: '', file: null })
+  const [recordForm, setRecordForm] = useState<{ player_id: string | null, title: string }>({ player_id: '', title: '' })
   const [recordingTime, setRecordingTime] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const playbackRef = useRef<HTMLVideoElement>(null)
@@ -130,7 +130,7 @@ export default function VideoPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Video</h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">Video</h1>
           <p className="text-muted-foreground mt-1">Record and review player footage</p>
         </div>
         <div className="flex gap-2">
@@ -153,9 +153,11 @@ export default function VideoPage() {
           {videos.map(video => (
             <Card key={video.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-4 space-y-3">
-                <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center cursor-pointer hover:bg-gray-800 transition-colors"
-                  onClick={() => handlePlay(video)}>
-                  <Play size={32} className="text-white opacity-70" />
+                <div
+                  className="flex aspect-video cursor-pointer items-center justify-center rounded-lg bg-black/90 transition-colors hover:bg-black"
+                  onClick={() => handlePlay(video)}
+                >
+                  <Play size={32} className="text-white opacity-80" />
                 </div>
                 <div>
                   <p className="font-medium text-sm">{video.title}</p>
@@ -222,7 +224,7 @@ export default function VideoPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>Record video</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="aspect-video bg-gray-900 rounded-lg overflow-hidden relative">
+            <div className="relative aspect-video overflow-hidden rounded-lg bg-black">
               <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
               {recording && (
                 <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 text-white text-sm px-3 py-1 rounded-full">

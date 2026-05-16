@@ -19,7 +19,7 @@ export default function DrillsPage() {
   const [filter, setFilter] = useState('all')
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ player_id: '', title: '', description: '', is_template: false })
+  const [form, setForm] = useState<{ player_id: string | null, title: string, description: string, is_template: boolean }>({ player_id: '', title: '', description: '', is_template: false })
   const supabase = createClient()
 
   useEffect(() => { loadAll() }, [])
@@ -64,7 +64,7 @@ export default function DrillsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Drills</h1>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">Drills</h1>
           <p className="text-muted-foreground mt-1">{drills.length} drill{drills.length !== 1 ? 's' : ''} total</p>
         </div>
         <Button onClick={() => setOpen(true)} className="flex items-center gap-2">

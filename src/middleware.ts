@@ -21,15 +21,55 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/login', request.url))
+    if (!user) {
+      if (
+        request.nextUrl.pathname.startsWith('/dashboard') ||
+        request.nextUrl.pathname.startsWith('/player')
+      ) {
+        return NextResponse.redirect(new URL('/login', request.url))
+      }
+      return supabaseResponse
+    }
+
+    // Get role from profiles
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    const role = profile?.role || 'player'
+    const isCoach = role === 'coach'
+    const isPlayer = role === 'player'
+    const onDashboard = request.nextUrl.pathname.startsWith('/dashboard')
+    const onPlayer = request.nextUrl.pathname.startsWith('/player')
+
+    // Player trying to access coach dashboard → redirect to player portal
+    if (isPlayer && onDashboard) {
+      return NextResponse.redirect(new URL('/player', request.url))
+    }
+
+    // Coach trying to access player portal → redirect to dashboard
+    if (isCoach && onPlayer) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
+  } catch {
+    const response = NextResponse.redirect(new URL('/login', request.url))
+    request.cookies.getAll().forEach(cookie => {
+      if (cookie.name.includes('supabase')) {
+        response.cookies.delete(cookie.name)
+      }
+    })
+    return response
   }
 
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/player/:path*'],
 }
