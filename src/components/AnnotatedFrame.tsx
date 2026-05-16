@@ -10,7 +10,8 @@ type Annotation = {
 }
 
 type Props = {
-  videoUrl: string
+  videoUrl?: string | null
+  imageUrl?: string | null
   annotations: Annotation[]
   className?: string
 }
@@ -21,43 +22,33 @@ const COLORS = {
   error: { stroke: '#dc2626', fill: '#dc262640', text: '#b91c1c' },
 }
 
-export default function AnnotatedFrame({ videoUrl, annotations, className }: Props) {
+export default function AnnotatedFrame({ videoUrl, imageUrl, annotations, className }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    if (!videoUrl || !annotations?.length) return
+    if ((!videoUrl && !imageUrl) || !annotations?.length) return
 
-    const video = document.createElement('video')
-    video.crossOrigin = 'anonymous'
-    video.src = videoUrl
-    video.currentTime = 1.5
-
-    video.onloadeddata = () => {
+    function draw(source: CanvasImageSource, width: number, height: number) {
       const canvas = canvasRef.current
       if (!canvas) return
 
-      canvas.width = video.videoWidth || 640
-      canvas.height = video.videoHeight || 360
+      canvas.width = width || 640
+      canvas.height = height || 360
 
       const ctx = canvas.getContext('2d')
       if (!ctx) return
 
-      // Draw video frame
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-      // Draw semi-transparent overlay
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
       ctx.fillStyle = 'rgba(0,0,0,0.15)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-      // Draw each annotation
       annotations.forEach(ann => {
         const x = ann.x * canvas.width
         const y = ann.y * canvas.height
         const colors = COLORS[ann.issue] || COLORS.warning
 
-        // Draw dot
         ctx.beginPath()
         ctx.arc(x, y, 8, 0, Math.PI * 2)
         ctx.fillStyle = colors.fill
@@ -66,7 +57,6 @@ export default function AnnotatedFrame({ videoUrl, annotations, className }: Pro
         ctx.lineWidth = 2
         ctx.stroke()
 
-        // Draw pulse ring
         ctx.beginPath()
         ctx.arc(x, y, 14, 0, Math.PI * 2)
         ctx.strokeStyle = colors.stroke
@@ -75,7 +65,6 @@ export default function AnnotatedFrame({ videoUrl, annotations, className }: Pro
         ctx.stroke()
         ctx.globalAlpha = 1
 
-        // Draw label box
         const label = ann.label
         ctx.font = 'bold 11px system-ui, sans-serif'
         const textWidth = ctx.measureText(label).width
@@ -83,7 +72,7 @@ export default function AnnotatedFrame({ videoUrl, annotations, className }: Pro
         const boxWidth = textWidth + boxPad * 2
         const boxHeight = 20
         const boxX = Math.min(x + 18, canvas.width - boxWidth - 4)
-        const boxY = y - boxHeight / 2
+        const boxY = Math.max(Math.min(y - boxHeight / 2, canvas.height - boxHeight - 4), 4)
 
         ctx.fillStyle = 'rgba(0,0,0,0.75)'
         ctx.beginPath()
@@ -99,7 +88,6 @@ export default function AnnotatedFrame({ videoUrl, annotations, className }: Pro
         ctx.fillStyle = colors.text
         ctx.fillText(label, boxX + boxPad, boxY + 13)
 
-        // Draw line from dot to label
         ctx.beginPath()
         ctx.moveTo(x + 8, y)
         ctx.lineTo(boxX, y)
@@ -113,9 +101,27 @@ export default function AnnotatedFrame({ videoUrl, annotations, className }: Pro
       setLoaded(true)
     }
 
+    if (imageUrl) {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => draw(img, img.naturalWidth, img.naturalHeight)
+      img.onerror = () => setError(true)
+      img.src = imageUrl
+      return
+    }
+
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.src = videoUrl || ''
+    video.currentTime = 1.5
+
+    video.onloadeddata = () => {
+      draw(video, video.videoWidth || 640, video.videoHeight || 360)
+    }
+
     video.onerror = () => setError(true)
     video.load()
-  }, [videoUrl, annotations])
+  }, [videoUrl, imageUrl, annotations])
 
   if (error) return null
 

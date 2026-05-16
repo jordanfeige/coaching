@@ -25,7 +25,7 @@ export default function SignupPage() {
       setError(error.message)
       setLoading(false)
     } else {
-      router.push('/parent')
+      router.push('/player')
     }
   }
 
@@ -33,7 +33,7 @@ export default function SignupPage() {
     <div className="flex min-h-screen bg-background">
       <div className="hidden w-1/2 flex-col justify-between border-r border-border bg-muted/40 p-12 lg:flex">
         <div>
-          <BrandMark variant="authHero" audience="Parents & guardians" />
+          <BrandMark variant="authHero" audience="Athletes & families" />
           <h1 className="font-heading mt-10 text-4xl leading-tight font-bold text-foreground md:text-5xl">
             Follow your athlete&apos;s
             <br />
@@ -60,12 +60,12 @@ export default function SignupPage() {
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="mb-10 lg:hidden">
-            <BrandMark variant="authPanel" audience="Parents & guardians" className="mx-auto max-w-sm text-center" />
+            <BrandMark variant="authPanel" audience="Athletes & families" className="mx-auto max-w-sm text-center" />
           </div>
           <div className="mb-8">
             <h2 className="font-heading mb-2 text-2xl font-bold text-foreground">Create your account</h2>
             <p className="text-sm text-muted-foreground">
-              Sign up to access the parent portal — schedules, notes, and updates from your coach.
+              Sign up for your athlete portal — schedules, drills, videos, and coach notes (one login for you or your family).
             </p>
           </div>
           <form onSubmit={handleSignup} className="space-y-4">

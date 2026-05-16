@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
 import PlayerSidebar from '@/components/layout/PlayerSidebar'
 import VideoAnalysisDialog, {
   analysisPreviewHeadline,
@@ -10,9 +11,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Video, Sparkles, Upload } from 'lucide-react'
 import { format } from 'date-fns'
+import { analysisFramePreviews, extractVideoFrames } from '@/lib/video-frames'
 
 export default function PlayerVideosPage() {
-  const [player, setPlayer] = useState<any>(null)
+  const [players, setPlayers] = useState<LinkedPlayer[]>([])
+  const [selectedPlayerId, setSelectedPlayerId] = useState('all')
+  const [uploadPlayerId, setUploadPlayerId] = useState('')
   const [videos, setVideos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [analyzingVideo, setAnalyzingVideo] = useState<string | null>(null)
@@ -23,7 +27,6 @@ export default function PlayerVideosPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploading, setUploading] = useState(false)
-  const [sport, setSport] = useState('tennis')
   const supabase = createClient()
 
   useEffect(() => {
@@ -35,15 +38,15 @@ export default function PlayerVideosPage() {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user) return
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-    if (profile?.player_id) {
-      const { data: p } = await supabase.from('players').select('*').eq('id', profile.player_id).single()
-      setPlayer(p)
-      setSport(p?.sport || 'tennis')
+    const linkedPlayers = await getLinkedPlayersForUser(supabase, user.id)
+    setPlayers(linkedPlayers)
+    if (linkedPlayers.length) {
+      setUploadPlayerId(linkedPlayers[0].id)
+      const playerIds = linkedPlayers.map(p => p.id)
       const { data: v } = await supabase
         .from('videos')
-        .select('*')
-        .eq('player_id', profile.player_id)
+        .select('*, players(id, name, sport)')
+        .in('player_id', playerIds)
         .order('recorded_at', { ascending: false })
       setVideos(v || [])
     }
@@ -72,13 +75,14 @@ export default function PlayerVideosPage() {
         return
       }
       setVideoUrls(prev => ({ ...prev, [video.id]: url }))
+      const frames = await extractVideoFrames(url)
       const apiRes = await fetch('/api/video-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoUrl: url,
-          playerName: player?.name,
-          sport,
+          frames: frames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })),
+          playerName: video.players?.name,
+          sport: video.players?.sport || 'tennis',
           cameraAngle: 'side-on',
         }),
       })
@@ -87,6 +91,7 @@ export default function PlayerVideosPage() {
         alert(`Analysis failed: ${analysis.error}`)
         return
       }
+      analysis.frame_previews = analysisFramePreviews(frames)
       await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
       setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
       loadData()
@@ -98,14 +103,14 @@ export default function PlayerVideosPage() {
   }
 
   async function handleUpload() {
-    if (!uploadFile || !player) return
+    if (!uploadFile || !uploadPlayerId) return
     setUploading(true)
     const ext = uploadFile.name.split('.').pop()
-    const path = `${player.id}/${Date.now()}.${ext}`
+    const path = `${uploadPlayerId}/${Date.now()}.${ext}`
     await supabase.storage.from('videos').upload(path, uploadFile)
     await supabase
       .from('videos')
-      .insert({ player_id: player.id, storage_path: path, title: uploadTitle || uploadFile.name })
+      .insert({ player_id: uploadPlayerId, storage_path: path, title: uploadTitle || uploadFile.name })
     setUploadFile(null)
     setUploadTitle('')
     setShowUpload(false)
@@ -117,6 +122,8 @@ export default function PlayerVideosPage() {
     const url = await getVideoUrl(video.storage_path)
     window.open(url, '_blank')
   }
+
+  const filteredVideos = selectedPlayerId === 'all' ? videos : videos.filter(v => v.player_id === selectedPlayerId)
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -134,9 +141,44 @@ export default function PlayerVideosPage() {
           </Button>
         </div>
 
+        {players.length > 1 && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedPlayerId('all')}
+              className={`rounded-xl border px-3 py-2 text-sm font-medium ${selectedPlayerId === 'all' ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground'}`}
+            >
+              All
+            </button>
+            {players.map(player => (
+              <button
+                key={player.id}
+                type="button"
+                onClick={() => setSelectedPlayerId(player.id)}
+                className={`rounded-xl border px-3 py-2 text-sm font-medium ${selectedPlayerId === player.id ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground'}`}
+              >
+                {player.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {showUpload && (
           <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
             <h3 className="text-sm font-semibold text-foreground">Upload a practice video</h3>
+            {players.length > 1 && (
+              <select
+                value={uploadPlayerId}
+                onChange={e => setUploadPlayerId(e.target.value)}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm text-foreground"
+              >
+                {players.map(player => (
+                  <option key={player.id} value={player.id}>
+                    {player.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               type="file"
               accept="video/*"
@@ -153,7 +195,7 @@ export default function PlayerVideosPage() {
               <Button type="button" variant="outline" onClick={() => setShowUpload(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={handleUpload} disabled={uploading || !uploadFile}>
+              <Button type="button" onClick={handleUpload} disabled={uploading || !uploadFile || !uploadPlayerId}>
                 {uploading ? 'Uploading...' : 'Upload'}
               </Button>
             </div>
@@ -162,14 +204,14 @@ export default function PlayerVideosPage() {
 
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : videos.length === 0 ? (
+        ) : filteredVideos.length === 0 ? (
           <div className="py-16 text-center text-muted-foreground">
             <Video size={40} className="mx-auto mb-3 opacity-25" />
             <p className="text-sm">No videos yet. Upload your first practice video!</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {videos.map(video => {
+            {filteredVideos.map(video => {
               const analysis =
                 videoAnalysis[video.id] ||
                 (video.ai_analysis ? JSON.parse(video.ai_analysis as string) : null)
@@ -204,13 +246,14 @@ export default function PlayerVideosPage() {
                     <div>
                       <p className="text-sm font-medium text-foreground">{video.title}</p>
                       <p className="text-xs text-muted-foreground">
+                        {video.players?.name && players.length > 1 ? `${video.players.name} · ` : ''}
                         {format(new Date(video.recorded_at), 'MMM d, yyyy • h:mm a')}
                       </p>
                     </div>
                     {isAnalyzing && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Sparkles size={12} className="animate-pulse text-primary" />
-                        Sending your clip to Gemini…
+                        Extracting key frames and analyzing…
                       </div>
                     )}
                     {analysis && !isAnalyzing && (

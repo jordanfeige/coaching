@@ -23,6 +23,7 @@ import VideoAnalysisDialog, {
   issueSeverityCounts,
 } from '@/components/video/VideoAnalysisDialog'
 import { cn } from '@/lib/utils'
+import { analysisFramePreviews, extractVideoFrames } from '@/lib/video-frames'
 
 /** Legacy rows may still store `baseball`; treat as pickleball for focuses / AI. */
 function normalizeSportKey(s?: string | null): string {
@@ -203,20 +204,24 @@ export default function PlayerDetailPage() {
         return
       }
       setVideoUrls(prev => ({ ...prev, [video.id]: url }))
+      const frames = await extractVideoFrames(url)
 
       const compareUrl = compareVideo ? await getVideoUrl(compareVideo.storage_path) : undefined
       if (compareVideo && !compareUrl) {
         alert('Could not access the comparison video. Reload and try again.')
         return
       }
+      const compareFrames = compareUrl ? await extractVideoFrames(compareUrl, { count: 6 }) : undefined
       const playerHistory = entries.slice(0, 3).map(e => e.content).join('\n---\n')
 
       const apiRes = await fetch('/api/video-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoUrl: url,
-          ...(compareUrl ? { compareVideoUrl: compareUrl } : {}),
+          frames: frames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })),
+          ...(compareFrames
+            ? { compareFrames: compareFrames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })) }
+            : {}),
           playerName: player?.name,
           sport: normalizeSportKey(player?.sport) || 'tennis',
           playerHistory,
@@ -229,6 +234,8 @@ export default function PlayerDetailPage() {
         alert(`Analysis failed: ${analysis.error}`)
         return
       }
+      analysis.frame_previews = analysisFramePreviews(frames)
+      if (compareFrames) analysis.compare_frame_previews = analysisFramePreviews(compareFrames)
       await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
       setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
     } catch (e: any) {
@@ -670,7 +677,7 @@ export default function PlayerDetailPage() {
                         {isAnalyzing && (
                           <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
                             <Sparkles size={12} className="animate-pulse text-primary" />
-                            Sending video to Gemini for analysis…
+                            Extracting key frames and analyzing…
                           </div>
                         )}
 

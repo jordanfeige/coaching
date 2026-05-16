@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { format, startOfWeek, addDays, isSameDay, setHours } from 'date-fns'
 import { CalendarPlus, Clock, Link2, User } from 'lucide-react'
@@ -23,11 +23,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { BOOKING_TIERS, bookingTierConfig, bookingTierLabel, type BookingTier } from '@/lib/booking'
 
 const HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
 
 type CellAction = { day: Date; hour: number; x: number; y: number }
-type LessonForm = { player_id: string | null; duration_mins: string | null; notes: string }
+type LessonForm = { player_ids: string[]; duration_mins: string | null; notes: string; booking_tier: BookingTier }
 
 function hourLabel(hour: number) {
   if (hour === 12) return '12pm'
@@ -44,7 +45,7 @@ export default function SchedulePage() {
   const [cellAction, setCellAction] = useState<CellAction | null>(null)
   const [lessonModal, setLessonModal] = useState<{ day: Date; hour: number } | null>(null)
   const [selectedSlot, setSelectedSlot] = useState<any>(null)
-  const [lessonForm, setLessonForm] = useState<LessonForm>({ player_id: null, duration_mins: '60', notes: '' })
+  const [lessonForm, setLessonForm] = useState<LessonForm>({ player_ids: [], duration_mins: '60', notes: '', booking_tier: 'private' })
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
   const supabase = createClient()
@@ -90,31 +91,37 @@ export default function SchedulePage() {
   function handleAddLesson(day: Date, hour: number) {
     setCellAction(null)
     setLessonModal({ day, hour })
-    setLessonForm({ player_id: null, duration_mins: '60', notes: '' })
+    setLessonForm({ player_ids: [], duration_mins: '60', notes: '', booking_tier: 'private' })
   }
 
-  async function handleAddSlot(day: Date, hour: number) {
+  async function handleAddSlot(day: Date, hour: number, booking_tier: BookingTier) {
     setCellAction(null)
     setSaving(true)
+    const tier = bookingTierConfig(booking_tier)
     await supabase.from('availability').insert({
       starts_at: setHours(day, hour).toISOString(),
       ends_at: setHours(day, hour + 1).toISOString(),
       is_booked: false,
+      booking_tier,
+      max_players: tier.maxPlayers,
     })
     setSaving(false)
     loadAll()
   }
 
   async function saveLesson() {
-    if (!lessonModal || !lessonForm.player_id) return
+    if (!lessonModal || lessonForm.player_ids.length === 0) return
     setSaving(true)
-    await supabase.from('lessons').insert({
-      player_id: lessonForm.player_id,
+    const bookingGroupId = crypto.randomUUID()
+    await supabase.from('lessons').insert(lessonForm.player_ids.map(playerId => ({
+      player_id: playerId,
       starts_at: setHours(lessonModal.day, lessonModal.hour).toISOString(),
       duration_mins: parseInt(lessonForm.duration_mins ?? '60'),
       status: 'scheduled',
       notes: lessonForm.notes,
-    })
+      booking_group_id: bookingGroupId,
+      booking_tier: lessonForm.booking_tier,
+    })))
     setLessonModal(null)
     setSaving(false)
     loadAll()
@@ -133,9 +140,29 @@ export default function SchedulePage() {
   }
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+  const groupedLessons = useMemo(() => {
+    const groups = new Map<string, any>()
+    for (const lesson of lessons) {
+      const key = lesson.booking_group_id || lesson.id
+      const existing = groups.get(key)
+      const player = lesson.players
+      if (existing) {
+        existing.lessons.push(lesson)
+        if (player?.name) existing.playerNames.push(player.name)
+      } else {
+        groups.set(key, {
+          ...lesson,
+          lessons: [lesson],
+          playerNames: player?.name ? [player.name] : [],
+          firstLessonId: lesson.id,
+        })
+      }
+    }
+    return [...groups.values()]
+  }, [lessons])
 
   function getLessonForCell(day: Date, hour: number) {
-    return lessons.find(l => {
+    return groupedLessons.find(l => {
       const d = new Date(l.starts_at)
       return isSameDay(d, day) && d.getHours() === hour
     })
@@ -266,7 +293,7 @@ export default function SchedulePage() {
                           setSelectedSlot(slot)
                         }}
                       >
-                        <p className="text-xs font-semibold text-primary">Open slot</p>
+                        <p className="text-xs font-semibold text-primary">{bookingTierLabel(slot.booking_tier)} slot</p>
                         <p className="text-xs text-muted-foreground">{format(new Date(slot.starts_at), 'h:mm a')}</p>
                       </button>
                     )}
@@ -284,10 +311,14 @@ export default function SchedulePage() {
                         }}
                         onClick={e => {
                           e.stopPropagation()
-                          router.push(`/dashboard/lessons/${lesson.id}`)
+                          router.push(`/dashboard/lessons/${lesson.firstLessonId || lesson.id}`)
                         }}
                       >
-                        <p className="truncate text-xs font-bold">{lesson.players?.name?.split(' ')[0]}</p>
+                        <p className="truncate text-xs font-bold">
+                          {lesson.playerNames?.length > 1
+                            ? `${lesson.playerNames[0].split(' ')[0]} + ${lesson.playerNames.length - 1}`
+                            : lesson.playerNames?.[0]?.split(' ')[0] || lesson.players?.name?.split(' ')[0]}
+                        </p>
                         <p
                           className={cn(
                             'text-xs opacity-90',
@@ -296,6 +327,9 @@ export default function SchedulePage() {
                         >
                           {format(new Date(lesson.starts_at), 'h:mm a')} · {lesson.duration_mins}m
                         </p>
+                        {lesson.playerNames?.length > 1 && (
+                          <p className="truncate text-[10px] opacity-90">{bookingTierLabel(lesson.booking_tier)}</p>
+                        )}
                       </button>
                     )}
                   </div>
@@ -309,7 +343,7 @@ export default function SchedulePage() {
       {/* Mobile day list */}
       <div className="space-y-3 md:hidden">
         {weekDays.map(day => {
-          const dayLessons = lessons.filter(l => isSameDay(new Date(l.starts_at), day))
+          const dayLessons = groupedLessons.filter(l => isSameDay(new Date(l.starts_at), day))
           const daySlots = availability.filter(a => isSameDay(new Date(a.starts_at), day))
           const isToday = isSameDay(day, new Date())
           return (
@@ -341,7 +375,7 @@ export default function SchedulePage() {
                       onClick={() => setSelectedSlot(slot)}
                     >
                       <span className="size-2 shrink-0 rounded-full bg-primary" />
-                      <span className="text-xs font-medium text-primary">Open slot</span>
+                      <span className="text-xs font-medium text-primary">{bookingTierLabel(slot.booking_tier)} slot</span>
                       <span className="text-xs text-muted-foreground">{format(new Date(slot.starts_at), 'h:mm a')}</span>
                     </button>
                   ))}
@@ -350,14 +384,18 @@ export default function SchedulePage() {
                       key={lesson.id}
                       type="button"
                       className="flex w-full items-center justify-between border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted/40"
-                      onClick={() => router.push(`/dashboard/lessons/${lesson.id}`)}
+                      onClick={() => router.push(`/dashboard/lessons/${lesson.firstLessonId || lesson.id}`)}
                     >
                       <div className="flex items-center gap-3">
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-                          {lesson.players?.name?.charAt(0)}
+                          {(lesson.playerNames?.[0] || lesson.players?.name || '?').charAt(0)}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-foreground">{lesson.players?.name?.split(' ')[0]}</p>
+                          <p className="text-sm font-medium text-foreground">
+                            {lesson.playerNames?.length > 1
+                              ? `${lesson.playerNames[0].split(' ')[0]} + ${lesson.playerNames.length - 1}`
+                              : lesson.playerNames?.[0]?.split(' ')[0] || lesson.players?.name?.split(' ')[0]}
+                          </p>
                           <p className="text-xs text-muted-foreground">
                             {format(new Date(lesson.starts_at), 'h:mm a')} · {lesson.duration_mins} min
                           </p>
@@ -419,16 +457,21 @@ export default function SchedulePage() {
             <User className="size-4" />
             Book lesson
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full gap-2 rounded-xl border-primary/30 bg-primary/[0.04] text-primary hover:bg-primary/10"
-            size="sm"
-            onClick={() => handleAddSlot(cellAction.day, cellAction.hour)}
-          >
-            <Clock className="size-4" />
-            Mark open slot
-          </Button>
+          <div className="space-y-1.5">
+            {BOOKING_TIERS.map(tier => (
+              <Button
+                key={tier.value}
+                type="button"
+                variant="outline"
+                className="w-full justify-start gap-2 rounded-xl border-primary/30 bg-primary/[0.04] text-primary hover:bg-primary/10"
+                size="sm"
+                onClick={() => handleAddSlot(cellAction.day, cellAction.hour, tier.value)}
+              >
+                <Clock className="size-4" />
+                Open {tier.label}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -443,22 +486,61 @@ export default function SchedulePage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Player</Label>
-              <Select
-                value={lessonForm.player_id ?? ''}
-                onValueChange={v => setLessonForm({ ...lessonForm, player_id: v })}
-              >
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue placeholder="Select a player…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {players.map(p => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name.split(' ')[0]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Lesson type</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {BOOKING_TIERS.map(tier => (
+                  <button
+                    key={tier.value}
+                    type="button"
+                    onClick={() => setLessonForm({ ...lessonForm, booking_tier: tier.value, player_ids: [] })}
+                    className={cn(
+                      'rounded-xl border px-2 py-2 text-xs font-semibold transition-colors',
+                      lessonForm.booking_tier === tier.value
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted'
+                    )}
+                  >
+                    {tier.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Players</Label>
+              <div className="grid max-h-48 gap-2 overflow-y-auto pr-1">
+                {players.map(p => {
+                  const selected = lessonForm.player_ids.includes(p.id)
+                  const maxPlayers = bookingTierConfig(lessonForm.booking_tier).maxPlayers
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() =>
+                        setLessonForm(prev => ({
+                          ...prev,
+                          player_ids: selected
+                            ? prev.player_ids.filter(id => id !== p.id)
+                            : prev.player_ids.length < maxPlayers
+                              ? [...prev.player_ids, p.id]
+                              : prev.player_ids,
+                        }))
+                      }
+                      className={cn(
+                        'rounded-xl border px-3 py-2 text-left text-sm transition-colors',
+                        selected
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-muted/40 text-foreground hover:bg-muted'
+                      )}
+                    >
+                      {p.name}
+                      {p.age ? <span className="ml-1 opacity-75">· {p.age}</span> : null}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {lessonForm.player_ids.length}/{bookingTierConfig(lessonForm.booking_tier).maxPlayers} selected
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Duration</Label>
@@ -493,7 +575,7 @@ export default function SchedulePage() {
             <Button variant="outline" className="rounded-xl" onClick={() => setLessonModal(null)}>
               Cancel
             </Button>
-            <Button className="rounded-xl" onClick={saveLesson} disabled={saving || !lessonForm.player_id}>
+            <Button className="rounded-xl" onClick={saveLesson} disabled={saving || lessonForm.player_ids.length === 0}>
               {saving ? 'Saving…' : 'Book lesson'}
             </Button>
           </DialogFooter>

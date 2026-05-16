@@ -18,9 +18,12 @@ export default function SetPasswordPage() {
   const [userEmail, setUserEmail] = useState('')
   const router = useRouter()
   const supabase = createClient()
+  const [nextPath, setNextPath] = useState('/player')
 
   useEffect(() => {
     async function handleToken() {
+      const next = new URLSearchParams(window.location.search).get('next')
+      if (next?.startsWith('/')) setNextPath(next)
       const hash = window.location.hash
       const params = new URLSearchParams(hash.replace('#', ''))
       const accessToken = params.get('access_token')
@@ -86,7 +89,7 @@ export default function SetPasswordPage() {
       if (profile?.role === 'coach') {
         router.push('/dashboard')
       } else {
-        router.push('/player')
+        router.push(nextPath)
       }
     }
   }

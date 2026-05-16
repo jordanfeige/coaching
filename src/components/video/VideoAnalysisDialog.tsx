@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import AnnotatedFrame from '@/components/AnnotatedFrame'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -42,6 +42,23 @@ export function issueSeverityCounts(analysis: Record<string, unknown> | null | u
 }
 
 type TabKey = 'overview' | 'issues' | 'notes'
+type FramePreview = { index: number; timestamp?: number; dataUrl: string }
+type AnalysisIssue = {
+  area?: string
+  severity?: string
+  description?: string
+  drill?: string
+  drill_instruction?: string
+  drill_media_ref?: string
+}
+type AnalysisAnnotation = {
+  frame_index?: number
+  label: string
+  issue: 'good' | 'warning' | 'error'
+  x: number
+  y: number
+  note: string
+}
 
 function tabBtn(active: boolean) {
   return cn(
@@ -56,7 +73,7 @@ function confidenceVariant(c: string): 'default' | 'secondary' | 'destructive' |
   return 'destructive'
 }
 
-function renderIssuesGrouped(issues: any[]) {
+function renderIssuesGrouped(issues: Array<AnalysisIssue | string>) {
   if (!issues?.length) return <p className="text-sm text-muted-foreground">No structured issues returned.</p>
   const bySev = ['critical', 'moderate', 'minor'] as const
   const labels = { critical: 'Critical', moderate: 'Moderate', minor: 'Minor' }
@@ -68,34 +85,66 @@ function renderIssuesGrouped(issues: any[]) {
   return (
     <div className="space-y-4">
       {bySev.map(sev => {
-        const filtered = issues.filter((a: any) => (typeof a === 'string' ? 'moderate' : a?.severity) === sev)
+        const filtered = issues.filter(a => (typeof a === 'string' ? 'moderate' : a?.severity) === sev)
         if (!filtered.length) return null
         return (
           <div key={sev}>
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{labels[sev]}</p>
             <div className="space-y-2">
-              {filtered.map((issue: any, i: number) => (
-                <div key={i} className={cn('rounded-lg border p-3', ring[sev])}>
-                  <p className="font-semibold text-foreground">{typeof issue === 'string' ? issue : issue.area}</p>
-                  {issue.description && (
-                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{issue.description}</p>
-                  )}
-                  {(issue.drill || issue.drill_instruction) && (
-                    <div className="mt-3 border-t border-border pt-3">
-                      {issue.drill && (
-                        <p className="text-sm font-semibold text-primary">Drill: {issue.drill}</p>
-                      )}
-                      {issue.drill_instruction && (
-                        <p className="mt-1 text-sm text-muted-foreground">{issue.drill_instruction}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+              {filtered.map((issue, i) => {
+                const detail = typeof issue === 'string' ? null : issue
+                return (
+                  <div key={i} className={cn('rounded-lg border p-3', ring[sev])}>
+                    <p className="font-semibold text-foreground">
+                      {detail?.area || (typeof issue === 'string' ? issue : 'Technique issue')}
+                    </p>
+                    {detail?.description && (
+                      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{detail.description}</p>
+                    )}
+                    {(detail?.drill || detail?.drill_instruction) && (
+                      <div className="mt-3 border-t border-border pt-3">
+                        {detail.drill && (
+                          <p className="text-sm font-semibold text-primary">Drill: {detail.drill}</p>
+                        )}
+                        {detail.drill_media_ref && (
+                          <Badge variant="outline" className="mt-2">
+                            Media: {detail.drill_media_ref}
+                          </Badge>
+                        )}
+                        {detail.drill_instruction && (
+                          <p className="mt-1 text-sm text-muted-foreground">{detail.drill_instruction}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function renderRecommendedDrills(analysis: Record<string, unknown>) {
+  const drills = Array.isArray(analysis.recommended_drills) ? analysis.recommended_drills : []
+  if (!drills.length) return null
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-semibold text-foreground">Recommended drill media</h4>
+      <div className="grid gap-2">
+        {(drills as Array<{ title?: string; focus?: string; description?: string; media_ref?: string }>).map((drill, i) => (
+          <div key={i} className="rounded-xl border border-border bg-muted/30 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-foreground">{drill.title || 'Recommended drill'}</p>
+              {drill.media_ref && <Badge variant="outline">{drill.media_ref}</Badge>}
+            </div>
+            {drill.focus && <p className="mt-1 text-xs font-medium text-primary">{drill.focus}</p>}
+            {drill.description && <p className="mt-1 text-sm text-muted-foreground">{drill.description}</p>}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -117,10 +166,6 @@ export default function VideoAnalysisDialog({
 }) {
   const [tab, setTab] = useState<TabKey>('overview')
 
-  useEffect(() => {
-    if (open) setTab('overview')
-  }, [open])
-
   const isComparison = !!(analysis?.observations_old || analysis?.improvements)
 
   const bullets = Array.isArray(analysis?.overview_bullets)
@@ -133,15 +178,25 @@ export default function VideoAnalysisDialog({
   ]
 
   const annotations =
-    Array.isArray(analysis?.annotations) && videoUrl
-      ? (analysis!.annotations as { label: string; issue: 'good' | 'warning' | 'error'; x: number; y: number; note: string }[])
+    Array.isArray(analysis?.annotations)
+      ? (analysis!.annotations as AnalysisAnnotation[])
       : []
+  const framePreviews = Array.isArray(analysis?.frame_previews)
+    ? (analysis!.frame_previews as FramePreview[])
+    : []
+  const keyFrames = Array.isArray(analysis?.key_frames)
+    ? (analysis!.key_frames as Array<{ frame_index?: number; timestamp_label?: string; reason?: string }>)
+    : []
+  const displayedFrames =
+    keyFrames.length > 0
+      ? framePreviews.filter(frame => keyFrames.some(k => k.frame_index === frame.index))
+      : framePreviews.slice(0, 4)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton
-        className="flex max-h-[min(92vh,900px)] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        className="flex max-h-[min(92vh,920px)] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
       >
         <DialogHeader className="border-b border-border px-5 py-4 text-left">
           <DialogTitle className="pr-8 text-lg">{title || 'Analysis'}</DialogTitle>
@@ -154,7 +209,46 @@ export default function VideoAnalysisDialog({
           ) : (
             <>
               {videoUrl && (
-                <video src={videoUrl} controls playsInline className="mb-4 w-full rounded-lg bg-black" />
+                <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
+                  <video src={videoUrl} controls playsInline className="w-full rounded-lg bg-black" />
+                  <div className="rounded-xl border border-border bg-muted/20 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-semibold text-foreground">Annotated key frames</h4>
+                      {framePreviews.length > 0 && (
+                        <Badge variant="secondary">{framePreviews.length} frames analyzed</Badge>
+                      )}
+                    </div>
+                    {displayedFrames.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Run frame-based analysis to see key frames.</p>
+                    ) : (
+                      <div className="grid gap-3">
+                        {displayedFrames.map(frame => {
+                          const frameAnnotations = annotations.filter(a => (a.frame_index ?? frame.index) === frame.index)
+                          const key = keyFrames.find(k => k.frame_index === frame.index)
+                          return (
+                            <div key={frame.index} className="space-y-2">
+                              {frameAnnotations.length > 0 ? (
+                                <AnnotatedFrame
+                                  imageUrl={frame.dataUrl}
+                                  annotations={frameAnnotations}
+                                  className="overflow-hidden rounded-lg"
+                                />
+                              ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={frame.dataUrl} alt={`Frame ${frame.index}`} className="w-full rounded-lg" />
+                              )}
+                              <p className="text-xs text-muted-foreground">
+                                Frame {frame.index}
+                                {typeof frame.timestamp === 'number' ? ` · ${frame.timestamp.toFixed(1)}s` : ''}
+                                {key?.reason ? ` · ${key.reason}` : ''}
+                              </p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
 
               <div className="mb-4 flex gap-1 rounded-lg bg-muted p-1">
@@ -242,7 +336,7 @@ export default function VideoAnalysisDialog({
                     </div>
                   ) : null}
 
-                  {annotations.length > 0 && videoUrl && (
+                  {annotations.length > 0 && framePreviews.length === 0 && videoUrl && (
                     <div>
                       <h4 className="mb-2 text-sm font-semibold text-foreground">Key frame cues</h4>
                       <AnnotatedFrame videoUrl={videoUrl} annotations={annotations} className="max-h-72 w-full overflow-hidden rounded-lg" />
@@ -251,7 +345,12 @@ export default function VideoAnalysisDialog({
                 </div>
               )}
 
-              {tab === 'issues' && renderIssuesGrouped(issuesList as any[])}
+              {tab === 'issues' && (
+                <div className="space-y-5">
+                  {renderIssuesGrouped(issuesList as Array<AnalysisIssue | string>)}
+                  {renderRecommendedDrills(analysis)}
+                </div>
+              )}
 
               {tab === 'notes' && (
                 <article className="space-y-4 text-sm leading-relaxed text-muted-foreground">

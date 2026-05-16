@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export async function POST(req: NextRequest) {
-  const { email, player_id } = await req.json()
+  const { email, full_name, phone, player_id, player_ids, redirect_path = '/player' } = await req.json()
+  const playerIds = Array.isArray(player_ids)
+    ? player_ids.filter(Boolean)
+    : player_id
+      ? [player_id]
+      : []
 
-  if (!email || !player_id) {
-    return NextResponse.json({ error: 'Email and player_id required' }, { status: 400 })
+  if (!email || playerIds.length === 0) {
+    return NextResponse.json({ error: 'Email and at least one player required' }, { status: 400 })
   }
 
   try {
@@ -19,23 +24,41 @@ export async function POST(req: NextRequest) {
     const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       email_confirm: true,
-      user_metadata: { player_id, role: 'player' },
+      // role `player` = non-coach portal account (athlete or guardian — same profile shape)
+      user_metadata: { player_id: playerIds[0], player_ids: playerIds, role: 'player', full_name, phone },
     })
 
     if (createError && !createError.message.includes('already been registered')) {
       return NextResponse.json({ error: createError.message }, { status: 400 })
     }
 
-    const userId = userData?.user?.id
+    let userId = userData?.user?.id
+    if (!userId) {
+      const { data: existingProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle()
+      userId = existingProfile?.id
+    }
 
     if (userId) {
-      // Link profile to player
+      // Link profile to the first player for legacy reads, and to all selected players for family accounts.
       await supabaseAdmin.from('profiles').upsert({
         id: userId,
         email,
+        full_name: typeof full_name === 'string' && full_name.trim() ? full_name.trim() : null,
+        phone: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
         role: 'player',
-        player_id,
+        player_id: playerIds[0],
       })
+      await supabaseAdmin.from('account_players').upsert(
+        playerIds.map((playerId: string) => ({
+          account_id: userId,
+          player_id: playerId,
+        })),
+        { onConflict: 'account_id,player_id' }
+      )
     }
 
     // Generate a magic link they can use to log in
@@ -43,7 +66,7 @@ export async function POST(req: NextRequest) {
       type: 'magiclink',
       email,
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://tennis-coach-vert.vercel.app'}/auth/set-password`,
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://tennis-coach-vert.vercel.app'}/auth/set-password?next=${encodeURIComponent(redirect_path)}`,
       }
     })
 
@@ -57,8 +80,8 @@ export async function POST(req: NextRequest) {
       magic_link: linkData?.properties?.action_link,
     })
 
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('Invite error:', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Invite failed' }, { status: 500 })
   }
 }

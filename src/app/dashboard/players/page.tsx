@@ -16,7 +16,7 @@ type Player = {
   id: string
   name: string
   email: string
-  phone: string
+  age?: number | null
   skill_level: string
   notes: string
   created_at: string
@@ -36,17 +36,19 @@ export default function PlayersPage() {
   const [openPlayer, setOpenPlayer] = useState(false)
   const [openInvite, setOpenInvite] = useState(false)
   const [invitePlayerId, setInvitePlayerId] = useState('')
+  const [inviteFullName, setInviteFullName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
+  const [invitePhone, setInvitePhone] = useState('')
   const [inviteSent, setInviteSent] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<{
     name: string
     email: string
-    phone: string
+    age: string
     skill_level: string | null
     notes: string
     sport: string
-  }>({ name: '', email: '', phone: '', skill_level: 'beginner', notes: '', sport: 'tennis' })
+  }>({ name: '', email: '', age: '', skill_level: 'beginner', notes: '', sport: 'tennis' })
 
   const supabase = createClient()
   const [magicLink, setMagicLink] = useState('')
@@ -80,21 +82,25 @@ export default function PlayersPage() {
   async function handleSave() {
     if (!form.name) return
     setSaving(true)
-    await supabase.from('players').insert(form)
-    setForm({ name: '', email: '', phone: '', skill_level: 'beginner', notes: '', sport: 'tennis' })
+    const age = Number.parseInt(form.age, 10)
+    await supabase.from('players').insert({
+      ...form,
+      age: Number.isNaN(age) ? null : age,
+    })
+    setForm({ name: '', email: '', age: '', skill_level: 'beginner', notes: '', sport: 'tennis' })
     setOpenPlayer(false)
     setSaving(false)
     loadPlayers()
   }
 
   async function handleInvite() {
-    if (!inviteEmail || !invitePlayerId) return
+    if (!inviteEmail || !inviteFullName.trim() || !invitePlayerId) return
     setSaving(true)
     try {
       const res = await fetch('/api/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail, player_id: invitePlayerId }),
+        body: JSON.stringify({ email: inviteEmail, full_name: inviteFullName, phone: invitePhone, player_id: invitePlayerId }),
       })
       const data = await res.json()
       if (data.error) {
@@ -160,7 +166,9 @@ export default function PlayersPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-foreground">{player.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{player.email || 'No email'}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {player.age ? `Age ${player.age}` : 'Age not set'} · {player.email || 'No email'}
+                    </p>
                   </div>
                 </div>
                 <Badge variant={skillBadgeVariant(player.skill_level)} className="capitalize shrink-0">
@@ -180,7 +188,9 @@ export default function PlayersPage() {
                   className="shrink-0"
                   onClick={() => {
                     setInvitePlayerId(player.id)
+                    setInviteFullName('')
                     setInviteEmail(player.email || '')
+                    setInvitePhone('')
                     setInviteSent(false)
                     setOpenInvite(true)
                   }}
@@ -209,8 +219,8 @@ export default function PlayersPage() {
           <div className="space-y-4 pt-2">
             {[
               { label: 'Name *', key: 'name', placeholder: 'Jane Smith', type: 'text' },
+              { label: 'Age', key: 'age', placeholder: '12', type: 'number' },
               { label: 'Email', key: 'email', placeholder: 'jane@email.com', type: 'email' },
-              { label: 'Phone', key: 'phone', placeholder: '555-555-5555', type: 'text' },
             ].map(({ label, key, placeholder, type }) => (
               <div key={key} className="space-y-2">
                 <Label htmlFor={key}>{label}</Label>
@@ -288,7 +298,7 @@ export default function PlayersPage() {
       <Dialog open={openInvite} onOpenChange={setOpenInvite}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Invite parent</DialogTitle>
+            <DialogTitle>Invite to athlete portal</DialogTitle>
           </DialogHeader>
           {inviteSent ? (
             <div className="space-y-4 pt-2">
@@ -325,15 +335,37 @@ export default function PlayersPage() {
             </div>
           ) : (
             <div className="space-y-4 pt-2">
-              <p className="text-sm text-muted-foreground">Send the parent an email to create their account.</p>
+              <p className="text-sm text-muted-foreground">
+                Send this email a magic link so they can sign in and access this athlete&apos;s drills, videos, and booking — same account if they&apos;re the player or a guardian.
+              </p>
               <div className="space-y-2">
-                <Label htmlFor="invite-email">Parent email</Label>
+                <Label htmlFor="invite-name">Full name</Label>
+                <Input
+                  id="invite-name"
+                  value={inviteFullName}
+                  onChange={e => setInviteFullName(e.target.value)}
+                  placeholder="Parent or account holder"
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-email">Email</Label>
                 <Input
                   id="invite-email"
                   type="email"
                   value={inviteEmail}
                   onChange={e => setInviteEmail(e.target.value)}
-                  placeholder="parent@email.com"
+                  placeholder="you@example.com"
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-phone">Phone</Label>
+                <Input
+                  id="invite-phone"
+                  value={invitePhone}
+                  onChange={e => setInvitePhone(e.target.value)}
+                  placeholder="555-555-5555"
                   className="rounded-xl"
                 />
               </div>
@@ -341,7 +373,7 @@ export default function PlayersPage() {
                 <Button variant="outline" onClick={() => setOpenInvite(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleInvite} disabled={saving || !inviteEmail} className="gap-2">
+                <Button onClick={handleInvite} disabled={saving || !inviteEmail || !inviteFullName.trim()} className="gap-2">
                   <Send size={14} /> {saving ? 'Sending…' : 'Send invite'}
                 </Button>
               </div>

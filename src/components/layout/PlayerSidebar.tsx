@@ -28,7 +28,7 @@ export default function PlayerSidebar() {
       {/* Desktop sidebar */}
       <aside className="hidden min-h-screen w-64 flex-col border-r border-border bg-card md:flex">
         <div className="border-b border-border p-5">
-          <BrandMark variant="sidebar" audience="Player" href="/player" />
+          <BrandMark variant="sidebar" href="/player" />
         </div>
         <nav className="flex-1 space-y-0.5 p-3">
           {nav.map(({ href, label, icon: Icon }) => {

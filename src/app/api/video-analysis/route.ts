@@ -62,6 +62,10 @@ const SPORT_EXPERT: Record<string, string> = {
 }
 
 type UploadedFile = { uri: string; mimeType: string; name: string }
+type GeminiPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } }
+  | { fileData: { mimeType: string; fileUri: string } }
 
 /** Retries per model when Google returns 429 / quota / RetryInfo (then outer loop may try fallback models). */
 const QUOTA_GENERATION_MAX_RETRIES = 6
@@ -291,10 +295,11 @@ ${historyContext}
 
 ${checklist}
 
+If image frames are provided, they are ordered sequentially and labeled by frame index. Reference the most important frame_index values in your annotations.
 Keep written fields concise but specific. session_headline max ~100 characters. overview_bullets: exactly 3 short bullets (progress, biggest gap, next action).
 
 Respond with ONLY a JSON object (no markdown) using keys:
-session_headline, overview_bullets, observations_old, observations_new, improvements (array of {area, description}), still_needs_work (array of {area, severity, description, drill, drill_instruction}), technique_notes, progress_summary, priority_focus, annotations (array of {label, issue: good|warning|error, severity: critical|moderate|minor, x, y, note}).`
+session_headline, overview_bullets, observations_old, observations_new, improvements (array of {area, description}), still_needs_work (array of {area, severity, description, drill, drill_instruction, drill_media_ref}), recommended_drills (array of {title, focus, description, media_ref}), technique_notes, progress_summary, priority_focus, key_frames (array of {frame_index, timestamp_label, reason}), annotations (array of {frame_index, label, issue: good|warning|error, severity: critical|moderate|minor, x, y, note}).`
     : `${expert}
 
 You are analyzing ${athleteLabel}'s ${sportKey} technique from the attached visual media (video and/or frames).
@@ -303,10 +308,11 @@ ${historyContext}
 
 ${checklist}
 
+If image frames are provided, they are ordered sequentially and labeled by frame index. Reference the most important frame_index values in your annotations.
 Keep written fields concise but specific. session_headline max ~100 characters. overview_bullets: exactly 3 short bullets (what's working, biggest fix, one drill to run).
 
 Respond with ONLY a JSON object (no markdown) using keys:
-session_headline, overview_bullets, observations, technique_notes, strengths (array of {area, description}), areas_to_improve (array of {area, severity, description, drill, drill_instruction}), overall_rating (beginner|developing|intermediate|advanced|elite), coach_tip, priority_focus, confidence (high|medium|low), annotations (array of {label, issue: good|warning|error, severity: critical|moderate|minor, x, y, note}).`
+session_headline, overview_bullets, observations, technique_notes, strengths (array of {area, description}), areas_to_improve (array of {area, severity, description, drill, drill_instruction, drill_media_ref}), recommended_drills (array of {title, focus, description, media_ref}), overall_rating (beginner|developing|intermediate|advanced|elite), coach_tip, priority_focus, confidence (high|medium|low), key_frames (array of {frame_index, timestamp_label, reason}), annotations (array of {frame_index, label, issue: good|warning|error, severity: critical|moderate|minor, x, y, note}).`
 
   const fileManager = new GoogleAIFileManager(apiKey)
   const genAI = new GoogleGenerativeAI(apiKey)
@@ -314,7 +320,7 @@ session_headline, overview_bullets, observations, technique_notes, strengths (ar
   const uploadedRemote: string[] = []
 
   try {
-    const parts: any[] = []
+    const parts: GeminiPart[] = []
 
     const vu = typeof videoUrl === 'string' ? videoUrl.trim() : ''
     const cvu = typeof compareVideoUrl === 'string' ? compareVideoUrl.trim() : ''
@@ -331,7 +337,10 @@ session_headline, overview_bullets, observations, technique_notes, strengths (ar
     }
 
     if (!parts.length && Array.isArray(frames) && frames.length) {
-      for (const f of frames as Array<{ mediaType?: string; base64: string }>) {
+      for (const f of frames as Array<{ mediaType?: string; base64: string; index?: number; timestamp?: number }>) {
+        parts.push({
+          text: `Primary video frame ${typeof f.index === 'number' ? f.index : 'unknown'}${typeof f.timestamp === 'number' ? ` at ${f.timestamp.toFixed(2)}s` : ''}`,
+        })
         parts.push({
           inlineData: {
             mimeType: f.mediaType || 'image/jpeg',
@@ -340,7 +349,10 @@ session_headline, overview_bullets, observations, technique_notes, strengths (ar
         })
       }
       if (Array.isArray(compareFrames) && compareFrames.length) {
-        for (const f of compareFrames as Array<{ mediaType?: string; base64: string }>) {
+        for (const f of compareFrames as Array<{ mediaType?: string; base64: string; index?: number; timestamp?: number }>) {
+          parts.push({
+            text: `Comparison video frame ${typeof f.index === 'number' ? f.index : 'unknown'}${typeof f.timestamp === 'number' ? ` at ${f.timestamp.toFixed(2)}s` : ''}`,
+          })
           parts.push({
             inlineData: {
               mimeType: f.mediaType || 'image/jpeg',

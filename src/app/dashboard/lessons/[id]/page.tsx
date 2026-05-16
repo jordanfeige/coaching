@@ -23,6 +23,8 @@ import VideoAnalysisDialog, {
   issueSeverityCounts,
 } from '@/components/video/VideoAnalysisDialog'
 import { cn } from '@/lib/utils'
+import { calendarEvent } from '@/lib/calendar'
+import { analysisFramePreviews, extractVideoFrames } from '@/lib/video-frames'
 
 function normalizeSportKey(s?: string | null): string {
   if (!s) return 'tennis'
@@ -303,19 +305,23 @@ export default function LessonDetailPage() {
         return
       }
       setVideoUrls(prev => ({ ...prev, [video.id]: url }))
+      const frames = await extractVideoFrames(url)
       const compareUrl = compareVideo ? await getVideoUrl(compareVideo.storage_path) : undefined
       if (compareVideo && !compareUrl) {
         alert('Could not access the comparison video. Reload and try again.')
         return
       }
+      const compareFrames = compareUrl ? await extractVideoFrames(compareUrl, { count: 6 }) : undefined
       const playerHistory = entries.slice(0, 3).map(e => e.content).join('\n---\n')
 
       const apiRes = await fetch('/api/video-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoUrl: url,
-          ...(compareUrl ? { compareVideoUrl: compareUrl } : {}),
+          frames: frames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })),
+          ...(compareFrames
+            ? { compareFrames: compareFrames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })) }
+            : {}),
           playerName: player?.name,
           sport: normalizeSportKey(player?.sport) || 'tennis',
           playerHistory,
@@ -327,6 +333,8 @@ export default function LessonDetailPage() {
         alert(`Analysis failed: ${analysis.error}`)
         return
       }
+      analysis.frame_previews = analysisFramePreviews(frames)
+      if (compareFrames) analysis.compare_frame_previews = analysisFramePreviews(compareFrames)
       await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
       setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
     } catch (e: any) {
@@ -356,6 +364,19 @@ export default function LessonDetailPage() {
   const LESSON_TYPES = sportConfig.lessonTypes
   const isCompleted = lesson.status === 'completed'
   const isCancelled = lesson.status === 'cancelled'
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const lessonCalendar = calendarEvent({
+    title: `Playvia lesson: ${player?.name || 'Player'}`,
+    startsAt: lesson.starts_at,
+    durationMins: lesson.duration_mins,
+    description: lesson.notes || `Lesson for ${player?.name || 'player'}.`,
+    actionLinks: origin
+      ? [
+          { label: 'Cancel lesson', url: `${origin}/dashboard/lessons/${lesson.id}` },
+          { label: 'Reschedule lesson', url: `${origin}/dashboard/schedule` },
+        ]
+      : undefined,
+  })
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -402,6 +423,21 @@ export default function LessonDetailPage() {
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={lessonCalendar.googleUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'rounded-lg text-xs')}
+            >
+              Google Calendar
+            </a>
+            <a
+              href={lessonCalendar.icsHref}
+              download="playvia-lesson.ics"
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'rounded-lg text-xs')}
+            >
+              Device calendar
+            </a>
             <Badge variant={lessonStatusVariant(lesson.status)} className="capitalize">
               {lesson.status}
             </Badge>
@@ -982,7 +1018,7 @@ export default function LessonDetailPage() {
                       {isAnalyzing && (
                         <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
                           <Sparkles size={12} className="animate-pulse text-primary" />
-                          Sending video to Gemini…
+                          Extracting key frames and analyzing…
                         </div>
                       )}
 
@@ -1108,7 +1144,7 @@ export default function LessonDetailPage() {
           <DialogHeader>
             <DialogTitle className="font-heading">Complete lesson</DialogTitle>
             <DialogDescription>
-              Add a session note to complete this lesson. Visible to {player?.name}&apos;s parent.
+              Add a session note to complete this lesson. Visible on {player?.name}&apos;s athlete portal (shared login).
             </DialogDescription>
           </DialogHeader>
           <Textarea
