@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { CheckCircle, Clock, ChevronRight } from 'lucide-react'
-import { BrandMark } from '@/components/brand/BrandMark'
+import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
 import { cn } from '@/lib/utils'
 import { bookingTierConfig, bookingTierLabel } from '@/lib/booking'
 import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
@@ -52,7 +52,9 @@ export default function BookingPage() {
 
   useEffect(() => {
     const reschedule = new URLSearchParams(window.location.search).get('reschedule')
-    if (reschedule) setRescheduleLessonId(reschedule)
+    if (reschedule) {
+      queueMicrotask(() => setRescheduleLessonId(reschedule))
+    }
     async function loadSlots() {
       const { data: slotRows } = await supabase
         .from('availability')
@@ -258,7 +260,7 @@ export default function BookingPage() {
 
         {/* Header */}
         <div className="text-center">
-          <BrandMark variant="public" />
+          <SmartBrandMark variant="public" />
           <h1 className="font-heading mt-6 text-2xl font-bold text-foreground">Book a lesson</h1>
           <p className="mt-1 text-sm text-muted-foreground">Pick a time that works for you</p>
         </div>

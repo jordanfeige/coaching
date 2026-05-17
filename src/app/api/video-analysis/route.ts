@@ -1,204 +1,153 @@
-import type { GenerateContentResult, GenerativeModel } from '@google/generative-ai'
-import { GoogleGenerativeAI, GoogleGenerativeAIFetchError } from '@google/generative-ai'
-import { GoogleAIFileManager, FileState } from '@google/generative-ai/server'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { FileState, GoogleAIFileManager } from '@google/generative-ai/server'
 import crypto from 'crypto'
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const maxDuration = 60
 export const runtime = 'nodejs'
-/** Large uploads + File API processing can exceed 120s on cold starts */
-export const maxDuration = 240
+
+type InlineFrame = {
+  base64?: string
+  mediaType?: string
+  mimeType?: string
+}
+
+type UploadedMedia = {
+  uri: string
+  mimeType: string
+  name: string
+}
+
+type GeminiPart =
+  | { text: string }
+  | { inlineData: { data: string; mimeType: string } }
+  | { fileData: { fileUri: string; mimeType: string } }
 
 const SPORT_CHECKLISTS: Record<string, string> = {
   tennis: `
-Evaluate each of these checkpoints explicitly:
-SETUP: Ready position, split step timing, grip type
-PREPARATION: Unit turn completeness, racket takeback, non-dominant arm
-SWING PATH: Low-to-high brushing motion, swing plane, wrist lag
-CONTACT: Contact point position (in front/to side), arm extension, head position
-FOLLOW-THROUGH: Finish position, racket path over shoulder, weight transfer
-FOOTWORK: Stance width, weight loading, recovery step`,
-
+Reference exact timestamps whenever possible.
+Evaluate the shot type context first, then visible checkpoints:
+GRIP: Eastern/Western/Semi-Western/Continental? Appropriate for the selected shot?
+READY POSITION: Feet width vs shoulders, knee bend, weight on balls of feet.
+UNIT TURN: Full body rotation or arm-only swing; shoulder turn percentage.
+TAKEBACK: Depth, loop shape, racket head height, timing by timestamp.
+SWING PATH: Low-to-high angle estimate, racket lag, wrist/racket release.
+CONTACT POINT: In front/beside/behind body, extension, head position at contact.
+FOLLOW THROUGH: Finish path, early deceleration, balance after contact.
+FOOTWORK: Stance, loading leg, weight transfer, recovery step timing.
+RECOVERY: Whether the player returns to a ready/centered position.`,
   golf: `
-Evaluate each of these checkpoints explicitly:
-SETUP: Grip pressure, stance width, ball position, spine angle, knee flex, alignment
-BACKSWING: Club path, shoulder turn degrees, hip resistance, wrist hinge, weight shift
-TRANSITION: Sequence (lower body leads), pause at top, club position
-DOWNSWING: Hip slide vs rotation, lag retention, shoulder drop
-IMPACT: Hands ahead of ball, weight on lead side, club face angle, divot direction
-FOLLOW-THROUGH: Full extension, high finish, balance held`,
-
-  pickleball: `
-Evaluate each of these checkpoints explicitly:
-SERVE: Toss or drop consistency, contact height, paddle angle, weight transfer, depth & placement
-RETURN OF SERVE: Ready position, split step, block vs drive selection, depth control
-DINKING: Soft hands, stable paddle face, contact in front, patience at the kitchen line
-VOLLEYS / RESETS: Compact stroke, quiet paddle through contact, blocking pace, avoiding pop-ups
-THIRD SHOT: Drop vs drive decision, arc over the net, targeting opponents' feet
-DRIVES / SPEED-UPS: Timing, hip rotation, paddle path, target selection
-FOOTWORK & POSITIONING: Kitchen discipline, lateral recovery, transition steps
-DOUBLES (if visible): Stacking, middle balls, communication, poach timing`,
-
+Reference exact timestamps whenever possible.
+Evaluate the shot type context first, then visible checkpoints:
+ADDRESS: Feet width, ball position, spine tilt, alignment, knee flex angle.
+GRIP: Hand position, grip style if visible, grip pressure clues.
+TAKEAWAY: Inside/outside/on-line, one-piece motion, clubhead relation to hands.
+BACKSWING PLANE: Club plane at parallel, degrees above/below plane.
+SHOULDER TURN: Rotation estimate, lead shoulder depth, head stability.
+HIP RESISTANCE: Hips resist shoulder turn or over-rotate.
+TRANSITION: Lower body vs upper body start, sequencing, casting.
+LAG: Retained lag vs early release at timestamped downswing positions.
+IMPACT: Hands ahead/neutral/behind, weight on lead side, face angle if visible.
+FOLLOW THROUGH: Extension, finish height, balance held.`,
+  baseball: `
+Reference exact timestamps whenever possible.
+Evaluate the movement type context first, then visible checkpoints:
+STANCE: Feet width, posture, weight distribution, bat/arm slot if visible.
+LOAD: Hip coil, hand position, balance, timing.
+STRIDE: Direction, stride length, front-foot landing.
+SEQUENCING: Hips before hands/arm, trunk rotation timing.
+PATH: Bat path or throwing arm path, plane, extension.
+CONTACT/RELEASE: Contact point or release point relative to body.
+FINISH: Extension, deceleration, balance, repeatability.`,
   basketball: `
-Evaluate each of these checkpoints explicitly:
-STANCE: Feet shoulder-width, knees bent, dominant foot slightly forward
-GRIP: Fingertip control, guide hand position, wrist position
-SHOT POCKET: Ball position, elbow alignment, set point
-RELEASE: Leg drive, elbow extension, wrist snap, follow-through
-BALANCE: Base, landing position, eyes on target`,
+Reference exact timestamps whenever possible.
+Evaluate the shot type context first, then visible checkpoints:
+STANCE: Feet alignment, width, balance, shooting foot turn.
+SHOT POCKET: Ball location relative to torso and shooting shoulder.
+ELBOW ALIGNMENT: Elbow under ball vs flared, forearm angle.
+GUIDE HAND: Placement and whether it interferes with release.
+LEG DRIVE: Knee bend estimate, force timing, vertical balance.
+RELEASE POINT: Height, extension, timing, consistency.
+WRIST SNAP: Follow-through position and backspin clues if visible.
+LANDING: Balance, drift, and repeatability after release.`,
 }
 
 const SPORT_EXPERT: Record<string, string> = {
-  tennis:
-    'You are an elite tennis coach who has trained ATP/WTA professionals. You have deep expertise in biomechanics, stroke mechanics, and movement patterns.',
-  golf:
-    'You are a PGA Master Professional with 20+ years analyzing swings. You have deep expertise in golf biomechanics, club fitting, and swing sequencing.',
-  pickleball:
-    'You are a certified elite pickleball coach (USA Pickleball–style curriculum). You specialize in doubles positioning, kitchen play, serve and return patterns, third-shot decisions, and pace control.',
-  basketball:
-    'You are an elite shooting coach who has worked with NBA players. You have deep expertise in shooting mechanics, footwork, and muscle memory.',
+  tennis: 'You are an elite tennis coach who has trained ATP/WTA professionals. Give specific technical feedback with timestamp references, estimated measurements, and clear drills.',
+  golf: 'You are a PGA Master Professional. Give specific swing analysis with timestamp references, angle estimates, sequencing details, and practical drills.',
+  baseball: 'You are an elite baseball coach. Give specific hitting, pitching, and movement feedback with timestamp references and measurable fixes.',
+  basketball: 'You are an elite shooting coach. Give specific technical feedback with timestamp references, body alignment details, and measurable drills.',
 }
 
-type UploadedFile = { uri: string; mimeType: string; name: string }
-type GeminiPart =
-  | { text: string }
-  | { inlineData: { mimeType: string; data: string } }
-  | { fileData: { mimeType: string; fileUri: string } }
-
-/** Retries per model when Google returns 429 / quota / RetryInfo (then outer loop may try fallback models). */
-const QUOTA_GENERATION_MAX_RETRIES = 6
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms))
+function normalizeSport(sport: unknown) {
+  const key = String(sport || 'tennis').toLowerCase()
+  return key === 'pickleball' ? 'tennis' : key
 }
 
-function isRetryableQuotaError(e: unknown): boolean {
-  if (e instanceof GoogleGenerativeAIFetchError) {
-    if (e.status === 429) return true
-    const details = e.errorDetails
-    if (Array.isArray(details)) {
-      for (const d of details) {
-        const t = typeof d?.['@type'] === 'string' ? d['@type'] : ''
-        if (t.includes('QuotaFailure') || t.includes('RetryInfo')) return true
-      }
-    }
-  }
-  const msg = e instanceof Error ? e.message : String(e)
-  return /Please retry in|QuotaFailure|RESOURCE_EXHAUSTED|quota exceeded|rate limit|\b429\b/i.test(msg)
+function extensionForMimeType(mimeType: string) {
+  if (mimeType.includes('quicktime')) return 'mov'
+  if (mimeType.includes('webm')) return 'webm'
+  if (mimeType.includes('png')) return 'png'
+  if (mimeType.includes('jpeg') || mimeType.includes('jpg')) return 'jpg'
+  return mimeType.startsWith('image/') ? 'img' : 'mp4'
 }
 
-/** Parses RetryInfo.retryDelay (protobuf Duration e.g. "2.093800413s") or "Please retry in 2.09s" in message. */
-function retryDelayMsFromError(e: unknown): number | null {
-  const msg = e instanceof Error ? e.message : ''
-  const fromMsg = msg.match(/retry in ([\d.]+)\s*s\b/i)
-  if (fromMsg) {
-    const sec = parseFloat(fromMsg[1])
-    if (!Number.isNaN(sec)) return Math.min(120_000, Math.ceil(sec * 1000) + 250)
-  }
-  if (e instanceof GoogleGenerativeAIFetchError && Array.isArray(e.errorDetails)) {
-    for (const d of e.errorDetails) {
-      const t = typeof d?.['@type'] === 'string' ? d['@type'] : ''
-      if (!t.includes('RetryInfo')) continue
-      const rd = d.retryDelay
-      if (typeof rd === 'string') {
-        const mm = rd.match(/^([\d.]+)s?$/)
-        if (mm) {
-          const sec = parseFloat(mm[1])
-          if (!Number.isNaN(sec)) return Math.min(120_000, Math.ceil(sec * 1000) + 250)
-        }
-      }
-    }
-  }
-  return null
+async function writeBase64ToTempFile(base64: string, mimeType: string) {
+  const clean = base64.includes(',') ? base64.split(',').pop() || '' : base64
+  const filePath = path.join(
+    os.tmpdir(),
+    `playvia-analysis-${crypto.randomBytes(8).toString('hex')}.${extensionForMimeType(mimeType)}`
+  )
+  await fs.writeFile(filePath, Buffer.from(clean, 'base64'))
+  return filePath
 }
 
-async function generateContentWithBackoff(
-  model: GenerativeModel,
-  parts: Parameters<GenerativeModel['generateContent']>[0],
-  opts: { maxRetries: number }
-): Promise<GenerateContentResult> {
-  let lastErr: unknown
-  for (let attempt = 0; attempt < opts.maxRetries; attempt++) {
-    try {
-      return await model.generateContent(parts)
-    } catch (e) {
-      lastErr = e
-      if (!isRetryableQuotaError(e) || attempt === opts.maxRetries - 1) {
-        throw e
-      }
-      const fromApi = retryDelayMsFromError(e)
-      const fallback = Math.min(60_000, 2000 * 2 ** attempt)
-      const waitMs = fromApi ?? fallback
-      console.warn(`[video-analysis] quota/rate limit (${attempt + 1}/${opts.maxRetries}), waiting ${waitMs}ms`)
-      await sleep(waitMs)
-    }
-  }
-  throw lastErr
-}
-
-/** Prefer GEMINI_MODEL, then GEMINI_MODEL_FALLBACK (comma-separated), then stable defaults. */
-function geminiModelIds(): string[] {
-  const primary = process.env.GEMINI_MODEL?.trim()
-  const extra =
-    process.env.GEMINI_MODEL_FALLBACK?.split(',')
-      .map(s => s.trim())
-      .filter(Boolean) ?? []
-  const defaults = ['gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-1.5-flash-latest', 'gemini-1.5-flash']
-  const ordered = [...(primary ? [primary] : []), ...extra, ...defaults]
-  return [...new Set(ordered)]
-}
-
-function assertHttpUrl(url: string, label: string) {
-  try {
-    const u = new URL(url)
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-      throw new Error('bad protocol')
-    }
-  } catch {
-    throw new Error(`Invalid ${label} URL. Open the video once, then try Analyze again.`)
-  }
-}
-
-async function uploadRemoteVideo(
+async function uploadBase64Media(
   fileManager: GoogleAIFileManager,
-  url: string,
+  base64: string,
+  mimeType: string,
   label: string
-): Promise<UploadedFile> {
-  assertHttpUrl(url, label)
-  const res = await fetch(url, { redirect: 'follow' })
-  if (!res.ok) {
-    throw new Error(
-      `Could not download video (HTTP ${res.status}). The signed link may have expired — reload the page and try again.`
-    )
-  }
-  const buf = Buffer.from(await res.arrayBuffer())
-  const ct = (res.headers.get('content-type') || '').split(';')[0].trim()
-  const ext =
-    ct.includes('webm') ? 'webm' : ct.includes('quicktime') ? 'mov' : ct.includes('x-msvideo') ? 'avi' : 'mp4'
-  const mime = ct.startsWith('video/') ? ct : 'video/mp4'
-
-  const tmp = path.join(os.tmpdir(), `playvia-${label}-${crypto.randomBytes(6).toString('hex')}.${ext}`)
-  await fs.writeFile(tmp, buf)
+): Promise<UploadedMedia> {
+  const tmpPath = await writeBase64ToTempFile(base64, mimeType)
   try {
-    const uploaded = await fileManager.uploadFile(tmp, {
-      mimeType: mime,
+    const uploaded = await fileManager.uploadFile(tmpPath, {
+      mimeType,
       displayName: `playvia-${label}-${Date.now()}`,
     })
-    let meta = await fileManager.getFile(uploaded.file.name)
-    let tries = 0
-    while (meta.state === FileState.PROCESSING && tries < 45) {
-      await new Promise(r => setTimeout(r, 2000))
-      meta = await fileManager.getFile(uploaded.file.name)
-      tries++
+
+    let file = await fileManager.getFile(uploaded.file.name)
+    for (let i = 0; file.state === FileState.PROCESSING && i < 22; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      file = await fileManager.getFile(uploaded.file.name)
     }
-    if (meta.state === FileState.FAILED) throw new Error('Video processing failed on Gemini File API')
-    if (meta.state !== FileState.ACTIVE) throw new Error('Video is still processing — try again in a moment')
-    return { uri: meta.uri, mimeType: meta.mimeType, name: meta.name }
+
+    if (file.state === FileState.FAILED) throw new Error(`${label} upload failed while Gemini processed the file.`)
+    if (file.state !== FileState.ACTIVE) throw new Error(`${label} video is still processing. Try again in a moment.`)
+
+    return { uri: file.uri, mimeType: file.mimeType || mimeType, name: file.name }
   } finally {
-    await fs.unlink(tmp).catch(() => {})
+    await fs.unlink(tmpPath).catch(() => {})
   }
+}
+
+function inlineParts(frames: InlineFrame[] | undefined, imageBase64?: string, mediaType?: string): GeminiPart[] {
+  if (Array.isArray(frames) && frames.length > 0) {
+    return frames
+      .filter(frame => frame.base64)
+      .map(frame => ({
+        inlineData: {
+          data: frame.base64!,
+          mimeType: frame.mediaType || frame.mimeType || 'image/jpeg',
+        },
+      }))
+  }
+  if (imageBase64) {
+    return [{ inlineData: { data: imageBase64, mimeType: mediaType || 'image/jpeg' } }]
+  }
+  return []
 }
 
 function parseJsonFromModel(text: string) {
@@ -209,32 +158,58 @@ function parseJsonFromModel(text: string) {
     const start = clean.indexOf('{')
     const end = clean.lastIndexOf('}')
     if (start >= 0 && end > start) return JSON.parse(clean.slice(start, end + 1))
-    throw new Error('Model returned invalid JSON — try again or shorten the clip.')
+    throw new Error('Model returned invalid JSON.')
   }
 }
 
-/** response.text() throws when the prompt or candidate is blocked; recover details when possible. */
-function extractModelText(result: GenerateContentResult): string {
-  const response = result.response
-  const blockReason = response.promptFeedback?.blockReason
-  if (blockReason) {
-    throw new Error(`Request blocked (${blockReason}). Try different footage or a shorter clip.`)
-  }
+function buildPrompt({
+  sport,
+  playerName,
+  shotType,
+  cameraAngle,
+  playerHistory,
+  isComparison,
+}: {
+  sport: string
+  playerName?: string
+  shotType?: string
+  cameraAngle?: string
+  playerHistory?: string
+  isComparison: boolean
+}) {
+  const expert = SPORT_EXPERT[sport] || SPORT_EXPERT.tennis
+  const checklist = SPORT_CHECKLISTS[sport] || SPORT_CHECKLISTS.tennis
+  const history = playerHistory ? `\nPlayer history:\n${playerHistory}\n` : ''
 
-  try {
-    return response.text()
-  } catch {
-    const cand = response.candidates?.[0]
-    const parts = cand?.content?.parts as Array<{ text?: string }> | undefined
-    const joined = parts?.map(p => p?.text ?? '').join('').trim()
-    if (joined) return joined
+  return `${expert}
+PLAYER: ${playerName || 'Unknown'} | SPORT: ${sport} | SHOT TYPE: ${shotType || 'not specified'} | ANGLE: ${cameraAngle || 'unknown'}
+${history}
+${checklist}
 
-    const finish = cand?.finishReason
-    if (finish) {
-      throw new Error(`Generation stopped (${finish}). Try a shorter or lower-resolution video.`)
-    }
-    throw new Error('Empty response from Gemini — try again or switch GEMINI_MODEL in env.')
-  }
+${isComparison
+  ? 'Compare the first media item against the second media item. Describe before/after changes using timestamps from each video when available.'
+  : 'Analyze the full media item. Use timestamps instead of frame numbers whenever video is provided.'}
+
+Rules:
+- Return ONLY valid JSON. No markdown.
+- Be specific and useful. Avoid generic praise.
+- Reference timestamps like "0:03" or "at 2.4s" whenever motion is visible.
+- Estimate measurements when exact values are not possible: degrees, inches, percentage, distance from body, or timing.
+- Do not invent ball flight, make/miss, shot result, contact quality, or tactical outcome if not visible.
+- Prioritize the top 2-4 improvements, each with a drill the player can perform.
+
+Return this exact JSON shape:
+{
+  "observations": "timestamp-by-timestamp breakdown with specific measurements",
+  "technique_notes": "biomechanical implications paragraph with timestamp references",
+  "strengths": [{"area": "checkpoint name", "what_i_see": "exact description with timestamp and measurement", "why_it_helps": "specific biomechanical benefit"}],
+  "areas_to_improve": [{"area": "checkpoint name", "severity": "critical|moderate|minor", "what_i_see": "exact with timestamp and measurement", "ideal": "target measurement", "consequence": "specific chain reaction this causes", "drill": "specific drill name", "drill_sets_reps": "e.g. 3 sets of 10", "drill_instruction": "step by step instructions", "success_criteria": "how player self-checks correctness", "simple_cue": "one short memorable phrase"}],
+  "overall_rating": "beginner|developing|intermediate|advanced|elite",
+  "biggest_win": "single most impactful change with specific target measurement",
+  "priority_focus": "what to drill every day this week with specific target",
+  "confidence": "high|medium|low",
+  "annotations": [{"label": "3-4 word label", "issue": "good|warning|error", "severity": "critical|moderate|minor", "x": 0.5, "y": 0.3, "note": "specific coaching cue with measurement"}]
+}`
 }
 
 export async function POST(req: NextRequest) {
@@ -243,14 +218,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'GEMINI_API_KEY is not configured' }, { status: 500 })
   }
 
-  let body: Record<string, unknown>
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
-
+  const body = await req.json()
   const {
+    videoBase64,
+    videoMimeType = 'video/mp4',
+    compareVideoBase64,
+    compareVideoMimeType = 'video/mp4',
     frames,
     imageBase64,
     mediaType,
@@ -259,178 +232,64 @@ export async function POST(req: NextRequest) {
     compareMediaType,
     playerName,
     sport = 'tennis',
+    shotType,
     playerHistory = '',
     cameraAngle = 'side-on',
-    videoUrl,
-    compareVideoUrl,
-  } = body as Record<string, unknown>
+  } = body
 
-  const athleteLabel =
-    typeof playerName === 'string' && playerName.trim().length > 0 ? playerName.trim() : 'the athlete'
-
-  const sportRaw =
-    typeof sport === 'string' && sport.trim().length > 0 ? sport.trim().toLowerCase() : 'tennis'
-  const sportKey = sportRaw === 'baseball' ? 'pickleball' : sportRaw
-
-  const expert = SPORT_EXPERT[sportKey] || SPORT_EXPERT.tennis
-  const checklist = SPORT_CHECKLISTS[sportKey] || SPORT_CHECKLISTS.tennis
-  const historyContext =
-    typeof playerHistory === 'string' && playerHistory.trim().length > 0
-      ? `\nPlayer history & known issues:\n${playerHistory}\n`
-      : ''
-
-  const hasCompare = !!(
-    (compareFrames as unknown[])?.length ||
-    compareImageBase64 ||
-    (typeof compareVideoUrl === 'string' && compareVideoUrl.trim().length > 0)
-  )
-  const isComparison = hasCompare
-
-  const prompt = isComparison
-    ? `${expert}
-
-You are comparing two recordings of ${athleteLabel} — FIRST video is the older/baseline clip; SECOND video is the newer clip.
-Camera angle: ${cameraAngle}
-${historyContext}
-
-${checklist}
-
-If image frames are provided, they are ordered sequentially and labeled by frame index. Reference the most important frame_index values in your annotations.
-Keep written fields concise but specific. session_headline max ~100 characters. overview_bullets: exactly 3 short bullets (progress, biggest gap, next action).
-
-Respond with ONLY a JSON object (no markdown) using keys:
-session_headline, overview_bullets, observations_old, observations_new, improvements (array of {area, description}), still_needs_work (array of {area, severity, description, drill, drill_instruction, drill_media_ref}), recommended_drills (array of {title, focus, description, media_ref}), technique_notes, progress_summary, priority_focus, key_frames (array of {frame_index, timestamp_label, reason}), annotations (array of {frame_index, label, issue: good|warning|error, severity: critical|moderate|minor, x, y, note}).`
-    : `${expert}
-
-You are analyzing ${athleteLabel}'s ${sportKey} technique from the attached visual media (video and/or frames).
-Camera angle: ${cameraAngle}
-${historyContext}
-
-${checklist}
-
-If image frames are provided, they are ordered sequentially and labeled by frame index. Reference the most important frame_index values in your annotations.
-Keep written fields concise but specific. session_headline max ~100 characters. overview_bullets: exactly 3 short bullets (what's working, biggest fix, one drill to run).
-
-Respond with ONLY a JSON object (no markdown) using keys:
-session_headline, overview_bullets, observations, technique_notes, strengths (array of {area, description}), areas_to_improve (array of {area, severity, description, drill, drill_instruction, drill_media_ref}), recommended_drills (array of {title, focus, description, media_ref}), overall_rating (beginner|developing|intermediate|advanced|elite), coach_tip, priority_focus, confidence (high|medium|low), key_frames (array of {frame_index, timestamp_label, reason}), annotations (array of {frame_index, label, issue: good|warning|error, severity: critical|moderate|minor, x, y, note}).`
-
+  const normalizedSport = normalizeSport(sport)
   const fileManager = new GoogleAIFileManager(apiKey)
-  const genAI = new GoogleGenerativeAI(apiKey)
-
-  const uploadedRemote: string[] = []
+  const uploadedFiles: UploadedMedia[] = []
 
   try {
     const parts: GeminiPart[] = []
 
-    const vu = typeof videoUrl === 'string' ? videoUrl.trim() : ''
-    const cvu = typeof compareVideoUrl === 'string' ? compareVideoUrl.trim() : ''
-
-    if (vu) {
-      const primary = await uploadRemoteVideo(fileManager, vu, 'primary')
-      uploadedRemote.push(primary.name)
-      parts.push({ fileData: { mimeType: primary.mimeType, fileUri: primary.uri } })
-      if (cvu) {
-        const secondary = await uploadRemoteVideo(fileManager, cvu, 'compare')
-        uploadedRemote.push(secondary.name)
-        parts.push({ fileData: { mimeType: secondary.mimeType, fileUri: secondary.uri } })
-      }
+    if (videoBase64) {
+      const uploaded = await uploadBase64Media(fileManager, videoBase64, videoMimeType, 'primary')
+      uploadedFiles.push(uploaded)
+      parts.push({ fileData: { fileUri: uploaded.uri, mimeType: uploaded.mimeType } })
+    } else {
+      parts.push(...inlineParts(frames, imageBase64, mediaType))
     }
 
-    if (!parts.length && Array.isArray(frames) && frames.length) {
-      for (const f of frames as Array<{ mediaType?: string; base64: string; index?: number; timestamp?: number }>) {
-        parts.push({
-          text: `Primary video frame ${typeof f.index === 'number' ? f.index : 'unknown'}${typeof f.timestamp === 'number' ? ` at ${f.timestamp.toFixed(2)}s` : ''}`,
-        })
-        parts.push({
-          inlineData: {
-            mimeType: f.mediaType || 'image/jpeg',
-            data: f.base64,
-          },
-        })
-      }
-      if (Array.isArray(compareFrames) && compareFrames.length) {
-        for (const f of compareFrames as Array<{ mediaType?: string; base64: string; index?: number; timestamp?: number }>) {
-          parts.push({
-            text: `Comparison video frame ${typeof f.index === 'number' ? f.index : 'unknown'}${typeof f.timestamp === 'number' ? ` at ${f.timestamp.toFixed(2)}s` : ''}`,
-          })
-          parts.push({
-            inlineData: {
-              mimeType: f.mediaType || 'image/jpeg',
-              data: f.base64,
-            },
-          })
-        }
-      }
+    if (compareVideoBase64) {
+      const uploaded = await uploadBase64Media(fileManager, compareVideoBase64, compareVideoMimeType, 'comparison')
+      uploadedFiles.push(uploaded)
+      parts.push({ fileData: { fileUri: uploaded.uri, mimeType: uploaded.mimeType } })
+    } else {
+      parts.push(...inlineParts(compareFrames, compareImageBase64, compareMediaType))
     }
 
-    if (!parts.length && typeof imageBase64 === 'string' && imageBase64.length > 0) {
-      parts.push({
-        inlineData: {
-          mimeType: typeof mediaType === 'string' ? mediaType : 'image/jpeg',
-          data: imageBase64,
-        },
-      })
-      if (typeof compareImageBase64 === 'string' && compareImageBase64.length > 0) {
-        parts.push({
-          inlineData: {
-            mimeType: typeof compareMediaType === 'string' ? compareMediaType : 'image/jpeg',
-            data: compareImageBase64,
-          },
-        })
-      }
+    if (parts.length === 0) {
+      return NextResponse.json({ error: 'No video, image, or frame data provided' }, { status: 400 })
     }
 
-    if (!parts.length) {
-      return NextResponse.json(
-        { error: 'Provide videoUrl, frames, or imageBase64 for analysis' },
-        { status: 400 }
-      )
-    }
+    const prompt = buildPrompt({
+      sport: normalizedSport,
+      playerName,
+      shotType,
+      cameraAngle,
+      playerHistory,
+      isComparison: Boolean(compareVideoBase64 || compareFrames?.length || compareImageBase64),
+    })
 
-    parts.push({ text: prompt })
-
-    const models = geminiModelIds()
-    let lastErr = 'Video analysis failed'
-    let lastWasQuota = false
-
-    for (const modelId of models) {
-      try {
-        const model = genAI.getGenerativeModel({
-          model: modelId,
-          generationConfig: {
-            temperature: 0.35,
-            // Do not force responseMimeType: JSON — it often errors with File API video on some models/API revisions.
-          },
-        })
-        const result = await generateContentWithBackoff(model, parts, {
-          maxRetries: QUOTA_GENERATION_MAX_RETRIES,
-        })
-        const text = extractModelText(result)
-        const data = parseJsonFromModel(text)
-        return NextResponse.json(data)
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e)
-        lastErr = msg
-        lastWasQuota = isRetryableQuotaError(e)
-        console.error(`[video-analysis] model ${modelId} failed:`, msg)
-      }
-    }
-
-    return NextResponse.json(
-      {
-        error: lastWasQuota
-          ? `${lastErr} If this persists, wait and retry, use GEMINI_MODEL_FALLBACK, or review https://ai.google.dev/gemini-api/docs/rate-limits`
-          : lastErr,
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash-lite',
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 4096,
       },
-      { status: lastWasQuota ? 503 : 500 }
-    )
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Failed to analyze video'
-    console.error('[video-analysis]', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    })
+
+    const result = await model.generateContent([...parts, { text: prompt }])
+    const data = parseJsonFromModel(result.response.text())
+    return NextResponse.json(data)
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Failed to analyze video'
+    console.error('Video analysis error:', message)
+    return NextResponse.json({ error: message }, { status: 500 })
   } finally {
-    for (const name of uploadedRemote) {
-      await fileManager.deleteFile(name).catch(() => {})
-    }
+    await Promise.all(uploadedFiles.map(file => fileManager.deleteFile(file.name).catch(() => {})))
   }
 }

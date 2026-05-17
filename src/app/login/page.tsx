@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { BrandMark } from '@/components/brand/BrandMark'
+import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -22,12 +23,14 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
+    const { data: profile } = await supabase.from('profiles').select('role, player_id').eq('id', data.user.id).single()
 
     if (profile?.role === 'coach') {
       router.push('/dashboard')
-    } else {
+    } else if (profile?.role === 'player' && profile?.player_id) {
       router.push('/player')
+    } else {
+      router.push('/analyze')
     }
   }
 
@@ -35,7 +38,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen bg-background">
       <div className="hidden w-1/2 flex-col justify-between border-r border-border bg-muted/40 p-12 lg:flex">
         <div>
-          <BrandMark variant="authHero" />
+          <SmartBrandMark variant="authHero" />
           <h1 className="font-heading mt-10 text-4xl leading-tight font-bold text-foreground md:text-5xl">
             Elevate your
             <br />
@@ -62,7 +65,7 @@ export default function LoginPage() {
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="mb-10 lg:hidden">
-            <BrandMark variant="authPanel" className="mx-auto max-w-sm" />
+            <SmartBrandMark variant="authPanel" className="mx-auto max-w-sm" />
           </div>
           <div className="mb-8">
             <h2 className="font-heading mb-2 text-2xl font-bold text-foreground">Welcome back</h2>
@@ -104,6 +107,12 @@ export default function LoginPage() {
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            Don&apos;t have an account?{' '}
+            <Link href="/signup" className="font-medium text-primary underline-offset-4 hover:underline">
+              Sign up free →
+            </Link>
+          </p>
         </div>
       </div>
     </div>

@@ -42,24 +42,26 @@ export async function POST(req: NextRequest) {
       userId = existingProfile?.id
     }
 
-    if (userId) {
-      // Link profile to the first player for legacy reads, and to all selected players for family accounts.
-      await supabaseAdmin.from('profiles').upsert({
-        id: userId,
-        email,
-        full_name: typeof full_name === 'string' && full_name.trim() ? full_name.trim() : null,
-        phone: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
-        role: 'player',
-        player_id: playerIds[0],
-      })
-      await supabaseAdmin.from('account_players').upsert(
-        playerIds.map((playerId: string) => ({
-          account_id: userId,
-          player_id: playerId,
-        })),
-        { onConflict: 'account_id,player_id' }
-      )
+    if (!userId) {
+      return NextResponse.json({ error: 'Could not find or create account user' }, { status: 400 })
     }
+
+    // Link profile to the first player for legacy reads, and to all selected players for family accounts.
+    await supabaseAdmin.from('profiles').upsert({
+      id: userId,
+      email,
+      full_name: typeof full_name === 'string' && full_name.trim() ? full_name.trim() : null,
+      phone: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
+      role: 'player',
+      player_id: playerIds[0],
+    })
+    await supabaseAdmin.from('account_players').upsert(
+      playerIds.map((playerId: string) => ({
+        account_id: userId,
+        player_id: playerId,
+      })),
+      { onConflict: 'account_id,player_id' }
+    )
 
     // Generate a magic link they can use to log in
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({

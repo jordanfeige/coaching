@@ -10,7 +10,6 @@ import { CalendarPlus, Plus, UserRoundCog } from 'lucide-react'
 
 type Player = { id: string; name: string; age?: number | null; email?: string | null }
 type Account = { id: string; email: string; full_name?: string | null; phone?: string | null; role: string; players: Player[] }
-type ProfileRow = { id: string; email: string; full_name?: string | null; phone?: string | null; role: string }
 
 export default function AccountsPage() {
   const supabase = createClient()
@@ -33,28 +32,15 @@ export default function AccountsPage() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: profileRows }, { data: playerRows }, { data: links }] = await Promise.all([
-      supabase.from('profiles').select('id, email, full_name, phone, role').eq('role', 'player').order('email'),
-      supabase.from('players').select('id, name, age, email').order('name'),
-      supabase.from('account_players').select('account_id, players(id, name, age, email)'),
-    ])
-
-    const byAccount = new Map<string, Player[]>()
-    for (const link of links ?? []) {
-      const player = Array.isArray(link.players) ? link.players[0] : link.players
-      if (!player?.id) continue
-      const arr = byAccount.get(link.account_id) ?? []
-      arr.push(player as Player)
-      byAccount.set(link.account_id, arr)
+    const res = await fetch('/api/accounts')
+    const data = await res.json()
+    if (!res.ok || data.error) {
+      alert(`Could not load accounts: ${data.error || 'Unknown error'}`)
+      setLoading(false)
+      return
     }
-
-    setPlayers((playerRows ?? []) as Player[])
-    setAccounts(
-      ((profileRows ?? []) as ProfileRow[]).map(p => ({
-        ...p,
-        players: byAccount.get(p.id) ?? [],
-      }))
-    )
+    setPlayers((data.players ?? []) as Player[])
+    setAccounts((data.accounts ?? []) as Account[])
     setLoading(false)
   }
 

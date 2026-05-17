@@ -19,11 +19,11 @@ function lessonStatusVariant(status: string): 'default' | 'secondary' | 'destruc
 
 export default function PlayerDashboardPage() {
   const [players, setPlayers] = useState<LinkedPlayer[]>([])
-  const [drillCount, setDrillCount] = useState(0)
-  const [videoCount, setVideoCount] = useState(0)
   const [nextLesson, setNextLesson] = useState<any>(null)
-  const [journalEntries, setJournalEntries] = useState<any[]>([])
   const [lessonHistory, setLessonHistory] = useState<any[]>([])
+  const [lessonDrills, setLessonDrills] = useState<any[]>([])
+  const [lessonEntries, setLessonEntries] = useState<any[]>([])
+  const [lessonVideos, setLessonVideos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -46,35 +46,51 @@ export default function PlayerDashboardPage() {
     setPlayers(linked)
     const playerIds = linked.map(p => p.id)
 
-    const [{ count: dc }, { count: vc }, { data: lessons }, { data: entries }, { data: allLessons }] =
-      await Promise.all([
-        supabase.from('drills').select('*', { count: 'exact', head: true }).in('player_id', playerIds),
-        supabase.from('videos').select('*', { count: 'exact', head: true }).in('player_id', playerIds),
-        supabase
-          .from('lessons')
-          .select('id, starts_at, duration_mins, status')
-          .in('player_id', playerIds)
-          .eq('status', 'scheduled')
-          .gte('starts_at', new Date().toISOString())
-          .order('starts_at', { ascending: true })
-          .limit(1),
-        supabase
-          .from('journal_entries')
-          .select('*')
-          .in('player_id', playerIds)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('lessons')
-          .select('*')
-          .in('player_id', playerIds)
-          .order('starts_at', { ascending: false }),
-      ])
+    const [{ data: lessons }, { data: allLessons }] = await Promise.all([
+      supabase
+        .from('lessons')
+        .select('*, players(id, name, sport)')
+        .in('player_id', playerIds)
+        .eq('status', 'scheduled')
+        .gte('starts_at', new Date().toISOString())
+        .order('starts_at', { ascending: true })
+        .limit(1),
+      supabase
+        .from('lessons')
+        .select('*, players(id, name, sport)')
+        .in('player_id', playerIds)
+        .order('starts_at', { ascending: false }),
+    ])
 
-    setDrillCount(dc ?? 0)
-    setVideoCount(vc ?? 0)
+    const publishedLessonIds = (allLessons || [])
+      .filter(lesson => Boolean(lesson.published_at))
+      .map(lesson => lesson.id)
+
+    const [{ data: entries }, { data: drills }, { data: videos }] = publishedLessonIds.length
+      ? await Promise.all([
+          supabase
+            .from('journal_entries')
+            .select('*')
+            .in('lesson_id', publishedLessonIds)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('drills')
+            .select('*')
+            .in('lesson_id', publishedLessonIds)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('videos')
+            .select('*')
+            .in('lesson_id', publishedLessonIds)
+            .order('recorded_at', { ascending: false }),
+        ])
+      : [{ data: [] }, { data: [] }, { data: [] }]
+
     setNextLesson(lessons?.[0] ?? null)
-    setJournalEntries(entries || [])
     setLessonHistory(allLessons || [])
+    setLessonEntries(entries || [])
+    setLessonDrills(drills || [])
+    setLessonVideos(videos || [])
     setLoading(false)
     const cancelId = new URLSearchParams(window.location.search).get('cancel')
     if (cancelId && allLessons?.some(l => l.id === cancelId)) {
@@ -120,6 +136,14 @@ export default function PlayerDashboardPage() {
       })
     : null
 
+  function lessonContent(lessonId: string) {
+    return {
+      entries: lessonEntries.filter(entry => entry.lesson_id === lessonId),
+      drills: lessonDrills.filter(drill => drill.lesson_id === lessonId),
+      videos: lessonVideos.filter(video => video.lesson_id === lessonId),
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-background">
       <PlayerSidebar />
@@ -129,7 +153,7 @@ export default function PlayerDashboardPage() {
             Hi, {firstName}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your drills, videos, scheduling, and coach notes in one place — same login whether you&apos;re the athlete or managing their profile.
+            Your lessons in one place. Lesson recaps, drills, coach feedback, and media appear after your coach publishes them.
           </p>
         </div>
 
@@ -202,69 +226,6 @@ export default function PlayerDashboardPage() {
               </Link>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Link
-                href="/player/drills"
-                className={cn(
-                  buttonVariants({ variant: 'outline', size: 'lg' }),
-                  'h-auto min-h-[120px] flex-col items-start justify-between gap-4 rounded-2xl border-border p-5 text-left shadow-sm hover:bg-muted/40'
-                )}
-              >
-                <div className="flex w-full items-start justify-between gap-2">
-                  <span className="font-heading text-lg font-semibold text-foreground">Drills</span>
-                  <Dumbbell className="size-5 text-primary" />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {drillCount} assigned drill{drillCount !== 1 ? 's' : ''} from your coach
-                </p>
-              </Link>
-              <Link
-                href="/player/videos"
-                className={cn(
-                  buttonVariants({ variant: 'outline', size: 'lg' }),
-                  'h-auto min-h-[120px] flex-col items-start justify-between gap-4 rounded-2xl border-border p-5 text-left shadow-sm hover:bg-muted/40'
-                )}
-              >
-                <div className="flex w-full items-start justify-between gap-2">
-                  <span className="font-heading text-lg font-semibold text-foreground">Videos</span>
-                  <Video className="size-5 text-primary" />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {videoCount} clip{videoCount !== 1 ? 's' : ''} — upload and review feedback
-                </p>
-              </Link>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Link href="/player/drills" className={cn(buttonVariants(), 'rounded-xl')}>
-                View drills
-              </Link>
-              <Link href="/player/videos" className={cn(buttonVariants({ variant: 'secondary' }), 'rounded-xl')}>
-                View videos
-              </Link>
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-              <div className="border-b border-border px-5 py-4">
-                <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
-                  <BookOpen className="size-4 text-primary" strokeWidth={2} />
-                  Coach notes
-                </h2>
-              </div>
-              <div className="divide-y divide-border">
-                {journalEntries.length === 0 ? (
-                  <p className="px-5 py-8 text-center text-sm text-muted-foreground">No notes yet.</p>
-                ) : (
-                  journalEntries.slice(0, 5).map(entry => (
-                    <div key={entry.id} className="px-5 py-4">
-                      <p className="mb-1.5 text-xs text-muted-foreground">{format(new Date(entry.created_at), 'MMMM d, yyyy')}</p>
-                      <p className="text-sm leading-relaxed text-foreground">{entry.content}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
             <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
               <div className="border-b border-border px-5 py-4">
                 <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
@@ -277,9 +238,11 @@ export default function PlayerDashboardPage() {
                   <p className="px-5 py-8 text-center text-sm text-muted-foreground">No lessons yet.</p>
                 ) : (
                   lessonHistory.slice(0, 10).map(lesson => {
+                    const content = lessonContent(lesson.id)
+                    const isPublished = Boolean(lesson.published_at)
                     const origin = typeof window !== 'undefined' ? window.location.origin : ''
                     const event = calendarEvent({
-                      title: 'Playvia lesson',
+                      title: `Playvia lesson: ${lesson.players?.name || 'Lesson'}`,
                       startsAt: lesson.starts_at,
                       durationMins: lesson.duration_mins,
                       description: 'Playvia lesson',
@@ -292,38 +255,113 @@ export default function PlayerDashboardPage() {
                     })
                     const canChange = lesson.status === 'scheduled'
                     return (
-                      <div key={lesson.id} className="flex items-center justify-between gap-3 px-5 py-4">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">{format(new Date(lesson.starts_at), 'EEEE, MMM d')}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(lesson.starts_at), 'h:mm a')} · {lesson.duration_mins} min
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <a href={event.googleUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-primary">
-                              Google
-                            </a>
-                            <a href={event.icsHref} download="playvia-lesson.ics" className="text-xs font-medium text-primary">
-                              Device
-                            </a>
-                            {canChange && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => cancelLessonById(lesson.id)}
-                                  className="text-xs font-medium text-destructive"
-                                >
-                                  Cancel
-                                </button>
-                                <Link href={`/book?reschedule=${lesson.id}`} className="text-xs font-medium text-primary">
-                                  Reschedule
-                                </Link>
-                              </>
-                            )}
+                      <div key={lesson.id} className="px-5 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-foreground">{format(new Date(lesson.starts_at), 'EEEE, MMM d')}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {lesson.players?.name ? `${lesson.players.name} · ` : ''}
+                              {format(new Date(lesson.starts_at), 'h:mm a')} · {lesson.duration_mins} min
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <a href={event.googleUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-primary">
+                                Google
+                              </a>
+                              <a href={event.icsHref} download="playvia-lesson.ics" className="text-xs font-medium text-primary">
+                                Device
+                              </a>
+                              {canChange && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => cancelLessonById(lesson.id)}
+                                    className="text-xs font-medium text-destructive"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <Link href={`/book?reschedule=${lesson.id}`} className="text-xs font-medium text-primary">
+                                    Reschedule
+                                  </Link>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <Badge variant={lessonStatusVariant(lesson.status)} className="capitalize">
+                              {lesson.status}
+                            </Badge>
+                            <Badge variant={isPublished ? 'default' : 'secondary'}>
+                              {isPublished ? 'Recap ready' : 'Preparing recap'}
+                            </Badge>
                           </div>
                         </div>
-                        <Badge variant={lessonStatusVariant(lesson.status)} className="shrink-0 capitalize">
-                          {lesson.status}
-                        </Badge>
+
+                        <div className="mt-4 rounded-xl border border-border bg-muted/25 p-4">
+                          {!isPublished ? (
+                            <p className="text-sm text-muted-foreground">
+                              Your coach is preparing drills, feedback, and media for this lesson. You can still manage the lesson details above.
+                            </p>
+                          ) : (
+                            <div className="space-y-4">
+                              {content.entries.length > 0 && (
+                                <div>
+                                  <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <BookOpen className="size-3.5 text-primary" /> Coach feedback
+                                  </p>
+                                  <div className="space-y-2">
+                                    {content.entries.map(entry => (
+                                      <p key={entry.id} className="text-sm leading-relaxed text-foreground">
+                                        {entry.content}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {content.drills.length > 0 && (
+                                <div>
+                                  <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <Dumbbell className="size-3.5 text-primary" /> Assigned drills
+                                  </p>
+                                  <div className="grid gap-2">
+                                    {content.drills.map(drill => (
+                                      <div key={drill.id} className="rounded-lg border border-border bg-card px-3 py-2">
+                                        <p className="text-sm font-medium text-foreground">{drill.title}</p>
+                                        {drill.description && (
+                                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{drill.description}</p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {content.videos.length > 0 && (
+                                <div>
+                                  <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <Video className="size-3.5 text-primary" /> Lesson media
+                                  </p>
+                                  <div className="grid gap-2">
+                                    {content.videos.map(video => (
+                                      <div key={video.id} className="rounded-lg border border-border bg-card px-3 py-2">
+                                        <p className="text-sm font-medium text-foreground">{video.title}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                          {video.ai_analysis ? 'AI analysis included' : 'Media from this lesson'}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {content.entries.length === 0 && content.drills.length === 0 && content.videos.length === 0 && (
+                                <p className="text-sm text-muted-foreground">
+                                  This lesson recap has been published. Your coach has not added drills, feedback, or media yet.
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )
                   })

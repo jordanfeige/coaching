@@ -24,7 +24,7 @@ import VideoAnalysisDialog, {
 } from '@/components/video/VideoAnalysisDialog'
 import { cn } from '@/lib/utils'
 import { calendarEvent } from '@/lib/calendar'
-import { analysisFramePreviews, extractVideoFrames } from '@/lib/video-frames'
+import { isImageMediaPath } from '@/lib/video-frames'
 
 function normalizeSportKey(s?: string | null): string {
   if (!s) return 'tennis'
@@ -49,6 +49,37 @@ const SPORT_CONFIG: Record<string, { focuses: string[]; lessonTypes: string[] }>
     focuses: ['Shooting', 'Ball handling', 'Defense', 'Passing', 'Footwork', 'Post play'],
     lessonTypes: ['Technical', 'Scrimmage', 'Conditioning', 'Film study', 'Mixed'],
   },
+}
+
+const SHOT_TYPE_OPTIONS: Record<string, string[]> = {
+  tennis: ['forehand', 'backhand', 'serve', 'volley', 'overhead'],
+  golf: ['driver', 'iron', 'chip', 'putt', 'bunker'],
+  baseball: ['batting', 'pitching'],
+  basketball: ['jump shot', 'free throw', 'layup'],
+  pickleball: ['serve', 'return', 'dink', 'volley', 'third-shot drop'],
+}
+
+function analysisSportKey(s?: string | null): string {
+  return (s || 'tennis').toLowerCase()
+}
+
+function shotTypeOptionsForSport(s?: string | null): string[] {
+  return SHOT_TYPE_OPTIONS[analysisSportKey(s)] || SHOT_TYPE_OPTIONS.tennis
+}
+
+async function mediaUrlToBase64(url: string): Promise<{ base64: string; mimeType: string }> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Could not download media (HTTP ${response.status}). Reload and try again.`)
+  }
+  const blob = await response.blob()
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+    reader.onerror = () => reject(new Error('Could not read media file.'))
+    reader.readAsDataURL(blob)
+  })
+  return { base64, mimeType: blob.type || 'video/mp4' }
 }
 
 function lessonStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
@@ -96,6 +127,9 @@ export default function LessonDetailPage() {
   const [compareVideoId, setCompareVideoId] = useState<string | null>(null)
   const [sheetVideo, setSheetVideo] = useState<any>(null)
   const [videoUrls, setVideoUrls] = useState<Record<string, string>>({})
+  const [shotType, setShotType] = useState('')
+  const [coachingVideos, setCoachingVideos] = useState<Record<string, any[]>>({})
+  const [loadingCoachingVideo, setLoadingCoachingVideo] = useState<string | null>(null)
   const timerRef = useRef<any>(null)
 
   const supabase = createClient()
@@ -114,12 +148,16 @@ export default function LessonDetailPage() {
       if (l.players?.skill_level) {
         setDrillForm(prev => ({ ...prev, skillLevel: l.players.skill_level }))
       }
-      const { data: allVids } = await supabase
-        .from('videos')
-        .select('*')
-        .eq('player_id', l.players?.id)
-        .order('recorded_at', { ascending: true })
-      setAllPlayerVideos(allVids || [])
+      if (l.players?.id) {
+        const { data: allVids } = await supabase
+          .from('videos')
+          .select('*')
+          .eq('player_id', l.players.id)
+          .order('recorded_at', { ascending: true })
+        setAllPlayerVideos(allVids || [])
+      } else {
+        setAllPlayerVideos([])
+      }
     }
     const { data: e } = await supabase.from('journal_entries').select('*').eq('lesson_id', id).order('created_at', { ascending: false })
     const { data: d } = await supabase.from('drills').select('*').eq('lesson_id', id).order('created_at', { ascending: true })
@@ -156,6 +194,36 @@ export default function LessonDetailPage() {
 
   async function cancelLesson() {
     await supabase.from('lessons').update({ status: 'cancelled' }).eq('id', id)
+    loadAll()
+  }
+
+  async function publishLesson() {
+    setSaving(true)
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    await supabase
+      .from('lessons')
+      .update({
+        published_at: new Date().toISOString(),
+        published_by_profile_id: user?.id ?? null,
+      })
+      .eq('id', id)
+    setSaving(false)
+    loadAll()
+  }
+
+  async function unpublishLesson() {
+    if (!window.confirm('Hide this recap from the player/parent portal?')) return
+    setSaving(true)
+    await supabase
+      .from('lessons')
+      .update({
+        published_at: null,
+        published_by_profile_id: null,
+      })
+      .eq('id', id)
+    setSaving(false)
     loadAll()
   }
 
@@ -305,36 +373,41 @@ export default function LessonDetailPage() {
         return
       }
       setVideoUrls(prev => ({ ...prev, [video.id]: url }))
-      const frames = await extractVideoFrames(url)
+      const media = await mediaUrlToBase64(url)
       const compareUrl = compareVideo ? await getVideoUrl(compareVideo.storage_path) : undefined
       if (compareVideo && !compareUrl) {
         alert('Could not access the comparison video. Reload and try again.')
         return
       }
-      const compareFrames = compareUrl ? await extractVideoFrames(compareUrl, { count: 6 }) : undefined
-      const playerHistory = entries.slice(0, 3).map(e => e.content).join('\n---\n')
-
-      const apiRes = await fetch('/api/video-analysis', {
+      const compareMedia = compareUrl ? await mediaUrlToBase64(compareUrl) : null
+      const isPrimaryImage = media.mimeType.startsWith('image/') || isImageMediaPath(video.storage_path || video.title)
+      const isCompareImage = compareVideo && compareMedia
+        ? compareMedia.mimeType.startsWith('image/') || isImageMediaPath(compareVideo.storage_path || compareVideo.title)
+        : false
+      const playerHistory = entries.slice(0, 3).map(entry => entry.content).join('\n---\n')
+      const response = await fetch('/api/video-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          frames: frames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })),
-          ...(compareFrames
-            ? { compareFrames: compareFrames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })) }
+          ...(isPrimaryImage
+            ? { imageBase64: media.base64, mediaType: media.mimeType }
+            : { videoBase64: media.base64, videoMimeType: media.mimeType }),
+          ...(compareMedia
+            ? isCompareImage
+              ? { compareImageBase64: compareMedia.base64, compareMediaType: compareMedia.mimeType }
+              : { compareVideoBase64: compareMedia.base64, compareVideoMimeType: compareMedia.mimeType }
             : {}),
           playerName: player?.name,
-          sport: normalizeSportKey(player?.sport) || 'tennis',
+          sport: analysisSportKey(player?.sport),
+          shotType,
           playerHistory,
           cameraAngle: 'side-on',
         }),
       })
-      const analysis = await apiRes.json()
-      if (analysis.error) {
-        alert(`Analysis failed: ${analysis.error}`)
-        return
+      const analysis = await response.json()
+      if (!response.ok || analysis.error) {
+        throw new Error(analysis.error || 'Analysis failed')
       }
-      analysis.frame_previews = analysisFramePreviews(frames)
-      if (compareFrames) analysis.compare_frame_previews = analysisFramePreviews(compareFrames)
       await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
       setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
     } catch (e: any) {
@@ -344,6 +417,29 @@ export default function LessonDetailPage() {
       setCompareMode(false)
       setCompareVideoId(null)
       loadAll()
+    }
+  }
+
+  async function fetchCoachingVideos(issueArea: string, drill?: string) {
+    setLoadingCoachingVideo(issueArea)
+    try {
+      const response = await fetch('/api/youtube-coaching', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          issue: drill,
+          issueArea,
+          sport: player?.sport,
+          shotType,
+        }),
+      })
+      const payload = await response.json()
+      if (!response.ok || payload.error) throw new Error(payload.error || 'Failed to find coaching videos')
+      setCoachingVideos(prev => ({ ...prev, [issueArea]: payload.videos || [] }))
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to find coaching videos')
+    } finally {
+      setLoadingCoachingVideo(null)
     }
   }
 
@@ -362,8 +458,10 @@ export default function LessonDetailPage() {
   const sportConfig = SPORT_CONFIG[normalizeSportKey(player?.sport)] || SPORT_CONFIG.tennis
   const SKILL_FOCUSES = sportConfig.focuses
   const LESSON_TYPES = sportConfig.lessonTypes
+  const SHOT_TYPES = shotTypeOptionsForSport(player?.sport)
   const isCompleted = lesson.status === 'completed'
   const isCancelled = lesson.status === 'cancelled'
+  const isPublished = Boolean(lesson.published_at)
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const lessonCalendar = calendarEvent({
     title: `Playvia lesson: ${player?.name || 'Player'}`,
@@ -441,6 +539,29 @@ export default function LessonDetailPage() {
             <Badge variant={lessonStatusVariant(lesson.status)} className="capitalize">
               {lesson.status}
             </Badge>
+            <Badge variant={isPublished ? 'default' : 'secondary'}>
+              {isPublished ? 'Published' : 'Draft'}
+            </Badge>
+            {isPublished ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-lg text-xs"
+                onClick={unpublishLesson}
+                disabled={saving}
+              >
+                Unpublish
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="rounded-lg px-3 text-xs"
+                onClick={publishLesson}
+                disabled={saving}
+              >
+                Publish to player
+              </Button>
+            )}
             {!isCompleted && !isCancelled && (
               <Button size="sm" className="rounded-lg px-3 text-xs" onClick={() => setCompleteModal(true)}>
                 Complete lesson
@@ -817,7 +938,7 @@ export default function LessonDetailPage() {
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
             <Button className="gap-2 rounded-xl" onClick={() => setOpenUpload(true)}>
-              <Upload size={14} /> Upload video
+              <Upload size={14} /> Upload media
             </Button>
             <Button variant="outline" className="gap-2 rounded-xl" onClick={() => setShowRecord(!showRecord)}>
               <Circle size={14} className="text-red-500" /> Record
@@ -881,17 +1002,17 @@ export default function LessonDetailPage() {
 
           {openUpload && (
             <div className="space-y-3 rounded-2xl border border-border bg-card p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-foreground">Upload video</h3>
+              <h3 className="text-sm font-semibold text-foreground">Upload video or image</h3>
               <input
                 type="file"
-                accept="video/*"
+                accept="video/*,image/*"
                 onChange={e => setUploadFile(e.target.files?.[0] || null)}
                 className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground"
               />
               <Input
                 value={uploadTitle}
                 onChange={e => setUploadTitle(e.target.value)}
-                placeholder="Video title (optional)"
+                placeholder="Title (optional)"
                 className="rounded-xl"
               />
               <div className="flex gap-2">
@@ -956,7 +1077,7 @@ export default function LessonDetailPage() {
           )}
 
           {videos.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">No videos for this lesson yet.</div>
+            <div className="py-12 text-center text-sm text-muted-foreground">No media for this lesson yet.</div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {videos.map(video => {
@@ -1018,7 +1139,7 @@ export default function LessonDetailPage() {
                       {isAnalyzing && (
                         <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
                           <Sparkles size={12} className="animate-pulse text-primary" />
-                          Extracting key frames and analyzing…
+                          Generating AI coach feedback…
                         </div>
                       )}
 
@@ -1035,7 +1156,7 @@ export default function LessonDetailPage() {
                               <Badge variant="destructive">{counts.critical} critical</Badge>
                             )}
                             {counts.moderate > 0 && (
-                              <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100">
+                              <Badge className="border-accent/30 bg-accent/15 text-foreground">
                                 {counts.moderate} moderate
                               </Badge>
                             )}
@@ -1055,6 +1176,19 @@ export default function LessonDetailPage() {
                         </div>
                       )}
 
+                      <div className="space-y-2">
+                        <select
+                          value={shotType}
+                          onChange={event => setShotType(event.target.value)}
+                          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium text-foreground"
+                        >
+                          <option value="">Auto-detect shot type</option>
+                          {SHOT_TYPES.map(option => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
                       <div className="flex gap-2">
                         {!compareMode ? (
                           <>
@@ -1066,7 +1200,7 @@ export default function LessonDetailPage() {
                               onClick={() => analyzeVideo(video)}
                             >
                               <Sparkles size={12} />
-                              {isAnalyzing ? 'Analyzing…' : analysis ? 'Re-analyze' : 'Analyze'}
+                              {isAnalyzing ? 'Analyzing (may take 30s)…' : analysis ? 'Re-analyze' : 'Analyze'}
                             </Button>
                             {allPlayerVideos.length > 1 && (
                               <Button
@@ -1110,6 +1244,7 @@ export default function LessonDetailPage() {
                           </Button>
                         )}
                       </div>
+                      </div>
                     </div>
                   </div>
                 )
@@ -1129,6 +1264,13 @@ export default function LessonDetailPage() {
           sheetVideo ? format(new Date(sheetVideo.recorded_at), 'MMM d, yyyy • h:mm a') : ''
         }
         videoUrl={sheetVideo ? videoUrls[sheetVideo.id] ?? null : null}
+        mediaKind={sheetVideo && isImageMediaPath(sheetVideo.storage_path || sheetVideo.title) ? 'image' : 'video'}
+        videoId={sheetVideo?.id ?? null}
+        lessonId={lesson?.id ?? (typeof id === 'string' ? id : null)}
+        sport={player?.sport ?? null}
+        coachingVideos={coachingVideos}
+        loadingCoachingVideo={loadingCoachingVideo}
+        onFetchCoachingVideos={fetchCoachingVideos}
         analysis={
           sheetVideo
             ? videoAnalysis[sheetVideo.id] ??

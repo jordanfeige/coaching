@@ -37,24 +37,29 @@ export async function middleware(request: NextRequest) {
     // Get role from profiles
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, player_id')
       .eq('id', user.id)
       .single()
 
     const role = profile?.role || 'player'
     const isCoach = role === 'coach'
     const isPlayer = role === 'player'
+    const playerId = profile?.player_id
     const onDashboard = request.nextUrl.pathname.startsWith('/dashboard')
     const onPlayer = request.nextUrl.pathname.startsWith('/player')
 
     // Player trying to access coach dashboard → redirect to player portal
     if (isPlayer && onDashboard) {
-      return NextResponse.redirect(new URL('/player', request.url))
+      return NextResponse.redirect(new URL(playerId ? '/player' : '/analyze', request.url))
     }
 
     // Coach trying to access player portal → redirect to dashboard
     if (isCoach && onPlayer) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
+    if (isPlayer && !playerId && onPlayer) {
+      return NextResponse.redirect(new URL('/analyze', request.url))
     }
 
   } catch {

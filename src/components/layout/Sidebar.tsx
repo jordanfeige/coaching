@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { CalendarDays, Users, Dumbbell, Video, LogOut, Trophy, UserRoundCog } from 'lucide-react'
+import { CalendarDays, Users, Dumbbell, Video, LogOut, Trophy, UserRoundCog, TrendingUp } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 
 const nav = [
@@ -14,6 +14,10 @@ const nav = [
   { href: '/dashboard/accounts', label: 'Accounts', icon: UserRoundCog },
   { href: '/dashboard/drills', label: 'Drills', icon: Dumbbell },
   { href: '/dashboard/video', label: 'Video', icon: Video },
+]
+
+const growthNav = [
+  { href: '/dashboard/waitlist', label: 'Waitlist', icon: TrendingUp },
 ]
 
 export default function Sidebar() {
@@ -37,6 +41,27 @@ export default function Sidebar() {
           {nav.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                  active
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                )}
+              >
+                <Icon size={17} />
+                {label}
+              </Link>
+            )
+          })}
+          <div className="px-3 pt-5 pb-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+            Growth
+          </div>
+          {growthNav.map(({ href, label, icon: Icon }) => {
+            const active = pathname === href || pathname.startsWith(href)
             return (
               <Link
                 key={href}

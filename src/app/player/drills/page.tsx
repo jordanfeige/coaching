@@ -27,10 +27,22 @@ export default function PlayerDrillsPage() {
     setPlayers(linkedPlayers)
     const playerIds = linkedPlayers.map(p => p.id)
     if (playerIds.length) {
+      const { data: publishedLessons } = await supabase
+        .from('lessons')
+        .select('id')
+        .in('player_id', playerIds)
+        .not('published_at', 'is', null)
+      const publishedLessonIds = (publishedLessons || []).map(lesson => lesson.id)
+      if (!publishedLessonIds.length) {
+        setDrills([])
+        setLoading(false)
+        return
+      }
       const { data: d } = await supabase
         .from('drills')
         .select('*, players(id, name)')
         .in('player_id', playerIds)
+        .in('lesson_id', publishedLessonIds)
         .order('created_at', { ascending: false })
       setDrills(d || [])
     }
@@ -46,7 +58,7 @@ export default function PlayerDrillsPage() {
         <div>
           <h1 className="font-heading text-xl font-bold tracking-tight text-foreground md:text-2xl">My drills</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {filteredDrills.length} drill{filteredDrills.length !== 1 ? 's' : ''} assigned by your coach
+            {filteredDrills.length} drill{filteredDrills.length !== 1 ? 's' : ''} from published lesson recaps
           </p>
         </div>
         {players.length > 1 && (
@@ -75,7 +87,7 @@ export default function PlayerDrillsPage() {
         ) : filteredDrills.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border bg-muted/20 py-16 text-center">
             <Dumbbell size={40} className="mx-auto mb-3 text-muted-foreground/35" />
-            <p className="text-sm text-muted-foreground">No drills assigned yet.</p>
+            <p className="text-sm text-muted-foreground">No published drills yet.</p>
           </div>
         ) : (
           <div className="space-y-3">

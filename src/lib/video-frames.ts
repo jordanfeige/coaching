@@ -12,6 +12,11 @@ type ExtractOptions = {
   quality?: number
 }
 
+export function isImageMediaPath(path?: string | null) {
+  if (!path) return false
+  return /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i.test(path.split('?')[0] || '')
+}
+
 function seek(video: HTMLVideoElement, time: number) {
   return new Promise<void>((resolve, reject) => {
     const cleanup = () => {
@@ -47,13 +52,47 @@ function loadVideo(url: string) {
   })
 }
 
+function loadImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Could not load image for analysis.'))
+    image.src = url
+  })
+}
+
+export async function extractImageFrame(
+  imageUrl: string,
+  { maxWidth = 640, quality = 0.62 }: Pick<ExtractOptions, 'maxWidth' | 'quality'> = {}
+): Promise<ExtractedVideoFrame[]> {
+  const image = await loadImage(imageUrl)
+  const ratio = image.naturalWidth > maxWidth ? maxWidth / image.naturalWidth : 1
+  const width = Math.max(Math.round((image.naturalWidth || maxWidth) * ratio), 1)
+  const height = Math.max(Math.round((image.naturalHeight || maxWidth) * ratio), 1)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Could not prepare image analysis canvas.')
+  ctx.drawImage(image, 0, 0, width, height)
+  const dataUrl = canvas.toDataURL('image/jpeg', quality)
+  return [{
+    index: 0,
+    timestamp: 0,
+    mediaType: 'image/jpeg',
+    base64: dataUrl.split(',')[1] || '',
+    dataUrl,
+  }]
+}
+
 export async function extractVideoFrames(
   videoUrl: string,
-  { count = 8, maxWidth = 720, quality = 0.62 }: ExtractOptions = {}
+  { count = 2, maxWidth = 360, quality = 0.42 }: ExtractOptions = {}
 ): Promise<ExtractedVideoFrame[]> {
   const video = await loadVideo(videoUrl)
   const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 6
-  const frameCount = Math.max(3, Math.min(count, 12))
+  const frameCount = Math.max(1, Math.min(count, 12))
   const times = Array.from({ length: frameCount }, (_, i) => {
     const pct = frameCount === 1 ? 0.5 : (i + 0.5) / frameCount
     return Math.min(duration * pct, Math.max(duration - 0.1, 0))
@@ -84,6 +123,17 @@ export async function extractVideoFrames(
   video.removeAttribute('src')
   video.load()
   return frames
+}
+
+export async function extractMediaFrames(
+  mediaUrl: string,
+  sourcePath?: string | null,
+  options: ExtractOptions = {}
+): Promise<ExtractedVideoFrame[]> {
+  if (isImageMediaPath(sourcePath)) {
+    return extractImageFrame(mediaUrl, options)
+  }
+  return extractVideoFrames(mediaUrl, options)
 }
 
 export function analysisFramePreviews(frames: ExtractedVideoFrame[]) {

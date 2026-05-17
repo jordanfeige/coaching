@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import AnnotatedFrame from '@/components/AnnotatedFrame'
+import CoachChatPanel from '@/components/video/CoachChatPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,6 +20,8 @@ export function analysisPreviewHeadline(analysis: Record<string, unknown> | null
   if (typeof h === 'string' && h.trim()) return h.trim()
   const c = analysis.coach_tip
   if (typeof c === 'string' && c.trim()) return c.trim()
+  const b = analysis.biggest_win
+  if (typeof b === 'string' && b.trim()) return b.trim()
   const p = analysis.priority_focus
   if (typeof p === 'string' && p.trim()) return p.trim()
   return ''
@@ -41,14 +44,20 @@ export function issueSeverityCounts(analysis: Record<string, unknown> | null | u
   return { critical, moderate, minor, total: lists.length }
 }
 
-type TabKey = 'overview' | 'issues' | 'notes'
+type TabKey = 'overview' | 'issues' | 'chat' | 'notes'
 type FramePreview = { index: number; timestamp?: number; dataUrl: string }
 type AnalysisIssue = {
   area?: string
   severity?: string
   description?: string
+  what_i_see?: string
+  ideal?: string
+  consequence?: string
   drill?: string
+  drill_sets_reps?: string
   drill_instruction?: string
+  success_criteria?: string
+  simple_cue?: string
   drill_media_ref?: string
 }
 type AnalysisAnnotation = {
@@ -58,6 +67,19 @@ type AnalysisAnnotation = {
   x: number
   y: number
   note: string
+}
+type AnalysisStrength = {
+  area?: string
+  description?: string
+  what_i_see?: string
+  why_it_helps?: string
+}
+type CoachingVideo = {
+  videoId: string
+  title: string
+  thumbnail: string
+  channelTitle: string
+  description?: string
 }
 
 function tabBtn(active: boolean) {
@@ -73,14 +95,36 @@ function confidenceVariant(c: string): 'default' | 'secondary' | 'destructive' |
   return 'destructive'
 }
 
-function renderIssuesGrouped(issues: Array<AnalysisIssue | string>) {
+function renderIssuesGrouped(
+  issues: Array<AnalysisIssue | string>,
+  coachingVideoControls?: {
+    coachingVideos: Record<string, CoachingVideo[]>
+    loadingCoachingVideo: string | null
+    onFetchCoachingVideos: (issueArea: string, drill?: string) => void
+  }
+) {
   if (!issues?.length) return <p className="text-sm text-muted-foreground">No structured issues returned.</p>
   const bySev = ['critical', 'moderate', 'minor'] as const
   const labels = { critical: 'Critical', moderate: 'Moderate', minor: 'Minor' }
-  const ring = {
-    critical: 'border-destructive/30 bg-destructive/5',
-    moderate: 'border-amber-500/35 bg-amber-500/8',
-    minor: 'border-primary/25 bg-primary/5',
+  const styles = {
+    critical: {
+      card: 'border-slate-200 border-l-4 border-l-destructive bg-white shadow-sm',
+      text: 'text-destructive',
+      body: 'text-slate-700',
+      soft: 'border border-destructive/20 bg-destructive/5 text-destructive',
+    },
+    moderate: {
+      card: 'border-slate-200 border-l-4 border-l-accent bg-white shadow-sm',
+      text: 'text-slate-950',
+      body: 'text-slate-700',
+      soft: 'border border-accent/25 bg-accent/10 text-slate-900',
+    },
+    minor: {
+      card: 'border-slate-200 border-l-4 border-l-primary bg-white shadow-sm',
+      text: 'text-primary',
+      body: 'text-slate-700',
+      soft: 'border border-primary/20 bg-primary/10 text-primary',
+    },
   }
   return (
     <div className="space-y-4">
@@ -89,22 +133,57 @@ function renderIssuesGrouped(issues: Array<AnalysisIssue | string>) {
         if (!filtered.length) return null
         return (
           <div key={sev}>
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{labels[sev]}</p>
+            <p className={cn('mb-2 text-xs font-bold uppercase tracking-wide', styles[sev].text)}>
+              {labels[sev]}
+            </p>
             <div className="space-y-2">
               {filtered.map((issue, i) => {
                 const detail = typeof issue === 'string' ? null : issue
                 return (
-                  <div key={i} className={cn('rounded-lg border p-3', ring[sev])}>
-                    <p className="font-semibold text-foreground">
+                  <div key={i} className={cn('rounded-2xl border p-4', styles[sev].card)}>
+                    <p className={cn('font-heading font-semibold', styles[sev].text)}>
                       {detail?.area || (typeof issue === 'string' ? issue : 'Technique issue')}
                     </p>
-                    {detail?.description && (
-                      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{detail.description}</p>
+                    {detail && (
+                      <div className={cn('mt-2 space-y-2 text-sm leading-relaxed', styles[sev].body)}>
+                        {detail.description ? (
+                          <p className="whitespace-pre-wrap">{detail.description}</p>
+                        ) : (
+                          <>
+                            {detail.what_i_see && (
+                              <p>
+                                <span className="font-semibold text-slate-950">What I see: </span>
+                                {detail.what_i_see}
+                              </p>
+                            )}
+                            {detail.ideal && (
+                              <p>
+                                <span className="font-semibold text-slate-950">Ideal: </span>
+                                {detail.ideal}
+                              </p>
+                            )}
+                            {detail.consequence && (
+                              <p>
+                                <span className="font-semibold text-slate-950">Why it matters: </span>
+                                {detail.consequence}
+                              </p>
+                            )}
+                          </>
+                        )}
+                        {detail.simple_cue && (
+                          <div className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', styles[sev].soft)}>
+                            Cue: &quot;{detail.simple_cue}&quot;
+                          </div>
+                        )}
+                      </div>
                     )}
-                    {(detail?.drill || detail?.drill_instruction) && (
+                    {(detail?.drill || detail?.drill_sets_reps || detail?.drill_instruction || detail?.success_criteria) && (
                       <div className="mt-3 border-t border-border pt-3">
                         {detail.drill && (
-                          <p className="text-sm font-semibold text-primary">Drill: {detail.drill}</p>
+                          <p className="font-heading text-sm font-semibold text-primary">Drill: {detail.drill}</p>
+                        )}
+                        {detail.drill_sets_reps && (
+                          <p className="mt-1 text-xs font-semibold text-slate-950">{detail.drill_sets_reps}</p>
                         )}
                         {detail.drill_media_ref && (
                           <Badge variant="outline" className="mt-2">
@@ -112,7 +191,76 @@ function renderIssuesGrouped(issues: Array<AnalysisIssue | string>) {
                           </Badge>
                         )}
                         {detail.drill_instruction && (
-                          <p className="mt-1 text-sm text-muted-foreground">{detail.drill_instruction}</p>
+                          <p className="mt-1 text-sm text-slate-700">{detail.drill_instruction}</p>
+                        )}
+                        {detail.success_criteria && (
+                          <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                            <span className="font-semibold text-slate-950">Success: </span>
+                            {detail.success_criteria}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {detail?.area && coachingVideoControls && (
+                      <div className="mt-3">
+                        {coachingVideoControls.coachingVideos[detail.area]?.length ? (
+                          <div className="space-y-2">
+                            {coachingVideoControls.coachingVideos[detail.area].slice(0, 3).map(video => (
+                              <a
+                                key={video.videoId}
+                                href={`https://www.youtube.com/watch?v=${video.videoId}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex cursor-pointer items-center gap-3 overflow-hidden rounded-xl border p-2 transition-all hover:border-[#FF4444]"
+                                style={{ background: '#1A1A1A', borderColor: '#222222' }}
+                              >
+                                {video.thumbnail ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={video.thumbnail}
+                                    alt=""
+                                    width={120}
+                                    height={68}
+                                    className="h-[68px] w-[120px] shrink-0 rounded-lg object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-[68px] w-[120px] shrink-0 items-center justify-center rounded-lg bg-black text-xs text-white">
+                                    YouTube
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="line-clamp-2 text-[11px] font-semibold text-white">
+                                    {video.title.length > 60 ? `${video.title.slice(0, 60)}...` : video.title}
+                                  </p>
+                                  <div className="mt-1 flex items-center gap-1">
+                                    <svg width="13" height="9" viewBox="0 0 13 9" fill="none" aria-hidden="true">
+                                      <rect width="13" height="9" rx="2" fill="#FF0000" />
+                                      <path d="M5.2 2.2L8.8 4.5L5.2 6.8V2.2Z" fill="white" />
+                                    </svg>
+                                    <p className="truncate text-[10px]" style={{ color: '#555555' }}>
+                                      {video.channelTitle}
+                                    </p>
+                                  </div>
+                                </div>
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={coachingVideoControls.loadingCoachingVideo === detail.area}
+                            onClick={() => coachingVideoControls.onFetchCoachingVideos(detail.area!, detail.drill || '')}
+                            className="mt-1 rounded-xl px-3 py-1.5 text-xs font-medium transition-opacity disabled:opacity-60"
+                            style={{
+                              background: '#FF000015',
+                              color: '#FF4444',
+                              border: '1px solid #FF000030',
+                            }}
+                          >
+                            {coachingVideoControls.loadingCoachingVideo === detail.area
+                              ? 'Searching...'
+                              : '▶ Find coaching videos'}
+                          </button>
                         )}
                       </div>
                     )}
@@ -123,6 +271,33 @@ function renderIssuesGrouped(issues: Array<AnalysisIssue | string>) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function renderStrengths(strengths: AnalysisStrength[]) {
+  if (!strengths.length) return null
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-foreground">Strengths</h4>
+      <div className="mt-2 grid gap-2">
+        {strengths.map((strength, i) => (
+          <div key={i} className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+            <p className="text-sm font-semibold text-primary">{strength.area || 'Strength'}</p>
+            {(strength.what_i_see || strength.description) && (
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                {strength.what_i_see || strength.description}
+              </p>
+            )}
+            {strength.why_it_helps && (
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                <span className="font-semibold text-foreground">Why it helps: </span>
+                {strength.why_it_helps}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -155,14 +330,28 @@ export default function VideoAnalysisDialog({
   title,
   recordedLabel,
   videoUrl,
+  mediaKind = 'video',
   analysis,
+  videoId,
+  lessonId,
+  sport,
+  coachingVideos,
+  loadingCoachingVideo,
+  onFetchCoachingVideos,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
   recordedLabel: string
   videoUrl: string | null
+  mediaKind?: 'image' | 'video'
   analysis: Record<string, unknown> | null
+  videoId?: string | null
+  lessonId?: string | null
+  sport?: string | null
+  coachingVideos?: Record<string, CoachingVideo[]>
+  loadingCoachingVideo?: string | null
+  onFetchCoachingVideos?: (issueArea: string, drill?: string) => void
 }) {
   const [tab, setTab] = useState<TabKey>('overview')
 
@@ -184,15 +373,9 @@ export default function VideoAnalysisDialog({
   const framePreviews = Array.isArray(analysis?.frame_previews)
     ? (analysis!.frame_previews as FramePreview[])
     : []
-  const keyFrames = Array.isArray(analysis?.key_frames)
-    ? (analysis!.key_frames as Array<{ frame_index?: number; timestamp_label?: string; reason?: string }>)
-    : []
-  const displayedFrames =
-    keyFrames.length > 0
-      ? framePreviews.filter(frame => keyFrames.some(k => k.frame_index === frame.index))
-      : framePreviews.slice(0, 4)
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton
@@ -209,45 +392,13 @@ export default function VideoAnalysisDialog({
           ) : (
             <>
               {videoUrl && (
-                <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
-                  <video src={videoUrl} controls playsInline className="w-full rounded-lg bg-black" />
-                  <div className="rounded-xl border border-border bg-muted/20 p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <h4 className="text-sm font-semibold text-foreground">Annotated key frames</h4>
-                      {framePreviews.length > 0 && (
-                        <Badge variant="secondary">{framePreviews.length} frames analyzed</Badge>
-                      )}
-                    </div>
-                    {displayedFrames.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Run frame-based analysis to see key frames.</p>
-                    ) : (
-                      <div className="grid gap-3">
-                        {displayedFrames.map(frame => {
-                          const frameAnnotations = annotations.filter(a => (a.frame_index ?? frame.index) === frame.index)
-                          const key = keyFrames.find(k => k.frame_index === frame.index)
-                          return (
-                            <div key={frame.index} className="space-y-2">
-                              {frameAnnotations.length > 0 ? (
-                                <AnnotatedFrame
-                                  imageUrl={frame.dataUrl}
-                                  annotations={frameAnnotations}
-                                  className="overflow-hidden rounded-lg"
-                                />
-                              ) : (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={frame.dataUrl} alt={`Frame ${frame.index}`} className="w-full rounded-lg" />
-                              )}
-                              <p className="text-xs text-muted-foreground">
-                                Frame {frame.index}
-                                {typeof frame.timestamp === 'number' ? ` · ${frame.timestamp.toFixed(1)}s` : ''}
-                                {key?.reason ? ` · ${key.reason}` : ''}
-                              </p>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
+                <div className="mb-4 overflow-hidden rounded-xl border border-border bg-black">
+                  {mediaKind === 'image' ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={videoUrl} alt={title || 'Analysis media'} className="max-h-[520px] w-full object-contain" />
+                  ) : (
+                    <video src={videoUrl} controls playsInline className="max-h-[520px] w-full bg-black" />
+                  )}
                 </div>
               )}
 
@@ -257,6 +408,9 @@ export default function VideoAnalysisDialog({
                 </button>
                 <button type="button" className={tabBtn(tab === 'issues')} onClick={() => setTab('issues')}>
                   Issues & drills
+                </button>
+                <button type="button" className={tabBtn(tab === 'chat')} onClick={() => setTab('chat')}>
+                  Ask AI
                 </button>
                 <button type="button" className={tabBtn(tab === 'notes')} onClick={() => setTab('notes')}>
                   Full notes
@@ -276,6 +430,12 @@ export default function VideoAnalysisDialog({
                     )}
                     {isComparison && (
                       <Badge variant="outline">Comparison</Badge>
+                    )}
+                    {analysis.ai_coach_enhanced === true && (
+                      <Badge variant="outline">AI coach explanation</Badge>
+                    )}
+                    {analysis.ai_coach_enhanced === false && (
+                      <Badge variant="secondary">Local fallback</Badge>
                     )}
                   </div>
 
@@ -302,6 +462,27 @@ export default function VideoAnalysisDialog({
                     </div>
                   )}
 
+                  {typeof analysis.observations === 'string' && analysis.observations.trim() && (
+                    <div className="rounded-xl border border-border bg-muted/30 p-3">
+                      <h4 className="text-sm font-semibold text-foreground">Frame-by-frame observations</h4>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                        {analysis.observations}
+                      </p>
+                    </div>
+                  )}
+
+                  {typeof analysis.technique_notes === 'string' && analysis.technique_notes.trim() && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">Technique notes</h4>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                        {analysis.technique_notes}
+                      </p>
+                    </div>
+                  )}
+
+                  {Array.isArray(analysis.strengths) &&
+                    renderStrengths(analysis.strengths as AnalysisStrength[])}
+
                   {Array.isArray(analysis.improvements) && analysis.improvements.length > 0 && (
                     <div>
                       <h4 className="text-sm font-semibold text-foreground">Progress since baseline</h4>
@@ -319,19 +500,28 @@ export default function VideoAnalysisDialog({
                   )}
 
                   {((typeof analysis.coach_tip === 'string' && analysis.coach_tip.trim()) ||
+                    (typeof analysis.biggest_win === 'string' && analysis.biggest_win.trim()) ||
                     (typeof analysis.priority_focus === 'string' && analysis.priority_focus.trim())) ? (
-                    <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
+                    <div className="grid gap-3">
+                      {typeof analysis.biggest_win === 'string' && analysis.biggest_win.trim() && (
+                        <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
+                          <p className="text-sm font-semibold text-primary">Biggest win available</p>
+                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{analysis.biggest_win}</p>
+                        </div>
+                      )}
                       {typeof analysis.coach_tip === 'string' && analysis.coach_tip.trim() && (
-                        <p className="text-sm">
-                          <span className="font-semibold text-foreground">Coach cue: </span>
-                          <span className="text-muted-foreground">{analysis.coach_tip}</span>
-                        </p>
+                        <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
+                          <p className="text-sm">
+                            <span className="font-semibold text-foreground">Coach cue: </span>
+                            <span className="text-muted-foreground">{analysis.coach_tip}</span>
+                          </p>
+                        </div>
                       )}
                       {typeof analysis.priority_focus === 'string' && analysis.priority_focus.trim() && (
-                        <p className="mt-2 text-sm">
-                          <span className="font-semibold text-foreground">Priority: </span>
-                          <span className="text-muted-foreground">{analysis.priority_focus}</span>
-                        </p>
+                        <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 px-4 py-3">
+                          <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">This week&apos;s focus</p>
+                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{analysis.priority_focus}</p>
+                        </div>
                       )}
                     </div>
                   ) : null}
@@ -347,9 +537,27 @@ export default function VideoAnalysisDialog({
 
               {tab === 'issues' && (
                 <div className="space-y-5">
-                  {renderIssuesGrouped(issuesList as Array<AnalysisIssue | string>)}
+                  {renderIssuesGrouped(
+                    issuesList as Array<AnalysisIssue | string>,
+                    coachingVideos && onFetchCoachingVideos
+                      ? {
+                          coachingVideos,
+                          loadingCoachingVideo: loadingCoachingVideo ?? null,
+                          onFetchCoachingVideos,
+                        }
+                      : undefined
+                  )}
                   {renderRecommendedDrills(analysis)}
                 </div>
+              )}
+
+              {tab === 'chat' && (
+                <CoachChatPanel
+                  videoId={videoId}
+                  lessonId={lessonId}
+                  sport={sport}
+                  disabled={!videoId && !lessonId}
+                />
               )}
 
               {tab === 'notes' && (
@@ -378,14 +586,28 @@ export default function VideoAnalysisDialog({
                       <p className="whitespace-pre-wrap">{analysis.technique_notes}</p>
                     </section>
                   )}
+                  {typeof analysis.ai_coach_error === 'string' && analysis.ai_coach_error.trim() && (
+                    <section className="rounded-lg border border-amber-500/30 bg-amber-500/8 p-3">
+                      <h4 className="mb-1 font-semibold text-foreground">AI coach note</h4>
+                      <p className="whitespace-pre-wrap">{analysis.ai_coach_error}</p>
+                    </section>
+                  )}
                   {Array.isArray(analysis.strengths) && analysis.strengths.length > 0 && (
                     <section>
                       <h4 className="mb-1 font-semibold text-foreground">Strengths</h4>
                       <ul className="space-y-2">
-                        {(analysis.strengths as { area?: string; description?: string }[]).map((s, i) => (
+                        {(analysis.strengths as { area?: string; description?: string; what_i_see?: string; why_it_helps?: string }[]).map((s, i) => (
                           <li key={i}>
                             <span className="font-medium text-foreground">{s.area}</span>
-                            {s.description && <span className="mt-0.5 block">{s.description}</span>}
+                            {(s.description || s.what_i_see) && (
+                              <span className="mt-0.5 block">{s.description || s.what_i_see}</span>
+                            )}
+                            {s.why_it_helps && (
+                              <span className="mt-0.5 block">
+                                <span className="font-semibold text-foreground">Why it helps: </span>
+                                {s.why_it_helps}
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -404,5 +626,6 @@ export default function VideoAnalysisDialog({
         </div>
       </DialogContent>
     </Dialog>
+    </>
   )
 }

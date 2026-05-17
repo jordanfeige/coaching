@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { BrandMark } from '@/components/brand/BrandMark'
+import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
 
 const inputClass =
   'w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:outline-none'
@@ -98,7 +98,7 @@ export default function SetPasswordPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="space-y-4 text-center">
-          <BrandMark variant="authPanel" className="mx-auto" />
+          <SmartBrandMark variant="authPanel" className="mx-auto" />
           <p className="text-sm text-muted-foreground">Verifying your invite link…</p>
         </div>
       </div>
@@ -108,7 +108,7 @@ export default function SetPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <BrandMark variant="authPanel" className="mx-auto" />
+          <SmartBrandMark variant="authPanel" className="mx-auto" />
           <h1 className="font-heading mt-6 text-2xl font-bold text-foreground">Create your account</h1>
           {userEmail && <p className="mt-2 text-sm font-medium text-primary">{userEmail}</p>}
           <p className="mt-2 text-sm text-muted-foreground">Set a password to access your dashboard.</p>

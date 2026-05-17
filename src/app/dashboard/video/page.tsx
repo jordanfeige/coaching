@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Video, Upload, Circle, Square, Trash2, Play } from 'lucide-react'
 import { format } from 'date-fns'
+import { isImageMediaPath } from '@/lib/video-frames'
 
 export default function VideoPage() {
   const [videos, setVideos] = useState<any[]>([])
@@ -138,7 +139,7 @@ export default function VideoPage() {
             <Circle size={14} className="text-red-500" /> Record
           </Button>
           <Button onClick={() => setOpenUpload(true)} className="flex items-center gap-2">
-            <Upload size={14} /> Upload video
+            <Upload size={14} /> Upload media
           </Button>
         </div>
       </div>
@@ -146,7 +147,7 @@ export default function VideoPage() {
       {videos.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Video size={40} className="mx-auto mb-3 opacity-30" />
-          <p>No videos yet. Record or upload your first one!</p>
+          <p>No media yet. Record or upload your first clip or image!</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -185,7 +186,7 @@ export default function VideoPage() {
       {/* Upload dialog */}
       <Dialog open={openUpload} onOpenChange={setOpenUpload}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Upload video</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Upload video or image</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Player</Label>
@@ -202,8 +203,8 @@ export default function VideoPage() {
                 placeholder="e.g. Forehand drill session" />
             </div>
             <div className="space-y-2">
-              <Label>Video file</Label>
-              <Input type="file" accept="video/*"
+              <Label>Media file</Label>
+              <Input type="file" accept="video/*,image/*"
                 onChange={e => setUploadForm({ ...uploadForm, file: e.target.files?.[0] || null })} />
             </div>
             <div className="flex gap-2 justify-end">
@@ -292,7 +293,12 @@ export default function VideoPage() {
             <DialogTitle>{openPlay?.title}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <video ref={playbackRef} src={openPlay?.url} controls className="w-full rounded-lg" />
+            {openPlay && isImageMediaPath(openPlay.storage_path || openPlay.title) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={openPlay.url} alt={openPlay.title || 'Player media'} className="w-full rounded-lg" />
+            ) : (
+              <video ref={playbackRef} src={openPlay?.url} controls className="w-full rounded-lg" />
+            )}
             <p className="text-sm text-muted-foreground">
               {openPlay?.players?.name} · {openPlay && format(new Date(openPlay.recorded_at), 'MMMM d, yyyy • h:mm a')}
             </p>

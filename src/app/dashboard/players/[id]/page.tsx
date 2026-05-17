@@ -23,7 +23,7 @@ import VideoAnalysisDialog, {
   issueSeverityCounts,
 } from '@/components/video/VideoAnalysisDialog'
 import { cn } from '@/lib/utils'
-import { analysisFramePreviews, extractVideoFrames } from '@/lib/video-frames'
+import { isImageMediaPath } from '@/lib/video-frames'
 
 /** Legacy rows may still store `baseball`; treat as pickleball for focuses / AI. */
 function normalizeSportKey(s?: string | null): string {
@@ -49,6 +49,37 @@ const SPORT_CONFIG: Record<string, { focuses: string[]; lessonTypes: string[] }>
     focuses: ['Shooting', 'Ball handling', 'Defense', 'Passing', 'Footwork', 'Post play'],
     lessonTypes: ['Technical', 'Scrimmage', 'Conditioning', 'Film study', 'Mixed'],
   },
+}
+
+const SHOT_TYPE_OPTIONS: Record<string, string[]> = {
+  tennis: ['forehand', 'backhand', 'serve', 'volley', 'overhead'],
+  golf: ['driver', 'iron', 'chip', 'putt', 'bunker'],
+  baseball: ['batting', 'pitching'],
+  basketball: ['jump shot', 'free throw', 'layup'],
+  pickleball: ['serve', 'return', 'dink', 'volley', 'third-shot drop'],
+}
+
+function analysisSportKey(s?: string | null): string {
+  return (s || 'tennis').toLowerCase()
+}
+
+function shotTypeOptionsForSport(s?: string | null): string[] {
+  return SHOT_TYPE_OPTIONS[analysisSportKey(s)] || SHOT_TYPE_OPTIONS.tennis
+}
+
+async function mediaUrlToBase64(url: string): Promise<{ base64: string; mimeType: string }> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Could not download media (HTTP ${response.status}). Reload and try again.`)
+  }
+  const blob = await response.blob()
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+    reader.onerror = () => reject(new Error('Could not read media file.'))
+    reader.readAsDataURL(blob)
+  })
+  return { base64, mimeType: blob.type || 'video/mp4' }
 }
 
 function skillBadgeVariant(level: string): 'default' | 'secondary' | 'destructive' {
@@ -88,6 +119,9 @@ export default function PlayerDetailPage() {
   const [compareMode, setCompareMode] = useState(false)
   const [compareVideoId, setCompareVideoId] = useState<string | null>(null)
   const [sheetVideo, setSheetVideo] = useState<any>(null)
+  const [shotType, setShotType] = useState('')
+  const [coachingVideos, setCoachingVideos] = useState<Record<string, any[]>>({})
+  const [loadingCoachingVideo, setLoadingCoachingVideo] = useState<string | null>(null)
 
   const supabase = createClient()
 
@@ -204,38 +238,42 @@ export default function PlayerDetailPage() {
         return
       }
       setVideoUrls(prev => ({ ...prev, [video.id]: url }))
-      const frames = await extractVideoFrames(url)
+      const media = await mediaUrlToBase64(url)
 
       const compareUrl = compareVideo ? await getVideoUrl(compareVideo.storage_path) : undefined
       if (compareVideo && !compareUrl) {
         alert('Could not access the comparison video. Reload and try again.')
         return
       }
-      const compareFrames = compareUrl ? await extractVideoFrames(compareUrl, { count: 6 }) : undefined
-      const playerHistory = entries.slice(0, 3).map(e => e.content).join('\n---\n')
-
-      const apiRes = await fetch('/api/video-analysis', {
+      const compareMedia = compareUrl ? await mediaUrlToBase64(compareUrl) : null
+      const isPrimaryImage = media.mimeType.startsWith('image/') || isImageMediaPath(video.storage_path || video.title)
+      const isCompareImage = compareVideo && compareMedia
+        ? compareMedia.mimeType.startsWith('image/') || isImageMediaPath(compareVideo.storage_path || compareVideo.title)
+        : false
+      const playerHistory = entries.slice(0, 3).map(entry => entry.content).join('\n---\n')
+      const response = await fetch('/api/video-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          frames: frames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })),
-          ...(compareFrames
-            ? { compareFrames: compareFrames.map(({ index, timestamp, mediaType, base64 }) => ({ index, timestamp, mediaType, base64 })) }
+          ...(isPrimaryImage
+            ? { imageBase64: media.base64, mediaType: media.mimeType }
+            : { videoBase64: media.base64, videoMimeType: media.mimeType }),
+          ...(compareMedia
+            ? isCompareImage
+              ? { compareImageBase64: compareMedia.base64, compareMediaType: compareMedia.mimeType }
+              : { compareVideoBase64: compareMedia.base64, compareVideoMimeType: compareMedia.mimeType }
             : {}),
           playerName: player?.name,
-          sport: normalizeSportKey(player?.sport) || 'tennis',
+          sport: analysisSportKey(player?.sport),
+          shotType,
           playerHistory,
           cameraAngle: 'side-on',
         }),
       })
-
-      const analysis = await apiRes.json()
-      if (analysis.error) {
-        alert(`Analysis failed: ${analysis.error}`)
-        return
+      const analysis = await response.json()
+      if (!response.ok || analysis.error) {
+        throw new Error(analysis.error || 'Analysis failed')
       }
-      analysis.frame_previews = analysisFramePreviews(frames)
-      if (compareFrames) analysis.compare_frame_previews = analysisFramePreviews(compareFrames)
       await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
       setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
     } catch (e: any) {
@@ -245,6 +283,29 @@ export default function PlayerDetailPage() {
       setCompareMode(false)
       setCompareVideoId(null)
       loadAll()
+    }
+  }
+
+  async function fetchCoachingVideos(issueArea: string, drill?: string) {
+    setLoadingCoachingVideo(issueArea)
+    try {
+      const response = await fetch('/api/youtube-coaching', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          issue: drill,
+          issueArea,
+          sport: player?.sport,
+          shotType,
+        }),
+      })
+      const payload = await response.json()
+      if (!response.ok || payload.error) throw new Error(payload.error || 'Failed to find coaching videos')
+      setCoachingVideos(prev => ({ ...prev, [issueArea]: payload.videos || [] }))
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to find coaching videos')
+    } finally {
+      setLoadingCoachingVideo(null)
     }
   }
 
@@ -260,6 +321,7 @@ export default function PlayerDetailPage() {
   const sportConfig = SPORT_CONFIG[normalizeSportKey(player?.sport)] || SPORT_CONFIG.tennis
   const SKILL_FOCUSES = sportConfig.focuses
   const LESSON_TYPES = sportConfig.lessonTypes
+  const SHOT_TYPES = shotTypeOptionsForSport(player?.sport)
   return (
     <div className="max-w-4xl space-y-6">
       {/* Header */}
@@ -626,7 +688,7 @@ export default function PlayerDetailPage() {
         <div className="space-y-4">
           {videos.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
-              No videos yet. Upload from the Video page.
+              No media yet. Upload from the Video page.
             </div>
           ) : (
             <>
@@ -634,7 +696,7 @@ export default function PlayerDetailPage() {
                 <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4">
                   <p className="text-sm font-medium text-blue-700">Compare mode</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Pick a second clip. Both videos are sent to Gemini for comparison.
+                    Pick a second clip. The app will keep both frame sets with the local posture analysis.
                   </p>
                 </div>
               )}
@@ -677,7 +739,7 @@ export default function PlayerDetailPage() {
                         {isAnalyzing && (
                           <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
                             <Sparkles size={12} className="animate-pulse text-primary" />
-                            Extracting key frames and analyzing…
+                            Generating AI coach feedback…
                           </div>
                         )}
 
@@ -694,7 +756,7 @@ export default function PlayerDetailPage() {
                                 <Badge variant="destructive">{counts.critical} critical</Badge>
                               )}
                               {counts.moderate > 0 && (
-                                <Badge className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100">
+                                <Badge className="border-accent/30 bg-accent/15 text-foreground">
                                   {counts.moderate} moderate
                                 </Badge>
                               )}
@@ -715,6 +777,19 @@ export default function PlayerDetailPage() {
                           </div>
                         )}
 
+                        <div className="space-y-2">
+                          <select
+                            value={shotType}
+                            onChange={event => setShotType(event.target.value)}
+                            className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium text-foreground"
+                          >
+                            <option value="">Auto-detect shot type</option>
+                            {SHOT_TYPES.map(option => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
                         <div className="flex gap-2">
                           {!compareMode ? (
                             <>
@@ -726,7 +801,7 @@ export default function PlayerDetailPage() {
                                 onClick={() => analyzeVideo(video)}
                               >
                                 <Sparkles size={12} />
-                                {isAnalyzing ? 'Analyzing…' : analysis ? 'Re-analyze' : 'Analyze'}
+                                {isAnalyzing ? 'Analyzing (may take 30s)…' : analysis ? 'Re-analyze' : 'Analyze'}
                               </Button>
                               {videos.length > 1 && (
                                 <Button
@@ -770,6 +845,7 @@ export default function PlayerDetailPage() {
                             </Button>
                           )}
                         </div>
+                        </div>
                       </div>
                     </div>
                   )
@@ -790,6 +866,13 @@ export default function PlayerDetailPage() {
           sheetVideo ? format(new Date(sheetVideo.recorded_at), 'MMM d, yyyy • h:mm a') : ''
         }
         videoUrl={sheetVideo ? videoUrls[sheetVideo.id] ?? null : null}
+        mediaKind={sheetVideo && isImageMediaPath(sheetVideo.storage_path || sheetVideo.title) ? 'image' : 'video'}
+        videoId={sheetVideo?.id ?? null}
+        lessonId={sheetVideo?.lesson_id ?? null}
+        sport={player?.sport ?? null}
+        coachingVideos={coachingVideos}
+        loadingCoachingVideo={loadingCoachingVideo}
+        onFetchCoachingVideos={fetchCoachingVideos}
         analysis={
           sheetVideo
             ? videoAnalysis[sheetVideo.id] ??
