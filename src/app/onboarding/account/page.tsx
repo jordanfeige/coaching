@@ -27,7 +27,11 @@ function ProgressDots() {
 }
 
 export default function OnboardingAccountPage() {
-  const [role, setRole] = useState<Role>('player')
+  const [role] = useState<Role>(() => {
+    if (typeof window === 'undefined') return 'player'
+    const storedRole = localStorage.getItem('onboarding_role')
+    return storedRole === 'coach' || storedRole === 'player' ? storedRole : 'player'
+  })
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -38,9 +42,7 @@ export default function OnboardingAccountPage() {
 
   useEffect(() => {
     const storedRole = localStorage.getItem('onboarding_role')
-    if (storedRole === 'coach' || storedRole === 'player') {
-      setRole(storedRole)
-    } else {
+    if (storedRole !== 'coach' && storedRole !== 'player') {
       router.replace('/onboarding')
     }
   }, [router])
@@ -108,6 +110,26 @@ export default function OnboardingAccountPage() {
       setLoading(false)
       return
     }
+
+    await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'new_signup_admin',
+        name: fullName.trim() || normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        role,
+        sport: null,
+        signedUpAt: new Date().toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZoneName: 'short',
+        }),
+      }),
+    }).catch(error => console.error('Could not send admin signup notification:', error))
 
     localStorage.setItem('onboarding_role', role)
     router.push('/onboarding/profile')

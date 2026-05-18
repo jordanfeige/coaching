@@ -3,6 +3,22 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
+  const { pathname } = request.nextUrl
+  const publicRoutes = [
+    '/',
+    '/login',
+    '/signup',
+    '/pricing',
+    '/book',
+    '/pending',
+    '/onboarding',
+  ]
+  const isPublic =
+    publicRoutes.some(route => pathname === route || pathname.startsWith(`${route}/`)) ||
+    pathname.startsWith('/auth/') ||
+    pathname.startsWith('/api/')
+
+  if (isPublic) return supabaseResponse
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,36 +40,23 @@ export async function middleware(request: NextRequest) {
   try {
     const { data: { user } } = await supabase.auth.getUser()
 
-    const pathname = request.nextUrl.pathname
-    const protectedOnboarding =
-      pathname.startsWith('/onboarding/profile') ||
-      pathname.startsWith('/onboarding/ready') ||
-      pathname.startsWith('/onboarding/role')
-    const protectedAnalyze = pathname === '/analyze' || pathname.startsWith('/analyze/')
-
     if (!user) {
-      if (protectedAnalyze) {
-        return NextResponse.redirect(new URL('/onboarding', request.url))
-      }
-      if (
-        pathname.startsWith('/dashboard') ||
-        pathname.startsWith('/player') ||
-        protectedOnboarding
-      ) {
-        return NextResponse.redirect(new URL('/login', request.url))
-      }
-      return supabaseResponse
+      return NextResponse.redirect(new URL('/login', request.url))
     }
 
     // Get role from profiles
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, player_id')
+      .select('role, player_id, beta_status')
       .eq('id', user.id)
       .single()
 
+    if (!profile || profile.beta_status !== 'approved') {
+      return NextResponse.redirect(new URL('/pending', request.url))
+    }
+
     const role = profile?.role
-    if (!role && (pathname.startsWith('/dashboard') || pathname.startsWith('/player') || protectedAnalyze)) {
+    if (!role && (pathname.startsWith('/dashboard') || pathname.startsWith('/player') || pathname.startsWith('/analyze'))) {
       return NextResponse.redirect(new URL('/onboarding/role', request.url))
     }
 
@@ -86,5 +89,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/player/:path*', '/onboarding/:path*', '/analyze/:path*'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js).*)',
+  ],
 }

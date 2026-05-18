@@ -32,8 +32,7 @@ const pricingTeasers = [
     button: 'Start free →',
   },
   {
-    name: 'Pro — coming soon',
-    price: '?',
+    name: 'Pro',
     subtitle: 'Unlimited analyses · Progress timeline · Weekly plans · Monthly reports',
     href: '/pricing',
     button: 'Join waitlist →',
@@ -65,8 +64,7 @@ function PricingTeaserCard({ card }: { card: typeof pricingTeasers[number] }) {
         </span>
       )}
       <h3 className="font-heading text-2xl font-bold">{card.name}</h3>
-      <p className="mt-5 font-heading text-4xl font-black">{card.price}</p>
-      {card.highlighted && <p className="mt-1 text-sm font-medium" style={{ color: textSecondary }}>Join waitlist for early pricing</p>}
+      {'price' in card && <p className="mt-5 font-heading text-4xl font-black">{card.price}</p>}
       <p className="mt-5 text-sm leading-relaxed" style={{ color: textSecondary }}>{card.subtitle}</p>
       <div className="flex-1" />
       <Link

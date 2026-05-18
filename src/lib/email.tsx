@@ -203,3 +203,38 @@ export async function sendProUpgrade(props: {
     idempotencyKey: `pro-upgrade/${props.to}/${props.plan}/${props.nextBillingDate}`,
   })
 }
+
+export async function sendBetaApproved(props: {
+  to: string
+  name: string
+  role: 'coach' | 'player'
+}) {
+  const { BetaApprovedEmail } = await import('@/emails/BetaApprovedEmail')
+  return sendEmail({
+    to: props.to,
+    subject: "You're in — welcome to the Playvia beta",
+    template: <BetaApprovedEmail name={props.name} role={props.role} />,
+    idempotencyKey: `beta-approved/${props.to}/${props.role}`,
+  })
+}
+
+export async function sendNewSignupAdmin(props: {
+  name: string
+  email: string
+  role: 'coach' | 'player'
+  sport?: string
+  signedUpAt: string
+}) {
+  const { NewSignupAdminEmail } = await import('@/emails/NewSignupAdminEmail')
+  return sendEmail({
+    to: 'jordanfeige@gmail.com',
+    subject: `New Playvia signup — ${props.name} (${props.role})`,
+    template: (
+      <NewSignupAdminEmail
+        {...props}
+        approveUrl="https://playvia.studio/dashboard/waitlist"
+      />
+    ),
+    idempotencyKey: `new-signup-admin/${props.email}/${props.role}/${props.signedUpAt}`,
+  })
+}

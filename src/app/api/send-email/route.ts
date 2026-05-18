@@ -6,6 +6,7 @@ import {
   sendLessonCancelledPlayer,
   sendLessonRescheduledCoach,
   sendLessonRescheduledPlayer,
+  sendNewSignupAdmin,
   sendProUpgrade,
   sendWelcome,
 } from '@/lib/email'
@@ -15,7 +16,10 @@ export const runtime = 'nodejs'
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const { type, to, ...props } = body
-  const recipient = to || (typeof type === 'string' && type.endsWith('_coach') ? process.env.COACH_EMAIL : null)
+  const recipient =
+    to ||
+    (typeof type === 'string' && type.endsWith('_coach') ? process.env.COACH_EMAIL : null) ||
+    (type === 'new_signup_admin' ? 'jordanfeige@gmail.com' : null)
 
   if (!type || !recipient) {
     return NextResponse.json({ error: 'Email type and recipient are required' }, { status: 400 })
@@ -46,6 +50,15 @@ export async function POST(req: NextRequest) {
         break
       case 'pro_upgrade':
         await sendProUpgrade({ to: recipient, ...props })
+        break
+      case 'new_signup_admin':
+        await sendNewSignupAdmin({
+          name: props.name,
+          email: props.email,
+          role: props.role,
+          sport: props.sport,
+          signedUpAt: props.signedUpAt,
+        })
         break
       default:
         return NextResponse.json({ error: 'Unknown email type' }, { status: 400 })

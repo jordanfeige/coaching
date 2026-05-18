@@ -19,6 +19,16 @@ type RecentSignup = {
   created_at: string | null
 }
 
+type PendingBetaUser = {
+  id: string
+  email: string | null
+  full_name?: string | null
+  role: string | null
+  sport?: string | null
+  created_at: string | null
+  beta_status: string | null
+}
+
 type GrowthStats = {
   totalSignups: number
   signupsThisWeek: number
@@ -52,6 +62,7 @@ const emptySportsBreakdown: SportsBreakdown = {
 export default function WaitlistPage() {
   const [entries, setEntries] = useState<WaitlistEntry[]>([])
   const [recentSignups, setRecentSignups] = useState<RecentSignup[]>([])
+  const [pendingBetaUsers, setPendingBetaUsers] = useState<PendingBetaUser[]>([])
   const [stats, setStats] = useState<GrowthStats>(emptyStats)
   const [sportsBreakdown, setSportsBreakdown] = useState<SportsBreakdown>(emptySportsBreakdown)
   const [waitlistAvailable, setWaitlistAvailable] = useState(true)
@@ -67,6 +78,7 @@ export default function WaitlistPage() {
         if (!response.ok || payload.error) throw new Error(payload.error || 'Could not load waitlist')
         setEntries(payload.entries || [])
         setRecentSignups(payload.recentSignups || [])
+        setPendingBetaUsers(payload.pendingBetaUsers || [])
         setStats(payload.stats || emptyStats)
         setSportsBreakdown(payload.sportsBreakdown || emptySportsBreakdown)
         setWaitlistAvailable(payload.waitlistAvailable !== false)
@@ -83,6 +95,35 @@ export default function WaitlistPage() {
     await navigator.clipboard.writeText(entries.map(entry => entry.email).join(', '))
     setCopied(true)
     window.setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function updateBetaStatus(user: PendingBetaUser, betaStatus: 'approved' | 'rejected') {
+    try {
+      const response = await fetch('/api/waitlist', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.id, beta_status: betaStatus }),
+      })
+      const payload = await response.json()
+      if (!response.ok || payload.error) throw new Error(payload.error || 'Could not update beta status')
+      if (betaStatus === 'approved' && user.email) {
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'new_signup_admin',
+            name: `✓ APPROVED: ${user.full_name || user.email}`,
+            email: user.email,
+            role: user.role === 'coach' ? 'coach' : 'player',
+            signedUpAt: new Date().toLocaleString(),
+            sport: user.sport || null,
+          }),
+        }).catch(error => console.error('Could not send approval confirmation:', error))
+      }
+      setPendingBetaUsers(current => current.filter(item => item.id !== user.id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not update beta status')
+    }
   }
 
   const statCards = [
@@ -230,6 +271,64 @@ export default function WaitlistPage() {
                     <td className="px-5 py-4 text-muted-foreground">{entry.source || 'pricing'}</td>
                     <td className="px-5 py-4 text-muted-foreground">
                       {format(new Date(entry.created_at), 'MMM d, yyyy h:mm a')}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="font-heading text-sm font-semibold text-foreground">Beta approvals</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Approve pending users for dashboard access.</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-5 py-3 font-semibold">Email</th>
+                <th className="px-5 py-3 font-semibold">Role</th>
+                <th className="px-5 py-3 font-semibold">Signed up</th>
+                <th className="px-5 py-3 font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-10 text-center text-muted-foreground">Loading...</td>
+                </tr>
+              ) : pendingBetaUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-10 text-center text-muted-foreground">No pending beta applications.</td>
+                </tr>
+              ) : (
+                pendingBetaUsers.map(user => (
+                  <tr key={user.id} className="border-b border-border last:border-b-0">
+                    <td className="px-5 py-4 font-medium text-foreground">{user.email || '—'}</td>
+                    <td className="px-5 py-4 capitalize text-muted-foreground">{user.role || 'player'}</td>
+                    <td className="px-5 py-4 text-muted-foreground">
+                      {user.created_at ? format(new Date(user.created_at), 'MMM d, yyyy') : '—'}
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateBetaStatus(user, 'approved')}
+                          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateBetaStatus(user, 'rejected')}
+                          className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive"
+                        >
+                          Reject
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

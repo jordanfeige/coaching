@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { sendBetaApproved } from '@/lib/email'
 
 /*
 -- Run in Supabase SQL editor:
@@ -29,6 +30,16 @@ type ProfileGrowthRow = {
   analyses_used?: number | null
   created_at?: string | null
   updated_at?: string | null
+}
+
+type PendingBetaUser = {
+  id: string
+  email: string | null
+  full_name?: string | null
+  role: string | null
+  sport?: string | null
+  created_at: string | null
+  beta_status: string | null
 }
 
 type AuthUserMetadata = {
@@ -171,6 +182,12 @@ export async function GET() {
 
   const waitlistEntries = waitlistMissing ? [] : (waitlistResult.data ?? []) as WaitlistEntry[]
   const totalAnalysesRun = profiles.reduce((sum, profile) => sum + (Number(profile.analyses_used) || 0), 0)
+  const { data: pending } = await supabaseAdmin
+    .from('profiles')
+    .select('id, email, full_name, role, sport, created_at, beta_status')
+    .eq('beta_status', 'pending')
+    .order('created_at', { ascending: false })
+  const pendingBetaUsers = (pending ?? []) as PendingBetaUser[]
 
   return NextResponse.json({
     entries: waitlistEntries,
@@ -192,6 +209,45 @@ export async function GET() {
         created_at: profile.created_at || null,
       }
     }),
+    pendingBetaUsers,
     sportsBreakdown,
   })
+}
+
+export async function PATCH(req: NextRequest) {
+  const auth = await requireCoach()
+  if ('error' in auth) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  }
+
+  try {
+    const { id, beta_status } = await req.json()
+    if (!id || !['approved', 'rejected', 'pending'].includes(beta_status)) {
+      return NextResponse.json({ error: 'Valid user id and beta status are required' }, { status: 400 })
+    }
+
+    const { data: user, error } = await adminClient()
+      .from('profiles')
+      .update({ beta_status })
+      .eq('id', id)
+      .select('id, email, full_name, role, sport, beta_status')
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    if (beta_status === 'approved' && user?.email) {
+      await sendBetaApproved({
+        to: user.email,
+        name: user.full_name || user.email.split('@')[0],
+        role: user.role === 'coach' ? 'coach' : 'player',
+      })
+    }
+
+    return NextResponse.json({ success: true, user })
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Could not update beta status' },
+      { status: 500 }
+    )
+  }
 }

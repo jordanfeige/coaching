@@ -1,7 +1,7 @@
 'use client'
 
-import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { brand } from '@/lib/brand'
 
@@ -19,12 +19,12 @@ function ProgressDots() {
 }
 
 export default function OnboardingReadyPage() {
-  const [role, setRole] = useState<Role>('player')
-
-  useEffect(() => {
+  const [role] = useState<Role>(() => {
+    if (typeof window === 'undefined') return 'player'
     const storedRole = localStorage.getItem('onboarding_role')
-    if (storedRole === 'coach' || storedRole === 'player') setRole(storedRole)
-  }, [])
+    return storedRole === 'coach' || storedRole === 'player' ? storedRole : 'player'
+  })
+  const router = useRouter()
 
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-10" style={{ background: brand.bg }}>
@@ -43,31 +43,11 @@ export default function OnboardingReadyPage() {
         {role === 'coach' ? (
           <div className="mt-8">
             <p className="text-lg font-semibold" style={{ color: brand.textSecondary }}>
-              Here&apos;s how to get started
+              Your coaching account is ready for review.
             </p>
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
-              {[
-                ['Add your first player', '/dashboard/players', 'primary'],
-                ['Set your availability', '/dashboard/schedule', 'secondary'],
-                ['Explore the dashboard', '/dashboard', 'link'],
-              ].map(([label, href, variant]) => (
-                <Link
-                  key={label}
-                  href={href}
-                  className="rounded-2xl px-4 py-5 text-sm font-bold"
-                  style={{
-                    background: variant === 'primary' ? brand.teal : variant === 'secondary' ? brand.tealLight : brand.cardAlt,
-                    color: variant === 'primary' ? 'white' : brand.teal,
-                    border: `1px solid ${variant === 'primary' ? brand.teal : brand.border}`,
-                  }}
-                >
-                  {label} →
-                </Link>
-              ))}
-            </div>
             <div className="mx-auto mt-8 max-w-md rounded-2xl border p-5 text-left" style={{ borderColor: brand.border }}>
               <p className="mb-3 text-sm font-bold" style={{ color: brand.text }}>
-                Getting started checklist
+                Once approved, you can:
               </p>
               {[
                 'Add a player to your roster',
@@ -80,32 +60,37 @@ export default function OnboardingReadyPage() {
                 </div>
               ))}
             </div>
-            <Link
-              href="/dashboard"
+            <button
+              type="button"
+              onClick={() => router.push('/pending')}
               className="mx-auto mt-8 inline-flex rounded-xl px-6 py-3 text-sm font-bold text-white"
               style={{ background: brand.teal }}
             >
-              Go to dashboard →
-            </Link>
+              Submit my application →
+            </button>
           </div>
         ) : (
           <div className="mx-auto mt-8 max-w-xl">
             <p className="text-lg font-semibold" style={{ color: brand.textSecondary }}>
               You have 3 free analyses included
             </p>
-            <Link
-              href="/player/analyze"
-              className="mt-6 block rounded-3xl p-6 text-left text-white shadow-sm"
+            <div
+              className="mt-6 rounded-3xl p-6 text-left text-white shadow-sm"
               style={{ background: brand.teal }}
             >
-              <p className="font-heading text-2xl font-bold">Analyze your technique now →</p>
+              <p className="font-heading text-2xl font-bold">Your application is ready</p>
               <p className="mt-2 text-sm text-white/85">
-                Upload a 30-second video and get your first coaching report
+                Submit your beta application and we&apos;ll email you when access is approved.
               </p>
-            </Link>
-            <Link href="/player" className="mt-6 inline-flex text-sm font-bold" style={{ color: brand.teal }}>
-              Go to my dashboard →
-            </Link>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push('/pending')}
+              className="mt-6 inline-flex rounded-xl px-6 py-3 text-sm font-bold text-white"
+              style={{ background: brand.teal }}
+            >
+              Submit my application →
+            </button>
           </div>
         )}
       </div>

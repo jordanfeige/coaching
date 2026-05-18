@@ -29,6 +29,12 @@ function AuthCallbackContent() {
         return
       }
 
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', session.user.id)
+        .maybeSingle()
+
       const profilePayload = {
         id: session.user.id,
         email: session.user.email ?? null,
@@ -44,6 +50,41 @@ function AuthCallbackContent() {
           id: session.user.id,
           email: session.user.email ?? null,
         }, { onConflict: 'id' })
+      }
+
+      if (!existingProfile && session.user.email) {
+        const role =
+          session.user.user_metadata?.role === 'coach' || session.user.user_metadata?.role === 'player'
+            ? session.user.user_metadata.role
+            : 'player'
+        const name =
+          typeof session.user.user_metadata?.full_name === 'string' && session.user.user_metadata.full_name.trim()
+            ? session.user.user_metadata.full_name.trim()
+            : session.user.email.split('@')[0]
+        const sport =
+          typeof session.user.user_metadata?.sport === 'string'
+            ? session.user.user_metadata.sport
+            : null
+
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'new_signup_admin',
+            name,
+            email: session.user.email,
+            role,
+            sport,
+            signedUpAt: new Date().toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              timeZoneName: 'short',
+            }),
+          }),
+        }).catch(error => console.error('Could not send admin signup notification:', error))
       }
 
       const { data: profile } = await supabase

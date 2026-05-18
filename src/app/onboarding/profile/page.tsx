@@ -119,22 +119,6 @@ export default function OnboardingProfilePage() {
       return
     }
 
-    if (user.email) {
-      fetch('/api/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'welcome',
-          to: user.email,
-          name:
-            typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
-              ? user.user_metadata.full_name.trim().split(/\s+/)[0]
-              : user.email.split('@')[0],
-          role,
-        }),
-      }).catch(error => console.error('Could not send welcome email:', error))
-    }
-
     localStorage.setItem('onboarding_role', role)
     router.push('/onboarding/ready')
   }
