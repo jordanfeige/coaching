@@ -2,8 +2,13 @@ import type { ReactElement } from 'react'
 import { Resend } from 'resend'
 import { render } from '@react-email/render'
 
-const resend = new Resend(process.env.RESEND_API_KEY || process.env.PLAYVIA_DEV_RESEND)
 const FROM = 'Playvia <noreply@playvia.studio>'
+
+function getResend() {
+  const apiKey = process.env.RESEND_API_KEY_PLAYVIA
+  if (!apiKey) throw new Error('RESEND_API_KEY_PLAYVIA is not set')
+  return new Resend(apiKey)
+}
 
 export async function sendEmail({
   to,
@@ -19,7 +24,7 @@ export async function sendEmail({
   const html = await render(template)
 
   try {
-    const { data, error } = await resend.emails.send(
+    const { data, error } = await getResend().emails.send(
       {
         from: FROM,
         to,
