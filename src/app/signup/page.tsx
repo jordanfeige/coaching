@@ -1,8 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
 
 const inputClass =
@@ -15,11 +15,9 @@ const sports = [
   { id: 'basketball', label: '🏀 Basketball' },
 ]
 
-export default function SignupPage() {
-  const [role] = useState<'coach' | 'player'>(() => {
-    if (typeof window === 'undefined') return 'player'
-    return new URLSearchParams(window.location.search).get('role') === 'coach' ? 'coach' : 'player'
-  })
+function SignupForm() {
+  const searchParams = useSearchParams()
+  const role: 'coach' | 'player' = searchParams.get('role') === 'coach' ? 'coach' : 'player'
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -57,34 +55,32 @@ export default function SignupPage() {
       setLoading(false)
       return
     }
-    const { error, data } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, sports: selectedSports, role },
-      },
+    const response = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        password,
+        fullName,
+        role,
+        sports: selectedSports,
+      }),
     })
-    if (error) {
-      setError(error.message)
+    const payload = await response.json()
+    if (!response.ok || payload.error) {
+      setError(payload.error || 'Could not create account')
       setLoading(false)
       return
     }
 
-    if (data.user) {
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: data.user.id,
-        email,
-        full_name: fullName.trim() || null,
-        role,
-        player_id: null,
-      })
-      if (profileError) {
-        setError(profileError.message)
-        setLoading(false)
-        return
-      }
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    if (signInError) {
+      setError(signInError.message)
+      setLoading(false)
+      return
     }
-    router.push(role === 'coach' ? '/dashboard' : '/analyze')
+
+    router.push(role === 'coach' ? '/dashboard' : '/analyze?welcome=true')
   }
 
   return (
@@ -124,12 +120,12 @@ export default function SignupPage() {
           </div>
           <div className="mb-8">
             <h2 className="font-heading mb-2 text-2xl font-bold text-foreground">
-              {role === 'coach' ? 'Set up your coaching account' : 'Create your player account'}
+              {role === 'coach' ? 'Set up your coaching account' : 'Create your free account'}
             </h2>
             <p className="text-sm text-muted-foreground">
               {role === 'coach'
                 ? 'Create your coach workspace for lessons, players, drills, and video analysis.'
-                : 'Sign up for your athlete portal — schedules, drills, videos, and coach notes (one login for you or your family).'}
+                : 'Get AI-powered coaching feedback on your technique. Free to start.'}
             </p>
           </div>
           <form onSubmit={handleSignup} className="space-y-4">
@@ -235,5 +231,13 @@ export default function SignupPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <SignupForm />
+    </Suspense>
   )
 }

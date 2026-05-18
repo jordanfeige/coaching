@@ -27,10 +27,8 @@ export default function LoginPage() {
 
     if (profile?.role === 'coach') {
       router.push('/dashboard')
-    } else if (profile?.role === 'player' && profile?.player_id) {
-      router.push('/player')
     } else {
-      router.push('/analyze')
+      router.push('/player')
     }
   }
 
@@ -40,12 +38,10 @@ export default function LoginPage() {
         <div>
           <SmartBrandMark variant="authHero" />
           <h1 className="font-heading mt-10 text-4xl leading-tight font-bold text-foreground md:text-5xl">
-            Elevate your
-            <br />
-            <span className="text-primary">coaching game.</span>
+            Welcome back to Playvia
           </h1>
           <p className="mt-6 max-w-md text-lg text-muted-foreground">
-            Manage players, schedule lessons, track progress, and review footage — all in one place.
+            Sign in to access your lessons, drills, and coaching reports.
           </p>
         </div>
         <div className="flex gap-10">

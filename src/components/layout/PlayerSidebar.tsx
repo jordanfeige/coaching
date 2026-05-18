@@ -4,11 +4,12 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { CalendarDays, LogOut } from 'lucide-react'
+import { CalendarDays, LogOut, Video } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 
 const nav = [
   { href: '/player', label: 'Lessons', icon: CalendarDays },
+  { href: '/analyze', label: 'Analyze', icon: Video },
 ]
 
 export default function PlayerSidebar() {

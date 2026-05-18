@@ -37,10 +37,8 @@ export function SmartBrandMark(props: SmartBrandMarkProps) {
       if (!active) return
       if (profile?.role === 'coach') {
         setHref('/dashboard')
-      } else if (profile?.role === 'player' && profile?.player_id) {
-        setHref('/player')
       } else {
-        setHref('/analyze')
+        setHref('/player')
       }
     }
 

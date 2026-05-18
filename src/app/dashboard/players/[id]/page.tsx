@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Sparkles, Video, BookOpen, Dumbbell, Clock, RefreshCw, X } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Sparkles, Video, BookOpen, Dumbbell, Clock, RefreshCw, X, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -24,6 +24,7 @@ import VideoAnalysisDialog, {
 } from '@/components/video/VideoAnalysisDialog'
 import { cn } from '@/lib/utils'
 import { isImageMediaPath } from '@/lib/video-frames'
+import { titleInitials } from '@/lib/video-thumbnails'
 
 /** Legacy rows may still store `baseball`; treat as pickleball for focuses / AI. */
 function normalizeSportKey(s?: string | null): string {
@@ -636,6 +637,7 @@ export default function PlayerDetailPage() {
           ) : (
             lessons.map(lesson => {
               const journalEntry = lesson.journal_entries?.[0]
+              const playerViewedAt = lesson.player_viewed_at
               return (
                 <div
                   key={lesson.id}
@@ -655,6 +657,16 @@ export default function PlayerDetailPage() {
                       </p>
                       {journalEntry && (
                         <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{journalEntry.content}</p>
+                      )}
+                      {lesson.published_at && (
+                        playerViewedAt ? (
+                          <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                            <CheckCircle className="size-3" />
+                            Viewed {format(new Date(playerViewedAt), 'MMM d')}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-muted-foreground">Not yet viewed</p>
+                        )
                       )}
                     </button>
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -718,10 +730,17 @@ export default function PlayerDetailPage() {
                     >
                       <button
                         type="button"
-                        className="relative flex aspect-video w-full items-center justify-center bg-muted"
+                        className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-muted"
                         onClick={() => openAnalysisSheet(video)}
                       >
-                        <Video className="size-8 text-muted-foreground/40" />
+                        {video.thumbnail_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={video.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/25 via-primary/10 to-muted">
+                            <span className="font-heading text-3xl font-bold text-primary">{titleInitials(video.title)}</span>
+                          </div>
+                        )}
                         {analysis && (
                           <span className="absolute bottom-2 left-2 rounded-md bg-background/95 px-2 py-1 text-[10px] font-semibold text-muted-foreground shadow-sm backdrop-blur-sm">
                             Tap for breakdown

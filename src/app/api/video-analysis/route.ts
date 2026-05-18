@@ -73,6 +73,9 @@ LEG DRIVE: Knee bend estimate, force timing, vertical balance.
 RELEASE POINT: Height, extension, timing, consistency.
 WRIST SNAP: Follow-through position and backspin clues if visible.
 LANDING: Balance, drift, and repeatability after release.`,
+  pickleball: `
+Reference exact timestamps whenever possible.
+Evaluate: Ready position & paddle height, Serve mechanics, Dinking (quiet wrist, kitchen line discipline, soft hands), Volley & reset technique, Third shot drop vs drive decision, Overhead/ATP shots, Footwork & transition zone movement, Doubles positioning.`,
 }
 
 const SPORT_EXPERT: Record<string, string> = {
@@ -80,11 +83,12 @@ const SPORT_EXPERT: Record<string, string> = {
   golf: 'You are a PGA Master Professional. Give specific swing analysis with timestamp references, angle estimates, sequencing details, and practical drills.',
   baseball: 'You are an elite baseball coach. Give specific hitting, pitching, and movement feedback with timestamp references and measurable fixes.',
   basketball: 'You are an elite shooting coach. Give specific technical feedback with timestamp references, body alignment details, and measurable drills.',
+  pickleball: 'You are an elite pickleball coach with deep expertise in the kitchen game, transition zone, and doubles positioning. Give specific feedback with timestamps and measurable targets.',
 }
 
 function normalizeSport(sport: unknown) {
   const key = String(sport || 'tennis').toLowerCase()
-  return key === 'pickleball' ? 'tennis' : key
+  return key
 }
 
 function extensionForMimeType(mimeType: string) {
@@ -277,10 +281,11 @@ export async function POST(req: NextRequest) {
     sport = 'tennis',
     shotType,
     playerHistory = '',
-    cameraAngle = 'side-on',
+    cameraAngle,
   } = body
 
   const normalizedSport = normalizeSport(sport)
+  const normalizedCameraAngle = cameraAngle || 'side-on'
   const fileManager = new GoogleAIFileManager(apiKey)
   const uploadedFiles: UploadedMedia[] = []
 
@@ -315,7 +320,7 @@ export async function POST(req: NextRequest) {
       sport: normalizedSport,
       playerName,
       shotType,
-      cameraAngle,
+      cameraAngle: normalizedCameraAngle,
       playerHistory,
       isComparison: Boolean(compareVideoBase64 || compareFrames?.length || compareImageBase64),
     })

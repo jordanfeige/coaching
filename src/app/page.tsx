@@ -11,7 +11,7 @@ const textSecondary = 'hsl(220, 10%, 45%)'
 
 const analyzerFeatures = [
   'Instant AI video analysis',
-  'Tennis, Golf, Baseball & Basketball',
+  'Tennis, Golf, Pickleball, Baseball & Basketball',
   'Specific drill recommendations',
   'YouTube coaching videos',
   'Shareable results',
@@ -53,6 +53,11 @@ const sports = [
     emoji: '🏀',
     title: 'Basketball',
     issues: 'Shot pocket · Elbow alignment · Release point · Follow through',
+  },
+  {
+    emoji: '🏓',
+    title: 'Pickleball',
+    issues: 'Kitchen play · Dinks · Volleys · Third shot drops · Doubles positioning',
   },
 ]
 
@@ -133,7 +138,7 @@ export default function Home() {
             </Link>
           </div>
           <p className="mt-3 text-sm" style={{ color: textSecondary }}>
-            No credit card required · Tennis · Golf · Baseball · Basketball
+            No credit card required · Tennis · Golf · Pickleball · Baseball · Basketball
           </p>
         </section>
 
@@ -209,7 +214,7 @@ export default function Home() {
           <div className="mx-auto max-w-4xl text-center">
             <h2 className="font-heading text-3xl font-bold">Built for your sport</h2>
             <p className="mt-3" style={{ color: textSecondary }}>Specialized AI analysis for every game</p>
-            <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-5">
               {sports.map(sport => (
                 <Link
                   key={sport.title}

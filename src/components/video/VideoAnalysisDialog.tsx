@@ -439,6 +439,21 @@ export default function VideoAnalysisDialog({
                     )}
                   </div>
 
+                  <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">
+                    <div className="mb-3">
+                      <h4 className="font-heading text-sm font-semibold text-foreground">Ask Coach AI</h4>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Ask a follow-up question about this analysis while the report is fresh.
+                      </p>
+                    </div>
+                    <CoachChatPanel
+                      videoId={videoId}
+                      lessonId={lessonId}
+                      sport={sport}
+                      disabled={!videoId && !lessonId}
+                    />
+                  </div>
+
                   <div>
                     <h4 className="text-sm font-semibold text-foreground">Session summary</h4>
                     <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
@@ -463,12 +478,14 @@ export default function VideoAnalysisDialog({
                   )}
 
                   {typeof analysis.observations === 'string' && analysis.observations.trim() && (
-                    <div className="rounded-xl border border-border bg-muted/30 p-3">
-                      <h4 className="text-sm font-semibold text-foreground">Frame-by-frame observations</h4>
-                      <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                    <details className="rounded-xl border border-border bg-muted/30 p-3">
+                      <summary className="cursor-pointer text-sm font-semibold text-foreground">
+                        See full frame-by-frame breakdown ▾
+                      </summary>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
                         {analysis.observations}
                       </p>
-                    </div>
+                    </details>
                   )}
 
                   {typeof analysis.technique_notes === 'string' && analysis.technique_notes.trim() && (
@@ -477,6 +494,13 @@ export default function VideoAnalysisDialog({
                       <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
                         {analysis.technique_notes}
                       </p>
+                    </div>
+                  )}
+
+                  {typeof analysis.biggest_win === 'string' && analysis.biggest_win.trim() && (
+                    <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
+                      <p className="text-sm font-semibold text-primary">Biggest win</p>
+                      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{analysis.biggest_win}</p>
                     </div>
                   )}
 
@@ -500,15 +524,8 @@ export default function VideoAnalysisDialog({
                   )}
 
                   {((typeof analysis.coach_tip === 'string' && analysis.coach_tip.trim()) ||
-                    (typeof analysis.biggest_win === 'string' && analysis.biggest_win.trim()) ||
                     (typeof analysis.priority_focus === 'string' && analysis.priority_focus.trim())) ? (
                     <div className="grid gap-3">
-                      {typeof analysis.biggest_win === 'string' && analysis.biggest_win.trim() && (
-                        <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3">
-                          <p className="text-sm font-semibold text-primary">Biggest win available</p>
-                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{analysis.biggest_win}</p>
-                        </div>
-                      )}
                       {typeof analysis.coach_tip === 'string' && analysis.coach_tip.trim() && (
                         <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
                           <p className="text-sm">

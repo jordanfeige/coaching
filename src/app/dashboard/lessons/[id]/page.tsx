@@ -25,6 +25,7 @@ import VideoAnalysisDialog, {
 import { cn } from '@/lib/utils'
 import { calendarEvent } from '@/lib/calendar'
 import { isImageMediaPath } from '@/lib/video-frames'
+import { generateMediaThumbnailDataUrl } from '@/lib/video-thumbnails'
 
 function normalizeSportKey(s?: string | null): string {
   if (!s) return 'tennis'
@@ -293,9 +294,10 @@ export default function LessonDetailPage() {
     if (!uploadFile) return
     setUploading(true)
     const ext = uploadFile.name.split('.').pop()
-    const path = `${player?.id}/${Date.now()}.${ext}`
+    const path = `${player?.id}/${crypto.randomUUID()}.${ext}`
+    const thumbnailUrl = await generateMediaThumbnailDataUrl(uploadFile)
     await supabase.storage.from('videos').upload(path, uploadFile)
-    await supabase.from('videos').insert({ player_id: player?.id, lesson_id: id, storage_path: path, title: uploadTitle || uploadFile.name })
+    await supabase.from('videos').insert({ player_id: player?.id, lesson_id: id, storage_path: path, title: uploadTitle || uploadFile.name, thumbnail_url: thumbnailUrl })
     setUploadFile(null)
     setUploadTitle('')
     setOpenUpload(false)
@@ -330,9 +332,10 @@ export default function LessonDetailPage() {
     if (!recordedChunks.length) return
     setUploading(true)
     const blob = new Blob(recordedChunks, { type: 'video/webm' })
-    const path = `${player?.id}/${Date.now()}.webm`
+    const path = `${player?.id}/${crypto.randomUUID()}.webm`
+    const thumbnailUrl = await generateMediaThumbnailDataUrl(blob)
     await supabase.storage.from('videos').upload(path, blob)
-    await supabase.from('videos').insert({ player_id: player?.id, lesson_id: id, storage_path: path, title: recordTitle || `Recording ${format(new Date(), 'MMM d yyyy h:mm a')}` })
+    await supabase.from('videos').insert({ player_id: player?.id, lesson_id: id, storage_path: path, title: recordTitle || `Recording ${format(new Date(), 'MMM d yyyy h:mm a')}`, thumbnail_url: thumbnailUrl })
     setRecordedChunks([])
     setRecordTitle('')
     setShowRecord(false)

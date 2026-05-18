@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Video, Upload, Circle, Square, Trash2, Play } from 'lucide-react'
 import { format } from 'date-fns'
 import { isImageMediaPath } from '@/lib/video-frames'
+import { generateMediaThumbnailDataUrl, titleInitials } from '@/lib/video-thumbnails'
 
 export default function VideoPage() {
   const [videos, setVideos] = useState<any[]>([])
@@ -47,12 +48,14 @@ export default function VideoPage() {
     if (!uploadForm.file || !uploadForm.player_id) return
     setUploading(true)
     const ext = uploadForm.file.name.split('.').pop()
-    const path = `${uploadForm.player_id}/${Date.now()}.${ext}`
+    const path = `${uploadForm.player_id}/${crypto.randomUUID()}.${ext}`
+    const thumbnailUrl = await generateMediaThumbnailDataUrl(uploadForm.file)
     await supabase.storage.from('videos').upload(path, uploadForm.file)
     await supabase.from('videos').insert({
       player_id: uploadForm.player_id,
       storage_path: path,
       title: uploadForm.title || uploadForm.file.name,
+      thumbnail_url: thumbnailUrl,
     })
     setUploadForm({ player_id: '', title: '', file: null })
     setOpenUpload(false)
@@ -93,12 +96,14 @@ export default function VideoPage() {
     if (!recordedChunks.length || !recordForm.player_id) return
     setUploading(true)
     const blob = new Blob(recordedChunks, { type: 'video/webm' })
-    const path = `${recordForm.player_id}/${Date.now()}.webm`
+    const path = `${recordForm.player_id}/${crypto.randomUUID()}.webm`
+    const thumbnailUrl = await generateMediaThumbnailDataUrl(blob)
     await supabase.storage.from('videos').upload(path, blob)
     await supabase.from('videos').insert({
       player_id: recordForm.player_id,
       storage_path: path,
       title: recordForm.title || `Recording ${format(new Date(), 'MMM d yyyy h:mm a')}`,
+      thumbnail_url: thumbnailUrl,
     })
     setRecordedChunks([])
     setRecordForm({ player_id: '', title: '' })
@@ -155,10 +160,17 @@ export default function VideoPage() {
             <Card key={video.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-4 space-y-3">
                 <div
-                  className="flex aspect-video cursor-pointer items-center justify-center rounded-lg bg-black/90 transition-colors hover:bg-black"
+                  className="flex aspect-video cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-black/90 transition-colors hover:bg-black"
                   onClick={() => handlePlay(video)}
                 >
-                  <Play size={32} className="text-white opacity-80" />
+                  {video.thumbnail_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={video.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/25 via-primary/10 to-muted">
+                      <span className="font-heading text-2xl font-bold text-primary">{titleInitials(video.title)}</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <p className="font-medium text-sm">{video.title}</p>

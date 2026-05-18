@@ -6,7 +6,7 @@ import { Loader2, Upload, ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
 
-type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball'
+type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 type Severity = 'critical' | 'moderate' | 'minor'
 
 type AnalysisIssue = {
@@ -52,14 +52,21 @@ type ChatMessage = {
   content: string
 }
 
-const SPORTS: Sport[] = ['tennis', 'golf', 'baseball', 'basketball']
+const SPORTS: Sport[] = ['tennis', 'golf', 'baseball', 'basketball', 'pickleball']
+const SPORT_LABELS: Record<Sport, string> = {
+  tennis: '🎾 Tennis',
+  golf: '⛳ Golf',
+  baseball: '⚾ Baseball',
+  basketball: '🏀 Basketball',
+  pickleball: '🏓 Pickleball',
+}
 const SHOT_TYPES: Record<Sport, string[]> = {
   tennis: ['Forehand', 'Backhand', 'Serve', 'Volley', 'Overhead'],
   golf: ['Driver', 'Iron', 'Chip', 'Putt', 'Bunker'],
   baseball: ['Batting', 'Pitching'],
   basketball: ['Jump shot', 'Free throw', 'Layup'],
+  pickleball: ['Serve', 'Return', 'Dink', 'Volley', 'Third shot drop', 'Drive'],
 }
-const CAMERA_ANGLES = ['Side-on', 'Face-on', 'Behind']
 const LOADING_MESSAGES = [
   'Watching your full motion...',
   'Identifying technique patterns...',
@@ -67,15 +74,12 @@ const LOADING_MESSAGES = [
 ]
 const MAX_VIDEO_FILE_MB = 300
 const MAX_VIDEO_DURATION_SECONDS = 60
+const SHARE_ORIGIN = process.env.NEXT_PUBLIC_SITE_URL || 'https://playvia.studio'
 const CHAT_STARTERS = [
   'What should I fix first?',
   'Give me one drill for this.',
   'Explain this in beginner terms.',
 ]
-
-function encodeResult(result: AnalysisResult) {
-  return btoa(encodeURIComponent(JSON.stringify(result)))
-}
 
 function decodeResult(value: string): AnalysisResult | null {
   try {
@@ -83,6 +87,10 @@ function decodeResult(value: string): AnalysisResult | null {
   } catch {
     return null
   }
+}
+
+function safeReturnTo(value: string | null) {
+  return value === '/player' ? value : ''
 }
 
 function fileSizeLabel(file: File) {
@@ -175,9 +183,9 @@ function YouTubeCards({ videos }: { videos: CoachingVideo[] }) {
 export default function AnalyzePage() {
   const supabase = createClient()
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userName, setUserName] = useState('')
   const [sport, setSport] = useState<Sport>('tennis')
-  const [shotType, setShotType] = useState('Forehand')
-  const [cameraAngle, setCameraAngle] = useState('Side-on')
+  const [shotType, setShotType] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [videoDuration, setVideoDuration] = useState<number | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
@@ -187,11 +195,16 @@ export default function AnalyzePage() {
   const [coachingVideos, setCoachingVideos] = useState<Record<string, CoachingVideo[]>>({})
   const [loadingCoachingVideo, setLoadingCoachingVideo] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
+  const [shareUrl, setShareUrl] = useState('')
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [chatError, setChatError] = useState('')
-  const [coachModalOpen, setCoachModalOpen] = useState(false)
+  const [coachPanelOpen, setCoachPanelOpen] = useState(false)
+  const [showSaveNotice, setShowSaveNotice] = useState(false)
+  const [returnTo, setReturnTo] = useState('')
+  const [showWelcome, setShowWelcome] = useState(false)
+  const [autoFetchedIssueArea, setAutoFetchedIssueArea] = useState('')
 
   const shotTypes = useMemo(() => SHOT_TYPES[sport], [sport])
   const groupedIssues = useMemo(() => {
@@ -205,9 +218,25 @@ export default function AnalyzePage() {
   const durationTooLong = Boolean(videoDuration && videoDuration > MAX_VIDEO_DURATION_SECONDS)
   const canAnalyze = Boolean(file && !fileTooLarge && !durationTooLong && !analyzing)
 
+  const topCriticalIssue = useMemo(
+    () => analysis?.areas_to_improve?.find(issue => issue.severity === 'critical' && issue.area) ?? null,
+    [analysis]
+  )
+
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null))
+    supabase.auth.getUser().then(({ data }) => {
+      setUserEmail(data.user?.email ?? null)
+      const fullName = data.user?.user_metadata?.full_name
+      setUserName(typeof fullName === 'string' ? fullName : '')
+    })
     const params = new URLSearchParams(window.location.search)
+    const safeReturnPath = safeReturnTo(params.get('returnTo'))
+    if (safeReturnPath) {
+      queueMicrotask(() => setReturnTo(safeReturnPath))
+    }
+    if (params.get('welcome') === 'true') {
+      queueMicrotask(() => setShowWelcome(true))
+    }
     const encoded = params.get('result')
     if (encoded) {
       queueMicrotask(() => setAnalysis(decodeResult(encoded)))
@@ -215,14 +244,50 @@ export default function AnalyzePage() {
   }, [supabase])
 
   useEffect(() => {
+    if (!showWelcome) return
+    const timer = window.setTimeout(() => setShowWelcome(false), 8000)
+    return () => window.clearTimeout(timer)
+  }, [showWelcome])
+
+  useEffect(() => {
     if (!analyzing) return
     const timer = window.setInterval(() => setLoadingIndex(index => (index + 1) % LOADING_MESSAGES.length), 3000)
     return () => window.clearInterval(timer)
   }, [analyzing])
 
+  useEffect(() => {
+    const issueArea = topCriticalIssue?.area || ''
+    const issueDrill = topCriticalIssue?.drill || ''
+    if (!issueArea || autoFetchedIssueArea === issueArea || coachingVideos[issueArea]?.length) return
+
+    async function fetchTopCoachingVideo() {
+      setAutoFetchedIssueArea(issueArea)
+      try {
+        const response = await fetch('/api/youtube-coaching', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            issue: issueDrill,
+            sport,
+            shotType,
+            issueArea,
+          }),
+        })
+        const payload = await parseJsonResponse(response)
+        if (response.ok && !payload.error) {
+          setCoachingVideos(prev => ({ ...prev, [issueArea]: payload.videos || [] }))
+        }
+      } catch {
+        // Keep the report usable if YouTube lookup fails.
+      }
+    }
+
+    fetchTopCoachingVideo()
+  }, [autoFetchedIssueArea, coachingVideos, sport, shotType, topCriticalIssue])
+
   function selectSport(nextSport: Sport) {
     setSport(nextSport)
-    setShotType(SHOT_TYPES[nextSport][0])
+    setShotType('')
   }
 
   async function handleFileSelect(nextFile: File | null) {
@@ -251,6 +316,7 @@ export default function AnalyzePage() {
     }
     setAnalyzing(true)
     setError('')
+    setShareUrl('')
     let uploadPath: string | null = null
     try {
       const uploadResponse = await fetch('/api/analyze-upload-url', {
@@ -287,19 +353,21 @@ export default function AnalyzePage() {
           videoUrl: readPayload.signedUrl,
           videoMimeType: file.type || 'video/mp4',
           sport,
-          shotType,
-          cameraAngle,
+          shotType: shotType || undefined,
+          cameraAngle: 'side-on',
           playerName: 'Athlete',
         }),
       })
       const payload = await parseJsonResponse(response)
       if (!response.ok || payload.error) throw new Error(payload.error || 'Analysis failed')
       setAnalysis(payload)
+      setAutoFetchedIssueArea('')
+      saveSharedAnalysis(payload).catch(() => {})
       if (userEmail) {
         const saveResponse = await fetch('/api/analyze-history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sport, shotType, cameraAngle, result: payload }),
+          body: JSON.stringify({ sport, shotType, cameraAngle: 'side-on', result: payload }),
         })
         if (!saveResponse.ok) {
           const key = `axis-analysis-history:${userEmail}`
@@ -339,6 +407,26 @@ export default function AnalyzePage() {
     }
   }
 
+  async function saveSharedAnalysis(result: AnalysisResult) {
+    const response = await fetch('/api/analyses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sport,
+        shotType,
+        name: userName || 'Athlete',
+        result,
+      }),
+    })
+    const payload = await parseJsonResponse(response)
+    if (!response.ok || payload.error || !payload.id) {
+      throw new Error(payload.error || 'Could not create share link')
+    }
+    const url = `${SHARE_ORIGIN}/analysis/${payload.id}`
+    setShareUrl(url)
+    return url
+  }
+
   async function askCoach(question?: string) {
     if (!analysis) return
     const content = (question ?? chatInput).trim()
@@ -370,15 +458,110 @@ export default function AnalyzePage() {
 
   async function copyShareUrl() {
     if (!analysis) return
-    const url = `${window.location.origin}/analyze?result=${encodeURIComponent(encodeResult(analysis))}`
-    await navigator.clipboard.writeText(url)
-    setShareCopied(true)
-    window.setTimeout(() => setShareCopied(false), 2000)
+    try {
+      const url = shareUrl || await saveSharedAnalysis(analysis)
+      await navigator.clipboard.writeText(url)
+      setShareCopied(true)
+      window.setTimeout(() => setShareCopied(false), 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not copy share link')
+    }
   }
 
   async function signOut() {
     await supabase.auth.signOut()
     setUserEmail(null)
+  }
+
+  function coachAiPanel() {
+    if (!coachPanelOpen) return null
+
+    return (
+      <div className="mt-5 space-y-4 border-t border-border pt-5">
+        <div>
+          <h3 className="font-heading text-base font-semibold text-foreground">Ask Coach AI</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ask one follow-up question about this report. Create a free account to keep the conversation going.
+          </p>
+        </div>
+        {chatMessages.length === 0 && (
+          <div className="flex flex-wrap gap-2">
+            {CHAT_STARTERS.map(prompt => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => askCoach(prompt)}
+                disabled={chatLoading}
+                className="rounded-full border border-primary/20 bg-primary/[0.04] px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 disabled:opacity-50"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {chatMessages.length > 0 && (
+          <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3">
+            {chatMessages.map((message, index) => (
+              message.role === 'user' ? (
+                <div key={index} className="ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground">
+                  {message.content}
+                </div>
+              ) : (
+                <div key={index} className="max-w-[92%] rounded-2xl rounded-bl-md border border-border bg-white px-4 py-3 text-sm leading-relaxed text-muted-foreground shadow-sm">
+                  <div className="space-y-2">{renderCoachAnswer(message.content)}</div>
+                </div>
+              )
+            ))}
+            {chatLoading && (
+              <div className="max-w-[92%] rounded-2xl rounded-bl-md border border-border bg-white px-4 py-3 text-sm text-muted-foreground shadow-sm">
+                Thinking...
+              </div>
+            )}
+          </div>
+        )}
+
+        {!userEmail && chatMessages.some(message => message.role === 'assistant') ? (
+          <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4">
+            <p className="text-sm font-semibold text-foreground">Want to ask another question?</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Create a free account to keep chatting with Coach AI and save future reports.
+            </p>
+            <Link href="/signup" className="mt-3 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">
+              Create free account →
+            </Link>
+          </div>
+        ) : (
+          <form
+            onSubmit={event => {
+              event.preventDefault()
+              askCoach()
+            }}
+            className="flex flex-col gap-2 sm:flex-row"
+          >
+            <input
+              value={chatInput}
+              onChange={event => setChatInput(event.target.value)}
+              placeholder="Ask about this report..."
+              className="min-h-11 flex-1 rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={chatLoading || !chatInput.trim()}
+              className="min-h-11 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-60"
+            >
+              {chatLoading ? 'Asking...' : 'Ask'}
+            </button>
+          </form>
+        )}
+
+        {chatError && (
+          <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            {chatError}
+          </p>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -388,6 +571,11 @@ export default function AnalyzePage() {
           <SmartBrandMark variant="sidebar" />
           {userEmail ? (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              {returnTo && (
+                <Link href={returnTo} className="font-semibold text-primary hover:underline">
+                  Dashboard
+                </Link>
+              )}
               <Link href="/pricing" className="font-semibold text-primary hover:underline">
                 Pricing
               </Link>
@@ -413,6 +601,30 @@ export default function AnalyzePage() {
       </nav>
 
       <main className="mx-auto max-w-5xl space-y-8 px-5 py-10">
+        {showWelcome && (
+          <div className="flex flex-col gap-3 rounded-2xl bg-primary px-5 py-4 text-primary-foreground shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold">
+              Welcome{userName ? ` ${userName.split(/\s+/)[0]}` : ''}! Upload your first video to get your free coaching report.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowWelcome(false)}
+              className="self-start rounded-full border border-primary-foreground/30 px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-foreground/10 sm:self-auto"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {returnTo && userEmail && (
+          <Link
+            href={returnTo}
+            className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/[0.04] px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
+          >
+            Back to my dashboard
+          </Link>
+        )}
+
         <section className="text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">Free technique check</p>
           <h1 className="mt-4 font-heading text-4xl font-bold tracking-tight md:text-6xl">
@@ -428,7 +640,7 @@ export default function AnalyzePage() {
             <div className="space-y-6">
               <div>
                 <p className="mb-3 text-sm font-semibold text-foreground">Choose your sport</p>
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
                   {SPORTS.map(option => (
                     <button
                       key={option}
@@ -440,15 +652,17 @@ export default function AnalyzePage() {
                           : 'border-border bg-background text-muted-foreground hover:border-primary/50'
                       }`}
                     >
-                      {option}
+                      {SPORT_LABELS[option]}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div>
                 <div>
-                  <p className="mb-3 text-sm font-semibold text-foreground">Shot type</p>
+                  <p className="mb-3 text-sm font-semibold text-foreground">
+                    Shot type <span className="font-normal text-muted-foreground">(optional)</span>
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {shotTypes.map(option => (
                       <button
@@ -456,30 +670,22 @@ export default function AnalyzePage() {
                         type="button"
                         onClick={() => setShotType(option)}
                         className={`rounded-full border px-3 py-2 text-xs font-semibold ${
-                          shotType === option ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground'
+                          shotType === option
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-muted/30 text-muted-foreground hover:border-primary/40'
                         }`}
                       >
                         {option}
                       </button>
                     ))}
                   </div>
-                </div>
-                <div>
-                  <p className="mb-3 text-sm font-semibold text-foreground">Camera angle</p>
-                  <div className="flex flex-wrap gap-2">
-                    {CAMERA_ANGLES.map(option => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => setCameraAngle(option)}
-                        className={`rounded-full border px-3 py-2 text-xs font-semibold ${
-                          cameraAngle === option ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground'
-                        }`}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShotType('')}
+                    className="mt-2 text-xs font-medium text-muted-foreground hover:text-primary"
+                  >
+                    Let AI detect it
+                  </button>
                 </div>
               </div>
 
@@ -553,11 +759,31 @@ export default function AnalyzePage() {
                 {analysis.overall_rating && <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">{analysis.overall_rating}</span>}
                 {analysis.confidence && <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground">{analysis.confidence} confidence</span>}
               </div>
-              {analysis.observations && (
-                <div className="mt-5">
-                  <h2 className="font-heading text-xl font-semibold">Observations</h2>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{analysis.observations}</p>
+              <div className="mt-5 rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="font-heading text-base font-semibold text-foreground">Ask Coach AI</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Ask a follow-up question while this report is fresh.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCoachPanelOpen(open => !open)}
+                    className="w-fit rounded-xl border border-primary/25 bg-background px-3 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
+                  >
+                    {coachPanelOpen ? 'Hide Coach AI' : 'Ask Coach AI'}
+                  </button>
                 </div>
+                {coachAiPanel()}
+              </div>
+              {analysis.observations && (
+                <details className="mt-5 rounded-2xl border border-border bg-muted/30 p-4">
+                  <summary className="cursor-pointer font-heading text-sm font-semibold text-foreground">
+                    See full frame-by-frame breakdown ▾
+                  </summary>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{analysis.observations}</p>
+                </details>
               )}
               {analysis.technique_notes && (
                 <div className="mt-5 rounded-2xl border border-border bg-muted/40 p-4">
@@ -566,6 +792,13 @@ export default function AnalyzePage() {
                 </div>
               )}
             </div>
+
+            {analysis.biggest_win && (
+              <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5">
+                <p className="font-heading text-sm font-bold uppercase tracking-wide text-primary">Biggest win</p>
+                <p className="mt-2 text-sm leading-relaxed text-foreground/80">{analysis.biggest_win}</p>
+              </div>
+            )}
 
             {!!analysis.strengths?.length && (
               <div>
@@ -611,7 +844,7 @@ export default function AnalyzePage() {
                               )}
                               <div className="mt-3">
                                 {coachingVideos[area]?.length ? (
-                                  <YouTubeCards videos={coachingVideos[area]} />
+                                  <YouTubeCards videos={coachingVideos[area].slice(0, topCriticalIssue?.area === area ? 1 : 3)} />
                                 ) : (
                                   <button
                                     type="button"
@@ -620,7 +853,7 @@ export default function AnalyzePage() {
                                     className="rounded-xl px-3 py-1.5 text-xs font-medium transition-opacity disabled:opacity-60"
                                     style={{ background: '#FF000015', color: '#FF4444', border: '1px solid #FF000030' }}
                                   >
-                                    {loadingCoachingVideo === area ? 'Searching...' : '▶ Find coaching videos'}
+                                    {loadingCoachingVideo === area ? 'Searching...' : '▶ Find more coaching videos'}
                                   </button>
                                 )}
                               </div>
@@ -634,167 +867,84 @@ export default function AnalyzePage() {
               </div>
             </div>
 
-            {analysis.biggest_win && (
-              <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5">
-                <p className="font-heading text-sm font-bold uppercase tracking-wide text-primary">Biggest win</p>
-                <p className="mt-2 text-sm leading-relaxed text-foreground/80">{analysis.biggest_win}</p>
-              </div>
-            )}
             {analysis.priority_focus && (
               <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5">
                 <p className="font-heading text-sm font-bold uppercase tracking-wide text-info">Priority focus</p>
                 <p className="mt-2 text-sm leading-relaxed text-foreground/80">{analysis.priority_focus}</p>
               </div>
             )}
-          </section>
-        )}
-      </main>
 
-      {analysis && (
-        <>
-          <div className="fixed right-0 bottom-0 left-0 z-40 border-t border-border bg-background/95 px-4 py-3 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur">
-            <div className="mx-auto flex max-w-5xl flex-col gap-2 sm:flex-row sm:items-center">
-              <button
-                type="button"
-                onClick={copyShareUrl}
-                className="rounded-2xl border border-border px-4 py-3 text-sm font-semibold text-foreground hover:border-primary sm:w-40"
-              >
-                {shareCopied ? 'Copied!' : 'Share'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setCoachModalOpen(true)}
-                className="rounded-2xl border border-border px-4 py-3 text-sm font-semibold text-foreground hover:border-primary sm:w-44"
-              >
-                Ask Coach AI
-              </button>
-              {userEmail ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAnalysis(null)
-                    setFile(null)
-                    setVideoDuration(null)
-                    setCoachingVideos({})
-                    setChatMessages([])
-                    setChatInput('')
-                    setChatError('')
-                    setError('')
-                  }}
-                  className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground"
-                >
-                  Analyze another video
-                </button>
-              ) : (
-                <Link href="/signup" className="flex-1 rounded-2xl bg-primary px-4 py-3 text-center text-sm font-bold text-primary-foreground">
-                  Create free account to save this report + analyze another video
-                </Link>
-              )}
-            </div>
-          </div>
-
-          {coachModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-3 sm:items-center sm:justify-center">
-              <div className="max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
-                <div className="flex items-start justify-between gap-4 border-b border-border p-5">
-                  <div>
-                    <h2 className="font-heading text-xl font-semibold text-foreground">Ask Coach AI</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Ask one follow-up question about this report. Create a free account to keep the conversation going.
-                    </p>
-                  </div>
+            <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-heading text-lg font-semibold text-foreground">Next steps</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Share this report or save your progress.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {returnTo && userEmail && (
+                    <Link
+                      href={returnTo}
+                      className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/10"
+                    >
+                      Back to dashboard
+                    </Link>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setCoachModalOpen(false)}
-                    className="rounded-full border border-border px-3 py-1 text-sm font-semibold text-muted-foreground hover:text-foreground"
+                    onClick={copyShareUrl}
+                    className="rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:border-primary"
                   >
-                    Close
+                    {shareCopied ? 'Copied!' : 'Share'}
                   </button>
-                </div>
-
-                <div className="max-h-[68vh] space-y-4 overflow-y-auto p-5">
-                  {chatMessages.length === 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {CHAT_STARTERS.map(prompt => (
-                        <button
-                          key={prompt}
-                          type="button"
-                          onClick={() => askCoach(prompt)}
-                          disabled={chatLoading}
-                          className="rounded-full border border-primary/20 bg-primary/[0.04] px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 disabled:opacity-50"
-                        >
-                          {prompt}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {chatMessages.length > 0 && (
-                    <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-3">
-                      {chatMessages.map((message, index) => (
-                        message.role === 'user' ? (
-                          <div key={index} className="ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-2 text-sm text-primary-foreground">
-                            {message.content}
-                          </div>
-                        ) : (
-                          <div key={index} className="max-w-[92%] rounded-2xl rounded-bl-md border border-border bg-white px-4 py-3 text-sm leading-relaxed text-muted-foreground shadow-sm">
-                            <div className="space-y-2">{renderCoachAnswer(message.content)}</div>
-                          </div>
-                        )
-                      ))}
-                      {chatLoading && (
-                        <div className="max-w-[92%] rounded-2xl rounded-bl-md border border-border bg-white px-4 py-3 text-sm text-muted-foreground shadow-sm">
-                          Thinking...
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {!userEmail && chatMessages.some(message => message.role === 'assistant') ? (
-                    <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4">
-                      <p className="text-sm font-semibold text-foreground">Want to ask another question?</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Create a free account to keep chatting with Coach AI and save future reports.
-                      </p>
-                      <Link href="/signup" className="mt-3 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">
-                        Create free account →
-                      </Link>
-                    </div>
-                  ) : (
-                    <form
-                      onSubmit={event => {
-                        event.preventDefault()
-                        askCoach()
+                  {userEmail ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnalysis(null)
+                        setFile(null)
+                        setVideoDuration(null)
+                        setCoachingVideos({})
+                        setChatMessages([])
+                        setChatInput('')
+                        setChatError('')
+                        setError('')
+                        setCoachPanelOpen(false)
+                        setShareUrl('')
                       }}
-                      className="flex flex-col gap-2 sm:flex-row"
+                      className="rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground"
                     >
-                      <input
-                        value={chatInput}
-                        onChange={event => setChatInput(event.target.value)}
-                        placeholder="Ask about this report..."
-                        className="min-h-11 flex-1 rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none"
-                      />
-                      <button
-                        type="submit"
-                        disabled={chatLoading || !chatInput.trim()}
-                        className="min-h-11 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-60"
-                      >
-                        {chatLoading ? 'Asking...' : 'Ask'}
-                      </button>
-                    </form>
-                  )}
-
-                  {chatError && (
-                    <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                      {chatError}
-                    </p>
+                      Analyze another
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowSaveNotice(true)}
+                      className="rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground"
+                    >
+                      Save report
+                    </button>
                   )}
                 </div>
               </div>
-            </div>
-          )}
-        </>
-      )}
+
+              {!userEmail && showSaveNotice && (
+                <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 p-4">
+                  <p className="text-sm font-semibold text-foreground">Create a free account to save this report</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Reports are only saved to an account, so you can come back later, track progress, ask more AI questions, and analyze another video.
+                  </p>
+                  <Link href="/signup" className="mt-3 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">
+                    Create free account →
+                  </Link>
+                </div>
+              )}
+
+            </section>
+          </section>
+        )}
+      </main>
     </div>
   )
 }
