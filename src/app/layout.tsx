@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import PWAInstallPrompt from '@/components/PWAInstallPrompt'
+import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration'
 
 export const metadata: Metadata = {
   title: 'Playvia — AI Coaching for Modern Athletes',
@@ -48,24 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <PWAInstallPrompt />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-     if ('serviceWorker' in navigator) {
-       window.addEventListener('load', function() {
-         navigator.serviceWorker.register('/sw.js')
-           .then(function(registration) {
-             console.log('Playvia SW registered:', registration.scope);
-             registration.update();
-           })
-           .catch(function(error) {
-             console.log('SW registration failed:', error);
-           });
-       });
-     }
-   `,
-          }}
-        />
+        <ServiceWorkerRegistration />
       </body>
     </html>
   )

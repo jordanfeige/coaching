@@ -1,13 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { createClient } from '@/lib/supabase'
 import { brand } from '@/lib/brand'
 
 type Role = 'coach' | 'player'
+type RoleSnapshot = Role | 'unknown' | null
 
 const inputClass =
   'w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:outline-none'
@@ -26,12 +27,26 @@ function ProgressDots() {
   )
 }
 
+function subscribeToOnboardingRole(callback: () => void) {
+  window.addEventListener('storage', callback)
+  return () => window.removeEventListener('storage', callback)
+}
+
+function getOnboardingRoleSnapshot(): RoleSnapshot {
+  const storedRole = localStorage.getItem('onboarding_role')
+  return storedRole === 'coach' || storedRole === 'player' ? storedRole : null
+}
+
+function getOnboardingRoleServerSnapshot(): RoleSnapshot {
+  return 'unknown'
+}
+
 export default function OnboardingAccountPage() {
-  const [role] = useState<Role>(() => {
-    if (typeof window === 'undefined') return 'player'
-    const storedRole = localStorage.getItem('onboarding_role')
-    return storedRole === 'coach' || storedRole === 'player' ? storedRole : 'player'
-  })
+  const role = useSyncExternalStore(
+    subscribeToOnboardingRole,
+    getOnboardingRoleSnapshot,
+    getOnboardingRoleServerSnapshot
+  )
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -41,18 +56,17 @@ export default function OnboardingAccountPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    const storedRole = localStorage.getItem('onboarding_role')
-    if (storedRole !== 'coach' && storedRole !== 'player') {
+    if (role === null) {
       router.replace('/onboarding')
     }
-  }, [router])
+  }, [role, router])
 
-  async function saveProfile(userId: string, normalizedEmail: string) {
+  async function saveProfile(userId: string, normalizedEmail: string, accountRole: Role) {
     const profilePayload = {
       id: userId,
       email: normalizedEmail,
       full_name: fullName.trim(),
-      role,
+      role: accountRole,
       player_id: null,
     }
 
@@ -63,7 +77,7 @@ export default function OnboardingAccountPage() {
       const { error: fallbackError } = await supabase.from('profiles').upsert({
         id: userId,
         email: normalizedEmail,
-        role,
+        role: accountRole,
         player_id: null,
       })
       if (fallbackError) throw fallbackError
@@ -77,6 +91,12 @@ export default function OnboardingAccountPage() {
     event.preventDefault()
     setLoading(true)
     setError('')
+
+    if (role !== 'coach' && role !== 'player') {
+      setError('Choose how you will use Playvia before creating an account')
+      setLoading(false)
+      return
+    }
 
     if (password.length < 8) {
       setError('Password must be at least 8 characters')
@@ -104,7 +124,7 @@ export default function OnboardingAccountPage() {
     }
 
     try {
-      await saveProfile(data.user.id, normalizedEmail)
+      await saveProfile(data.user.id, normalizedEmail, role)
     } catch (profileError) {
       setError(profileError instanceof Error ? profileError.message : 'Could not save your profile')
       setLoading(false)
@@ -147,7 +167,11 @@ export default function OnboardingAccountPage() {
         </div>
 
         <h1 className="mt-6 text-center font-heading text-2xl font-bold" style={{ color: brand.text }}>
-          {role === 'coach' ? 'Set up your coaching account' : 'Create your player account'}
+          {role === 'unknown'
+            ? 'Create your account'
+            : role === 'coach'
+              ? 'Set up your coaching account'
+              : 'Create your player account'}
         </h1>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -172,11 +196,11 @@ export default function OnboardingAccountPage() {
           {error && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || role === 'unknown' || role === null}
             className="w-full rounded-xl px-4 py-3 text-sm font-bold text-white transition-opacity disabled:opacity-70"
             style={{ background: brand.teal }}
           >
-            {loading ? 'Creating account...' : 'Continue →'}
+            {loading ? 'Creating account...' : role === 'unknown' ? 'Loading...' : 'Continue →'}
           </button>
         </form>
 
