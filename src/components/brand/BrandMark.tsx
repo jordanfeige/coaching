@@ -5,6 +5,7 @@ export const BRAND_TAGLINE = 'AI Coaching for Modern Athletes'
 
 type BrandMarkProps = {
   variant?: 'sidebar' | 'authHero' | 'authPanel' | 'public'
+  size?: 'sm' | 'md'
   /** Shown under the tagline on compact layouts (e.g. “Player”). */
   audience?: string
   className?: string
@@ -15,7 +16,7 @@ type BrandMarkProps = {
 /**
  * Playvia wordmark + tagline. “via” uses primary for a subtle mnemonic (pathway / forward motion).
  */
-export function BrandMark({ variant = 'sidebar', audience, className, href }: BrandMarkProps) {
+export function BrandMark({ variant = 'sidebar', size, audience, className, href }: BrandMarkProps) {
   const wordmark = (
     <span className="font-heading font-bold tracking-tight text-foreground">
       Play<span className="text-primary">via</span>
@@ -45,6 +46,14 @@ export function BrandMark({ variant = 'sidebar', audience, className, href }: Br
       <>
         <p className="text-3xl leading-none md:text-4xl">{wordmark}</p>
         <div className="mx-auto mt-3 max-w-sm text-sm md:text-base">{tagline}</div>
+      </>
+    ) : size === 'sm' ? (
+      <>
+        <p className="text-xl leading-none">{wordmark}</p>
+      </>
+    ) : size === 'md' ? (
+      <>
+        <p className="text-2xl leading-none">{wordmark}</p>
       </>
     ) : (
       <>

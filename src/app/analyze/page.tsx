@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Upload, ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
+import { WaitlistForm } from '@/components/waitlist/WaitlistForm'
 
 type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 type Severity = 'critical' | 'moderate' | 'minor'
@@ -37,6 +38,17 @@ type AnalysisResult = {
   biggest_win?: string
   priority_focus?: string
   confidence?: string
+  overall_score?: number
+  checkpoint_scores?: Record<string, number>
+  previous_score?: number | null
+  score_delta?: number | null
+}
+
+type AnalysisGate = {
+  type: 'signup' | 'upgrade'
+  message: string
+  analysesUsed?: number
+  scorePreview?: number[] | null
 }
 
 type CoachingVideo = {
@@ -205,6 +217,8 @@ export default function AnalyzePage() {
   const [returnTo, setReturnTo] = useState('')
   const [showWelcome, setShowWelcome] = useState(false)
   const [autoFetchedIssueArea, setAutoFetchedIssueArea] = useState('')
+  const [analysisGate, setAnalysisGate] = useState<AnalysisGate | null>(null)
+  const [noticeMessage, setNoticeMessage] = useState('')
 
   const shotTypes = useMemo(() => SHOT_TYPES[sport], [sport])
   const groupedIssues = useMemo(() => {
@@ -236,6 +250,10 @@ export default function AnalyzePage() {
     }
     if (params.get('welcome') === 'true') {
       queueMicrotask(() => setShowWelcome(true))
+    }
+    const message = params.get('message')
+    if (message) {
+      queueMicrotask(() => setNoticeMessage(message))
     }
     const encoded = params.get('result')
     if (encoded) {
@@ -317,6 +335,7 @@ export default function AnalyzePage() {
     setAnalyzing(true)
     setError('')
     setShareUrl('')
+    setAnalysisGate(null)
     let uploadPath: string | null = null
     try {
       const uploadResponse = await fetch('/api/analyze-upload-url', {
@@ -359,6 +378,19 @@ export default function AnalyzePage() {
         }),
       })
       const payload = await parseJsonResponse(response)
+      if (payload.requiresSignup) {
+        setAnalysisGate({ type: 'signup', message: payload.error || 'Please sign up to analyze videos' })
+        return
+      }
+      if (payload.requiresUpgrade) {
+        setAnalysisGate({
+          type: 'upgrade',
+          message: payload.error || 'Free limit reached',
+          analysesUsed: Number(payload.analyses_used || 0),
+          scorePreview: Array.isArray(payload.score_preview) ? payload.score_preview : null,
+        })
+        return
+      }
       if (!response.ok || payload.error) throw new Error(payload.error || 'Analysis failed')
       setAnalysis(payload)
       setAutoFetchedIssueArea('')
@@ -473,6 +505,23 @@ export default function AnalyzePage() {
     setUserEmail(null)
   }
 
+  async function signInWithGoogle() {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/analyze?welcome=true`,
+      },
+    })
+  }
+
+  function upgradeScoreText() {
+    const scores = analysisGate?.scorePreview
+    if (!scores?.length) return null
+    const trend = scores.join(' → ')
+    const improved = scores.length >= 2 && scores[scores.length - 1] > scores[0]
+    return `Your scores: ${trend}${improved ? " — you're improving!" : ''}`
+  }
+
   function coachAiPanel() {
     if (!coachPanelOpen) return null
 
@@ -566,6 +615,74 @@ export default function AnalyzePage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {analysisGate && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-heading text-xl font-bold text-foreground">
+                  {analysisGate.type === 'signup'
+                    ? 'Create a free account to analyze your videos'
+                    : "You've used your 3 free analyses"}
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  {analysisGate.type === 'signup'
+                    ? 'Create a free Playvia account to unlock your coaching report and track progress over time.'
+                    : 'Upgrade to Pro to keep tracking your progress.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAnalysisGate(null)}
+                className="rounded-full border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+              >
+                Close
+              </button>
+            </div>
+
+            {analysisGate.type === 'signup' ? (
+              <div className="mt-5 space-y-3">
+                <button
+                  type="button"
+                  onClick={signInWithGoogle}
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground hover:border-primary"
+                >
+                  Continue with Google
+                </button>
+                <Link
+                  href="/signup"
+                  className="flex w-full justify-center rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground"
+                >
+                  Sign up free
+                </Link>
+              </div>
+            ) : (
+              <div className="mt-5 space-y-5">
+                {upgradeScoreText() && (
+                  <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 text-sm font-semibold text-primary">
+                    {upgradeScoreText()}
+                  </div>
+                )}
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-foreground">Get notified when Pro is ready</p>
+                  <WaitlistForm
+                    sport={sport}
+                    source="analysis-upgrade"
+                    successMessage="✓ You're on the list! We'll notify you when Pro launches."
+                  />
+                </div>
+                <Link
+                  href="/pricing"
+                  className="flex w-full justify-center rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground"
+                >
+                  Upgrade to Pro $12/mo →
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <nav className="border-b border-border bg-background/95 px-5 py-4">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
           <SmartBrandMark variant="sidebar" />
@@ -576,6 +693,9 @@ export default function AnalyzePage() {
                   Dashboard
                 </Link>
               )}
+              <Link href="/analyze/progress" className="font-semibold text-primary hover:underline">
+                My Progress →
+              </Link>
               <Link href="/pricing" className="font-semibold text-primary hover:underline">
                 Pricing
               </Link>
@@ -586,14 +706,11 @@ export default function AnalyzePage() {
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <Link href="/pricing" className="rounded-full border border-border px-4 py-2 text-sm text-foreground hover:border-primary">
-                Pricing
-              </Link>
               <Link href="/login" className="rounded-full border border-border px-4 py-2 text-sm text-foreground hover:border-primary">
                 Sign in
               </Link>
               <Link href="/signup" className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-                Sign up free
+                Start free
               </Link>
             </div>
           )}
@@ -610,6 +727,19 @@ export default function AnalyzePage() {
               type="button"
               onClick={() => setShowWelcome(false)}
               className="self-start rounded-full border border-primary-foreground/30 px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-foreground/10 sm:self-auto"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {noticeMessage && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-primary/20 bg-primary/10 px-5 py-4 text-primary sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold">{noticeMessage}</p>
+            <button
+              type="button"
+              onClick={() => setNoticeMessage('')}
+              className="self-start rounded-full border border-primary/30 px-3 py-1 text-xs font-semibold hover:bg-primary/10 sm:self-auto"
             >
               Dismiss
             </button>
@@ -754,6 +884,29 @@ export default function AnalyzePage() {
           </section>
         ) : (
           <section className="space-y-5">
+            {typeof analysis.overall_score === 'number' && (
+              <div className="rounded-3xl border border-primary/25 bg-card p-6 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Technique Score</p>
+                <div className="mt-2 flex flex-wrap items-end gap-3">
+                  <span className="font-heading text-6xl font-black leading-none text-primary">
+                    {analysis.overall_score}
+                  </span>
+                  <span className="pb-2 text-sm font-semibold text-muted-foreground">/ 100</span>
+                  {typeof analysis.score_delta === 'number' && (
+                    <span
+                      className={`mb-2 rounded-full px-3 py-1 text-xs font-bold ${
+                        analysis.score_delta >= 0
+                          ? 'bg-primary/10 text-primary'
+                          : 'bg-destructive/10 text-destructive'
+                      }`}
+                    >
+                      {analysis.score_delta >= 0 ? '+' : ''}{analysis.score_delta} from last session {analysis.score_delta >= 0 ? '↑' : '↓'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
               <div className="flex flex-wrap gap-2">
                 {analysis.overall_rating && <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">{analysis.overall_rating}</span>}
@@ -898,6 +1051,14 @@ export default function AnalyzePage() {
                   >
                     {shareCopied ? 'Copied!' : 'Share'}
                   </button>
+                  {userEmail && (
+                    <Link
+                      href="/analyze/progress"
+                      className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/10"
+                    >
+                      View your progress →
+                    </Link>
+                  )}
                   {userEmail ? (
                     <button
                       type="button"

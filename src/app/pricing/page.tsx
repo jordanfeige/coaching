@@ -1,72 +1,157 @@
-import Link from 'next/link'
-import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
-import { WaitlistForm } from '@/components/waitlist/WaitlistForm'
+'use client'
 
-const features = [
-  'Unlimited technique analysis',
-  'Progress history and share links',
-  'Sport-specific coaching videos',
-  'Priority access to new AI coaching tools',
+import Link from 'next/link'
+import { useState } from 'react'
+import { BrandMark } from '@/components/brand/BrandMark'
+
+const teal = 'hsl(168, 62%, 36%)'
+const tealSoft = 'hsl(168, 62%, 95%)'
+const warmBg = 'hsl(40, 20%, 97%)'
+const warmBorder = 'hsl(30, 10%, 88%)'
+const textSecondary = 'hsl(220, 10%, 45%)'
+
+const tiers = [
+  {
+    name: 'Free',
+    monthly: '$0',
+    annual: '$0',
+    subtitle: 'Get started',
+    href: '/signup',
+    button: 'Start free →',
+    features: [
+      ['✓', 'Sign up required'],
+      ['✓', '3 AI analyses included'],
+      ['✓', 'Full coaching report each time'],
+      ['✓', 'Ask Coach AI'],
+      ['✓', 'YouTube coaching videos'],
+      ['✗', 'Progress timeline'],
+      ['✗', 'Score history'],
+      ['✗', 'Unlimited analyses'],
+    ],
+  },
+  {
+    name: 'Pro',
+    monthly: '$12/mo',
+    annual: '$99/yr',
+    subtitle: 'Track your improvement',
+    href: '/signup?plan=pro',
+    button: 'Start Pro →',
+    highlighted: true,
+    features: [
+      ['✓', 'Everything in Free'],
+      ['✓', 'Unlimited AI analyses'],
+      ['✓', 'Full progress timeline'],
+      ['✓', 'Technique score history'],
+      ['✓', 'Issues fixed tracker'],
+      ['✓', 'Weekly practice plans'],
+      ['✓', 'Monthly progress report'],
+      ['✓', 'Unlimited Ask Coach AI'],
+      ['✗', 'Multiple athletes'],
+    ],
+  },
+  {
+    name: 'Family',
+    monthly: '$22/mo',
+    annual: '$179/yr',
+    subtitle: 'For the whole family',
+    href: '/signup?plan=family',
+    button: 'Start Family →',
+    features: [
+      ['✓', 'Everything in Pro'],
+      ['✓', 'Up to 5 athlete profiles'],
+      ['✓', 'All sports per athlete'],
+      ['✓', 'Parent dashboard'],
+      ['✓', 'Coach connection per athlete'],
+      ['✓', 'One login for everyone'],
+    ],
+  },
 ]
 
-export default function PricingPage() {
+function FeatureList({ features }: { features: string[][] }) {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <nav className="border-b border-border bg-background/95 px-5 py-4">
+    <ul className="mt-5 space-y-2">
+      {features.map(([mark, text]) => (
+        <li key={text} className="flex gap-2 text-sm" style={{ color: textSecondary }}>
+          <span className="font-bold" style={{ color: mark === '✓' ? teal : 'hsl(220, 10%, 65%)' }}>{mark}</span>
+          <span>{text}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+export default function PricingPage() {
+  const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
+
+  return (
+    <div className="min-h-screen" style={{ background: warmBg }}>
+      <nav className="border-b bg-white/95 px-5 py-4" style={{ borderColor: warmBorder }}>
         <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <SmartBrandMark variant="sidebar" />
-          <div className="flex items-center gap-2">
-            <Link href="/analyze" className="rounded-full border border-border px-4 py-2 text-sm font-medium text-foreground hover:border-primary">
-              Analyze
-            </Link>
-            <Link href="/login" className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-              Sign in
-            </Link>
+          <BrandMark size="md" />
+          <div className="flex items-center gap-3">
+            <Link href="/login" className="text-sm font-semibold" style={{ color: teal }}>Sign in</Link>
+            <Link href="/signup" className="rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ background: teal }}>Start free</Link>
           </div>
         </div>
       </nav>
 
-      <main className="mx-auto max-w-5xl px-5 py-14">
+      <main className="mx-auto max-w-5xl px-5 py-16">
         <section className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-primary">Pricing</p>
-          <h1 className="mt-4 font-heading text-4xl font-bold tracking-tight md:text-6xl">
-            Pro tools for athletes who want to improve faster.
-          </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground">
-            Playvia Pro is launching soon with deeper analysis history, progress tracking, and premium coaching workflows.
+          <p className="text-sm font-semibold uppercase tracking-[0.3em]" style={{ color: teal }}>Pricing</p>
+          <h1 className="mt-4 font-heading text-4xl font-black tracking-tight md:text-6xl">Simple pricing</h1>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed" style={{ color: textSecondary }}>
+            Start free. Upgrade when you&apos;re ready to track progress without limits.
           </p>
+          <div className="mx-auto mt-8 inline-flex rounded-full border bg-white p-1" style={{ borderColor: warmBorder }}>
+            {[
+              ['monthly', 'Monthly'],
+              ['annual', 'Annual — save ~30%'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setBilling(value as 'monthly' | 'annual')}
+                className="rounded-full px-4 py-2 text-sm font-semibold"
+                style={{
+                  background: billing === value ? teal : 'transparent',
+                  color: billing === value ? 'white' : textSecondary,
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </section>
 
-        <section className="mx-auto mt-10 grid max-w-4xl gap-4 md:grid-cols-2">
-          <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-            <p className="font-heading text-2xl font-bold">Free</p>
-            <p className="mt-2 text-sm text-muted-foreground">Try video analysis and get a coaching report.</p>
-            <p className="mt-6 font-heading text-4xl font-bold">$0</p>
-            <Link href="/analyze" className="mt-6 inline-flex w-full justify-center rounded-xl border border-border px-4 py-3 text-sm font-semibold hover:border-primary">
-              Analyze a video
-            </Link>
-          </div>
-
-          <div className="rounded-3xl border border-primary/30 bg-card p-6 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-heading text-2xl font-bold">Pro</p>
-                <p className="mt-2 text-sm text-muted-foreground">Early access for serious athletes and families.</p>
-              </div>
-              <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">Soon</span>
+        <section className="mt-10 grid gap-6 md:grid-cols-3">
+          {tiers.map(tier => (
+            <div
+              key={tier.name}
+              className="relative rounded-3xl bg-white p-6 shadow-sm"
+              style={{ border: tier.highlighted ? `2px solid ${teal}` : `1px solid ${warmBorder}` }}
+            >
+              {tier.highlighted && (
+                <span className="absolute right-5 top-5 rounded-full px-3 py-1 text-xs font-bold" style={{ background: tealSoft, color: teal }}>
+                  Most popular
+                </span>
+              )}
+              <h2 className="font-heading text-2xl font-bold">{tier.name}</h2>
+              <p className="mt-2 text-sm" style={{ color: textSecondary }}>{tier.subtitle}</p>
+              <p className="mt-5 font-heading text-3xl font-black">{billing === 'monthly' ? tier.monthly : tier.annual}</p>
+              <FeatureList features={tier.features} />
+              <Link
+                href={tier.href}
+                className="mt-6 flex w-full justify-center rounded-xl px-4 py-3 text-sm font-bold"
+                style={{
+                  background: tier.highlighted ? teal : 'white',
+                  color: tier.highlighted ? 'white' : teal,
+                  border: tier.highlighted ? 'none' : `1px solid ${teal}`,
+                }}
+              >
+                {tier.button}
+              </Link>
             </div>
-            <ul className="mt-6 space-y-3 text-sm text-muted-foreground">
-              {features.map(feature => (
-                <li key={feature} className="flex gap-2">
-                  <span className="font-bold text-primary">✓</span>
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-6">
-              <WaitlistForm source="pricing" />
-            </div>
-          </div>
+          ))}
         </section>
       </main>
     </div>

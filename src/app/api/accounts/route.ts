@@ -3,6 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 type Player = { id: string; name: string; age?: number | null; email?: string | null }
+type ProfileRow = {
+  id: string
+  email: string
+  full_name?: string | null
+  phone?: string | null
+  role: string
+}
 
 function adminClient() {
   return createClient(
@@ -29,6 +36,14 @@ async function requireCoach() {
   return { user }
 }
 
+function isMissingFullNameColumn(error: { message?: string } | null) {
+  return Boolean(
+    error?.message?.includes("Could not find the 'full_name' column") ||
+    error?.message?.includes('profiles.full_name') ||
+    error?.message?.includes('schema cache')
+  )
+}
+
 export async function GET() {
   const auth = await requireCoach()
   if ('error' in auth) {
@@ -37,12 +52,25 @@ export async function GET() {
 
   try {
     const supabaseAdmin = adminClient()
-    const [{ data: profileRows, error: profilesError }, { data: playerRows, error: playersError }, { data: links, error: linksError }] =
+    const [profilesResult, { data: playerRows, error: playersError }, { data: links, error: linksError }] =
       await Promise.all([
         supabaseAdmin.from('profiles').select('id, email, full_name, phone, role').eq('role', 'player').order('email'),
         supabaseAdmin.from('players').select('id, name, age, email').order('name'),
         supabaseAdmin.from('account_players').select('account_id, players(id, name, age, email)'),
       ])
+
+    let profileRows = profilesResult.data as ProfileRow[] | null
+    let profilesError = profilesResult.error
+
+    if (isMissingFullNameColumn(profilesError)) {
+      const fallback = await supabaseAdmin
+        .from('profiles')
+        .select('id, email, phone, role')
+        .eq('role', 'player')
+        .order('email')
+      profileRows = (fallback.data ?? []).map(profile => ({ ...profile, full_name: null })) as ProfileRow[]
+      profilesError = fallback.error
+    }
 
     const error = profilesError || playersError || linksError
     if (error) {
@@ -112,14 +140,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not find or create account user' }, { status: 400 })
     }
 
-    const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
+    const profilePayload = {
       id: userId,
       email: normalizedEmail,
       full_name: String(full_name).trim(),
       phone: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
       role: 'player',
       player_id: playerIds[0],
-    })
+    }
+
+    let { error: profileError } = await supabaseAdmin.from('profiles').upsert(profilePayload)
+    if (isMissingFullNameColumn(profileError)) {
+      const fallbackProfilePayload = {
+        id: profilePayload.id,
+        email: profilePayload.email,
+        phone: profilePayload.phone,
+        role: profilePayload.role,
+        player_id: profilePayload.player_id,
+      }
+      const fallback = await supabaseAdmin.from('profiles').upsert(fallbackProfilePayload)
+      profileError = fallback.error
+    }
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 500 })
     }

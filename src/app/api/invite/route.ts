@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+function isMissingFullNameColumn(error: { message?: string } | null) {
+  return Boolean(
+    error?.message?.includes("Could not find the 'full_name' column") ||
+    error?.message?.includes('profiles.full_name') ||
+    error?.message?.includes('schema cache')
+  )
+}
+
 export async function POST(req: NextRequest) {
   const { email, full_name, phone, player_id, player_ids, redirect_path = '/player' } = await req.json()
   const playerIds = Array.isArray(player_ids)
@@ -47,14 +55,30 @@ export async function POST(req: NextRequest) {
     }
 
     // Link profile to the first player for legacy reads, and to all selected players for family accounts.
-    await supabaseAdmin.from('profiles').upsert({
+    const profilePayload = {
       id: userId,
       email,
       full_name: typeof full_name === 'string' && full_name.trim() ? full_name.trim() : null,
       phone: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
       role: 'player',
       player_id: playerIds[0],
-    })
+    }
+    let { error: profileError } = await supabaseAdmin.from('profiles').upsert(profilePayload)
+    if (isMissingFullNameColumn(profileError)) {
+      const fallbackProfilePayload = {
+        id: profilePayload.id,
+        email: profilePayload.email,
+        phone: profilePayload.phone,
+        role: profilePayload.role,
+        player_id: profilePayload.player_id,
+      }
+      const fallback = await supabaseAdmin.from('profiles').upsert(fallbackProfilePayload)
+      profileError = fallback.error
+    }
+    if (profileError) {
+      return NextResponse.json({ error: profileError.message }, { status: 500 })
+    }
+
     await supabaseAdmin.from('account_players').upsert(
       playerIds.map((playerId: string) => ({
         account_id: userId,

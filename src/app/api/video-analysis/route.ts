@@ -5,6 +5,8 @@ import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { calculateScore, extractCheckpointScores } from '@/lib/scoring'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -25,6 +27,18 @@ type GeminiPart =
   | { text: string }
   | { inlineData: { data: string; mimeType: string } }
   | { fileData: { fileUri: string; mimeType: string } }
+
+type AnalysisIssue = {
+  area?: string
+  severity?: string
+}
+
+type AnalysisResult = {
+  areas_to_improve?: Array<AnalysisIssue | string>
+  strengths?: unknown[]
+  overall_rating?: string
+  biggest_win?: string
+}
 
 const SPORT_CHECKLISTS: Record<string, string> = {
   tennis: `
@@ -208,6 +222,18 @@ function parseJsonFromModel(text: string) {
   }
 }
 
+function issueSeverity(issue: AnalysisIssue | string) {
+  return typeof issue === 'string' ? 'moderate' : issue.severity
+}
+
+function issueArea(issue: AnalysisIssue | string) {
+  return typeof issue === 'string' ? issue : issue.area || null
+}
+
+function issueCount(issues: Array<AnalysisIssue | string>, severity: string) {
+  return issues.filter(issue => issueSeverity(issue) === severity).length
+}
+
 function buildPrompt({
   sport,
   playerName,
@@ -265,6 +291,18 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
+  const supabase = await createServerSupabaseClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Please sign up to analyze videos', requiresSignup: true },
+      { status: 401 }
+    )
+  }
+
   const {
     videoBase64,
     videoUrl,
@@ -283,6 +321,37 @@ export async function POST(req: NextRequest) {
     playerHistory = '',
     cameraAngle,
   } = body
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('analyses_used, is_subscribed')
+    .eq('id', user.id)
+    .single()
+  const analysesUsed = Number(profile?.analyses_used || 0)
+  const isSubscribed = Boolean(profile?.is_subscribed)
+
+  if (!isSubscribed && analysesUsed >= 3) {
+    const { data: scoreRows } = await supabase
+      .from('analysis_sessions')
+      .select('overall_score')
+      .eq('user_id', user.id)
+      .order('analyzed_at', { ascending: false })
+      .limit(3)
+    const scorePreview = (scoreRows ?? [])
+      .map(row => row.overall_score)
+      .filter((score): score is number => typeof score === 'number')
+      .reverse()
+
+    return NextResponse.json(
+      {
+        error: 'Free limit reached',
+        requiresUpgrade: true,
+        analyses_used: analysesUsed,
+        score_preview: scorePreview.length ? scorePreview : null,
+      },
+      { status: 402 }
+    )
+  }
 
   const normalizedSport = normalizeSport(sport)
   const normalizedCameraAngle = cameraAngle || 'side-on'
@@ -335,8 +404,49 @@ export async function POST(req: NextRequest) {
     })
 
     const result = await model.generateContent([...parts, { text: prompt }])
-    const data = parseJsonFromModel(result.response.text())
-    return NextResponse.json(data)
+    const data = parseJsonFromModel(result.response.text()) as AnalysisResult
+    const overallScore = calculateScore(data)
+    const checkpointScores = extractCheckpointScores(data, normalizedSport || 'tennis')
+    const issues = Array.isArray(data.areas_to_improve) ? data.areas_to_improve : []
+    const topIssue = issues.length ? issueArea(issues[0]) : null
+
+    const { data: previousRows } = await supabase
+      .from('analysis_sessions')
+      .select('overall_score')
+      .eq('user_id', user.id)
+      .order('analyzed_at', { ascending: false })
+      .limit(1)
+    const previousScore = typeof previousRows?.[0]?.overall_score === 'number'
+      ? previousRows[0].overall_score
+      : null
+
+    await supabase.from('analysis_sessions').insert({
+      user_id: user.id,
+      sport: normalizedSport || 'tennis',
+      shot_type: shotType || null,
+      overall_score: overallScore,
+      rating: data.overall_rating,
+      strengths_count: data.strengths?.length || 0,
+      critical_count: issueCount(issues, 'critical'),
+      moderate_count: issueCount(issues, 'moderate'),
+      minor_count: issueCount(issues, 'minor'),
+      top_issue: topIssue,
+      biggest_win: data.biggest_win || null,
+      checkpoint_scores: checkpointScores,
+      full_result: data,
+    })
+    await supabase
+      .from('profiles')
+      .update({ analyses_used: analysesUsed + 1 })
+      .eq('id', user.id)
+
+    return NextResponse.json({
+      ...data,
+      overall_score: overallScore,
+      checkpoint_scores: checkpointScores,
+      previous_score: previousScore,
+      score_delta: previousScore === null ? null : overallScore - previousScore,
+    })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to analyze video'
     console.error('Video analysis error:', message)
