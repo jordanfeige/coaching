@@ -56,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
          navigator.serviceWorker.register('/sw.js')
            .then(function(registration) {
              console.log('Playvia SW registered:', registration.scope);
+             registration.update();
            })
            .catch(function(error) {
              console.log('SW registration failed:', error);

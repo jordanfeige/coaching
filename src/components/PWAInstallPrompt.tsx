@@ -13,6 +13,7 @@ export default function PWAInstallPrompt() {
   const [isIOS, setIsIOS] = useState(false)
   const [isInstalled, setIsInstalled] = useState(false)
   const [showUpdateBanner, setShowUpdateBanner] = useState(false)
+  const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
   useEffect(() => {
     // Check if already installed
@@ -40,7 +41,16 @@ export default function PWAInstallPrompt() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
 
+    function markUpdateReady(worker: ServiceWorker) {
+      setWaitingWorker(worker)
+      setShowUpdateBanner(true)
+    }
+
     navigator.serviceWorker.ready.then((registration) => {
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        markUpdateReady(registration.waiting)
+      }
+
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing
         if (!newWorker) return
@@ -48,10 +58,12 @@ export default function PWAInstallPrompt() {
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
             // New version available - show update banner
-            setShowUpdateBanner(true)
+            markUpdateReady(newWorker)
           }
         })
       })
+
+      registration.update().catch(() => {})
     })
 
     // Reload page when new SW takes control
@@ -62,7 +74,7 @@ export default function PWAInstallPrompt() {
     return () => navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange)
   }, [])
 
-  if (isInstalled || (!showPrompt && !isIOS && !showUpdateBanner)) return null
+  if (!showUpdateBanner && (isInstalled || (!showPrompt && !isIOS))) return null
 
   if (showUpdateBanner) {
     return (
@@ -79,6 +91,7 @@ export default function PWAInstallPrompt() {
           </div>
           <button
             onClick={() => {
+              waitingWorker?.postMessage('skipWaiting')
               navigator.serviceWorker.controller?.postMessage('skipWaiting')
               setShowUpdateBanner(false)
             }}
