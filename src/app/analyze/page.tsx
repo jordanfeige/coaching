@@ -66,7 +66,7 @@ const LOADING_MESSAGES = [
   'Identifying technique patterns...',
   'Building your coaching report...',
 ]
-const MAX_VIDEO_FILE_MB = 70
+const MAX_VIDEO_FILE_MB = 140
 const MAX_VIDEO_DURATION_SECONDS = 60
 const CHAT_STARTERS = [
   'What should I fix first?',
