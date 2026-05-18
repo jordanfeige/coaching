@@ -29,6 +29,14 @@ type PendingBetaUser = {
   beta_status: string | null
 }
 
+type FeedbackRow = {
+  rating: string
+  sport: string | null
+  comment: string | null
+  created_at: string
+  feedback_type: string
+}
+
 type GrowthStats = {
   totalSignups: number
   signupsThisWeek: number
@@ -63,9 +71,11 @@ export default function WaitlistPage() {
   const [entries, setEntries] = useState<WaitlistEntry[]>([])
   const [recentSignups, setRecentSignups] = useState<RecentSignup[]>([])
   const [pendingBetaUsers, setPendingBetaUsers] = useState<PendingBetaUser[]>([])
+  const [feedbackStats, setFeedbackStats] = useState<FeedbackRow[]>([])
   const [stats, setStats] = useState<GrowthStats>(emptyStats)
   const [sportsBreakdown, setSportsBreakdown] = useState<SportsBreakdown>(emptySportsBreakdown)
   const [waitlistAvailable, setWaitlistAvailable] = useState(true)
+  const [feedbackFilter, setFeedbackFilter] = useState<'all' | 'analysis' | 'chat'>('all')
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -79,6 +89,7 @@ export default function WaitlistPage() {
         setEntries(payload.entries || [])
         setRecentSignups(payload.recentSignups || [])
         setPendingBetaUsers(payload.pendingBetaUsers || [])
+        setFeedbackStats(payload.feedbackStats || [])
         setStats(payload.stats || emptyStats)
         setSportsBreakdown(payload.sportsBreakdown || emptySportsBreakdown)
         setWaitlistAvailable(payload.waitlistAvailable !== false)
@@ -140,6 +151,21 @@ export default function WaitlistPage() {
     ['⚾ Baseball', sportsBreakdown.baseball],
     ['🏀 Basketball', sportsBreakdown.basketball],
   ]
+  const filteredFeedback = feedbackStats.filter(item => feedbackFilter === 'all' || item.feedback_type === feedbackFilter)
+  const positiveFeedback = filteredFeedback.filter(item => item.rating === 'positive').length
+  const negativeFeedback = filteredFeedback.filter(item => item.rating === 'negative').length
+  const totalFeedback = positiveFeedback + negativeFeedback
+  const positiveRate = totalFeedback ? Math.round((positiveFeedback / totalFeedback) * 100) : 0
+  const analysisFeedback = filteredFeedback.filter(item => item.feedback_type === 'analysis').length
+  const chatFeedback = filteredFeedback.filter(item => item.feedback_type === 'chat').length
+  const negativeWithComments = filteredFeedback.filter(item => item.rating === 'negative' && item.comment).slice(0, 8)
+  const feedbackBySport = filteredFeedback.reduce<Record<string, { positive: number; negative: number }>>((acc, item) => {
+    const key = item.sport || 'unknown'
+    acc[key] ||= { positive: 0, negative: 0 }
+    if (item.rating === 'positive') acc[key].positive += 1
+    if (item.rating === 'negative') acc[key].negative += 1
+    return acc
+  }, {})
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -335,6 +361,90 @@ export default function WaitlistPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-heading text-sm font-semibold text-foreground">Feedback quality</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Recent analysis and Coach AI ratings from users.</p>
+            </div>
+            <div className="flex rounded-xl border border-border bg-muted/30 p-1">
+              {(['all', 'analysis', 'chat'] as const).map(filter => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setFeedbackFilter(filter)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                    feedbackFilter === filter ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="space-y-5 p-5">
+          <div className="grid gap-3 sm:grid-cols-4">
+            {[
+              ['Positive', positiveFeedback],
+              ['Negative', negativeFeedback],
+              ['Positive rate', totalFeedback ? `${positiveRate}%` : '—'],
+              ['Analysis / Chat', `${analysisFeedback} / ${chatFeedback}`],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-2xl border border-border bg-muted/30 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+            <div>
+              <h3 className="font-heading mb-3 text-sm font-semibold text-foreground">Recent negative feedback</h3>
+              {negativeWithComments.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  No negative comments yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {negativeWithComments.map((item, index) => (
+                    <div key={`${item.created_at}-${index}`} className="rounded-2xl border border-destructive/20 bg-destructive/5 p-4">
+                      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded-full bg-destructive/10 px-2 py-1 font-semibold text-destructive">{item.feedback_type}</span>
+                        <span className="rounded-full border border-border px-2 py-1 text-muted-foreground">{item.sport || 'unknown'}</span>
+                        <span className="text-muted-foreground">{format(new Date(item.created_at), 'MMM d, h:mm a')}</span>
+                      </div>
+                      <p className="text-sm text-foreground">{item.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="font-heading mb-3 text-sm font-semibold text-foreground">Feedback by sport</h3>
+              <div className="space-y-2">
+                {Object.entries(feedbackBySport).length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                    No feedback yet.
+                  </div>
+                ) : (
+                  Object.entries(feedbackBySport).map(([sport, counts]) => (
+                    <div key={sport} className="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-3">
+                      <span className="text-sm font-medium capitalize text-foreground">{sport}</span>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        +{counts.positive} / -{counts.negative}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -6,10 +6,16 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { CalendarPlus, Plus, UserRoundCog } from 'lucide-react'
+import { CheckCircle2, Copy, Plus, UserRoundCog } from 'lucide-react'
 
 type Player = { id: string; name: string; age?: number | null; email?: string | null }
 type Account = { id: string; email: string; full_name?: string | null; phone?: string | null; role: string; players: Player[] }
+
+const BOOKING_LINKS_STORAGE_KEY = 'playvia_booking_links_by_account'
+
+function getInviteName(account: Account) {
+  return account.players[0]?.name || account.full_name || account.email
+}
 
 export default function AccountsPage() {
   const supabase = createClient()
@@ -23,12 +29,29 @@ export default function AccountsPage() {
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([])
   const [newPlayer, setNewPlayer] = useState({ name: '', age: '', sport: 'tennis' })
   const [saving, setSaving] = useState(false)
-  const [magicLink, setMagicLink] = useState('')
+  const [bookingLinks, setBookingLinks] = useState<Record<string, string>>({})
+  const [successMessage, setSuccessMessage] = useState('')
   const [requestingAccountId, setRequestingAccountId] = useState<string | null>(null)
 
   useEffect(() => {
     loadAll()
+    const restoreLinks = window.setTimeout(() => {
+      try {
+        const storedLinks = window.localStorage.getItem(BOOKING_LINKS_STORAGE_KEY)
+        if (storedLinks) setBookingLinks(JSON.parse(storedLinks) as Record<string, string>)
+      } catch (error) {
+        console.error('Could not load stored booking links:', error)
+      }
+    }, 0)
+
+    return () => window.clearTimeout(restoreLinks)
   }, [])
+
+  useEffect(() => {
+    if (!successMessage) return
+    const timeout = window.setTimeout(() => setSuccessMessage(''), 5000)
+    return () => window.clearTimeout(timeout)
+  }, [successMessage])
 
   async function loadAll() {
     setLoading(true)
@@ -42,6 +65,21 @@ export default function AccountsPage() {
     setPlayers((data.players ?? []) as Player[])
     setAccounts((data.accounts ?? []) as Account[])
     setLoading(false)
+  }
+
+  function saveBookingLink(accountId: string, url: string) {
+    setBookingLinks(current => {
+      const next = { ...current, [accountId]: url }
+      window.localStorage.setItem(BOOKING_LINKS_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  async function copyBookingLink(account: Account, url: string) {
+    await navigator.clipboard.writeText(url)
+    setSuccessMessage(
+      `Successfully copied booking link. Send it to ${getInviteName(account)} to book!`
+    )
   }
 
   const selectedPlayers = useMemo(
@@ -58,7 +96,6 @@ export default function AccountsPage() {
   async function createAccount() {
     if (!email || !fullName.trim() || selectedPlayerIds.length === 0) return
     setSaving(true)
-    setMagicLink('')
     const res = await fetch('/api/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -81,7 +118,6 @@ export default function AccountsPage() {
   async function requestBooking(account: Account) {
     if (!account.email || account.players.length === 0) return
     setRequestingAccountId(account.id)
-    setMagicLink('')
     const res = await fetch('/api/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -99,7 +135,10 @@ export default function AccountsPage() {
       alert(`Booking request failed: ${data.error}`)
       return
     }
-    setMagicLink(data.magic_link || '')
+    if (data.magic_link) {
+      saveBookingLink(account.id, data.magic_link)
+      await copyBookingLink(account, data.magic_link)
+    }
   }
 
   async function createAndSelectPlayer() {
@@ -128,6 +167,15 @@ export default function AccountsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      {successMessage && (
+        <div className="fixed left-1/2 top-4 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-2xl border border-primary/25 bg-card p-4 shadow-lg">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" />
+            <p className="text-sm font-medium text-foreground">{successMessage}</p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
@@ -141,23 +189,6 @@ export default function AccountsPage() {
           <Plus size={16} /> Add account
         </Button>
       </div>
-
-      {magicLink && !openInvite && (
-        <div className="rounded-2xl border border-primary/25 bg-primary/[0.06] p-4">
-          <p className="mb-2 text-sm font-semibold text-foreground">Booking request link ready</p>
-          <div className="rounded-xl border border-border bg-card p-3 font-mono text-xs break-all text-foreground">
-            {magicLink}
-          </div>
-          <Button
-            type="button"
-            className="mt-3"
-            variant="secondary"
-            onClick={() => navigator.clipboard.writeText(magicLink)}
-          >
-            Copy link
-          </Button>
-        </div>
-      )}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -200,10 +231,20 @@ export default function AccountsPage() {
                   disabled={requestingAccountId === account.id || account.players.length === 0}
                   onClick={() => requestBooking(account)}
                 >
-                  <CalendarPlus size={14} />
+                  <Copy size={14} />
                   {requestingAccountId === account.id ? 'Creating link…' : 'Request booking'}
                 </Button>
               </div>
+              {bookingLinks[account.id] && (
+                <button
+                  type="button"
+                  onClick={() => copyBookingLink(account, bookingLinks[account.id])}
+                  className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-primary transition-opacity hover:opacity-80"
+                >
+                  <Copy size={15} />
+                  Booking link
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -312,22 +353,6 @@ export default function AccountsPage() {
               <p className="text-xs text-muted-foreground">
                 Invite will link {selectedPlayers.map(p => p.name).join(', ')} to this account.
               </p>
-            )}
-            {magicLink && (
-              <div className="space-y-2">
-                <Label>Booking request link</Label>
-                <div className="rounded-xl border border-border bg-muted/50 p-3 font-mono text-xs break-all text-foreground">
-                  {magicLink}
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full"
-                  onClick={() => navigator.clipboard.writeText(magicLink)}
-                >
-                  Copy link
-                </Button>
-              </div>
             )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setOpenInvite(false)}>

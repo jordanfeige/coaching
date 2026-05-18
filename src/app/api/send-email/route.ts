@@ -10,6 +10,7 @@ import {
   sendProUpgrade,
   sendWelcome,
 } from '@/lib/email'
+import { ADMIN_EMAILS } from '@/lib/admin'
 
 export const runtime = 'nodejs'
 
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
   const recipient =
     to ||
     (typeof type === 'string' && type.endsWith('_coach') ? process.env.COACH_EMAIL : null) ||
-    (type === 'new_signup_admin' ? 'jordanfeige@gmail.com' : null)
+    (type === 'new_signup_admin' ? ADMIN_EMAILS[0] : null)
 
   if (!type || !recipient) {
     return NextResponse.json({ error: 'Email type and recipient are required' }, { status: 400 })

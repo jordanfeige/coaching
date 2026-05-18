@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isAdmin } from '@/lib/admin'
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -42,6 +43,13 @@ export async function middleware(request: NextRequest) {
 
     if (!user) {
       return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    if (
+      (pathname.startsWith('/dashboard/waitlist') || pathname.startsWith('/dashboard/accounts')) &&
+      !isAdmin(user.email)
+    ) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
 
     // Get role from profiles

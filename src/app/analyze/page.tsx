@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Upload, ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { WaitlistForm } from '@/components/waitlist/WaitlistForm'
 import { brand } from '@/lib/brand'
+import FeedbackButtons from '@/components/FeedbackButtons'
 
 type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 type Severity = 'critical' | 'moderate' | 'minor'
@@ -43,6 +44,7 @@ type AnalysisResult = {
   checkpoint_scores?: Record<string, number>
   previous_score?: number | null
   score_delta?: number | null
+  session_id?: string | null
 }
 
 type AnalysisGate = {
@@ -114,6 +116,19 @@ function durationLabel(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remaining = Math.round(seconds % 60).toString().padStart(2, '0')
   return `${minutes}:${remaining}`
+}
+
+function timestampToSeconds(timestamp: string) {
+  if (timestamp.includes(':')) {
+    const parts = timestamp.split(':')
+    return Number.parseInt(parts[0], 10) * 60 + Number.parseFloat(parts[1])
+  }
+  return Number.parseFloat(timestamp.replace('s', ''))
+}
+
+function extractTimestamps(text: string): string[] {
+  const matches = text.match(/\d+:\d+|\d+\.\d+s/g) || []
+  return [...new Set(matches)]
 }
 
 function getVideoDuration(file: File) {
@@ -196,14 +211,17 @@ function YouTubeCards({ videos }: { videos: CoachingVideo[] }) {
 export default function AnalyzePage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userName, setUserName] = useState('')
   const [sport, setSport] = useState<Sport>('tennis')
   const [shotType, setShotType] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [videoURL, setVideoURL] = useState<string | null>(null)
   const [videoDuration, setVideoDuration] = useState<number | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
+  const [savedSessionId, setSavedSessionId] = useState<string | undefined>()
   const [analyzing, setAnalyzing] = useState(false)
   const [loadingIndex, setLoadingIndex] = useState(0)
   const [error, setError] = useState('')
@@ -234,6 +252,27 @@ export default function AnalyzePage() {
   const fileTooLarge = Boolean(file && file.size > MAX_VIDEO_FILE_MB * 1024 * 1024)
   const durationTooLong = Boolean(videoDuration && videoDuration > MAX_VIDEO_DURATION_SECONDS)
   const canAnalyze = Boolean(file && !fileTooLarge && !durationTooLong && !analyzing)
+  const keyMoments = useMemo(() => {
+    const moments: { ts: string; label: string; type: 'issue' | 'strength' }[] = []
+    analysis?.areas_to_improve?.forEach(issue => {
+      extractTimestamps(issue.what_i_see || '').forEach(ts => {
+        moments.push({ ts, label: issue.area || 'Issue', type: 'issue' })
+      })
+    })
+    analysis?.strengths?.forEach(strength => {
+      extractTimestamps(strength.what_i_see || '').forEach(ts => {
+        moments.push({ ts, label: strength.area || 'Strength', type: 'strength' })
+      })
+    })
+
+    moments.sort((a, b) => timestampToSeconds(a.ts) - timestampToSeconds(b.ts))
+    const seen = new Set<string>()
+    return moments.filter(({ ts }) => {
+      if (seen.has(ts)) return false
+      seen.add(ts)
+      return true
+    })
+  }, [analysis])
 
   const topCriticalIssue = useMemo(
     () => analysis?.areas_to_improve?.find(issue => issue.severity === 'critical' && issue.area) ?? null,
@@ -273,6 +312,12 @@ export default function AnalyzePage() {
 
     loadPage()
   }, [router, supabase])
+
+  useEffect(() => {
+    return () => {
+      if (videoURL) URL.revokeObjectURL(videoURL)
+    }
+  }, [videoURL])
 
   useEffect(() => {
     if (!showWelcome) return
@@ -321,8 +366,45 @@ export default function AnalyzePage() {
     setShotType('')
   }
 
+  function seekTo(timestamp: string) {
+    if (!videoRef.current) return
+    const seconds = timestampToSeconds(timestamp)
+    if (!Number.isFinite(seconds)) return
+    videoRef.current.currentTime = seconds
+    videoRef.current.play().catch(() => {})
+    videoRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  function renderTimestampButtons(text: string | undefined) {
+    const timestamps = extractTimestamps(text || '')
+    if (timestamps.length === 0 || !videoURL) return null
+
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t pt-3" style={{ borderColor: 'hsl(30,10%,93%)' }}>
+        <span className="text-[11px]" style={{ color: brand.textMuted }}>Jump to:</span>
+        {timestamps.map(ts => (
+          <button
+            key={ts}
+            type="button"
+            onClick={() => seekTo(ts)}
+            className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+            style={{
+              borderColor: brand.teal,
+              background: brand.tealLight,
+              color: brand.teal,
+            }}
+          >
+            ▶ {ts}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   async function handleFileSelect(nextFile: File | null) {
+    if (videoURL) URL.revokeObjectURL(videoURL)
     setFile(nextFile)
+    setVideoURL(nextFile ? URL.createObjectURL(nextFile) : null)
     setVideoDuration(null)
     setError('')
     if (!nextFile) return
@@ -348,6 +430,7 @@ export default function AnalyzePage() {
     setAnalyzing(true)
     setError('')
     setShareUrl('')
+    setSavedSessionId(undefined)
     setAnalysisGate(null)
     let uploadPath: string | null = null
     try {
@@ -406,6 +489,7 @@ export default function AnalyzePage() {
       }
       if (!response.ok || payload.error) throw new Error(payload.error || 'Analysis failed')
       setAnalysis(payload)
+      setSavedSessionId(typeof payload.session_id === 'string' ? payload.session_id : undefined)
       setAutoFetchedIssueArea('')
       saveSharedAnalysis(payload).catch(() => {})
       if (userEmail) {
@@ -556,8 +640,20 @@ export default function AnalyzePage() {
                   {message.content}
                 </div>
               ) : (
-                <div key={index} className="max-w-[92%] rounded-2xl rounded-bl-md border border-border bg-white px-4 py-3 text-sm leading-relaxed text-muted-foreground shadow-sm">
-                  <div className="space-y-2">{renderCoachAnswer(message.content)}</div>
+                <div key={index} className="max-w-[92%]">
+                  <div className="rounded-2xl rounded-bl-md border border-border bg-white px-4 py-3 text-sm leading-relaxed text-muted-foreground shadow-sm">
+                    <div className="space-y-2">{renderCoachAnswer(message.content)}</div>
+                  </div>
+                  <div className="mt-1 pl-1">
+                    <FeedbackButtons
+                      sessionId={savedSessionId}
+                      feedbackType="chat"
+                      sport={sport}
+                      chatMessage={chatMessages[index - 1]?.content}
+                      chatResponse={message.content}
+                      size="sm"
+                    />
+                  </div>
                 </div>
               )
             ))}
@@ -847,6 +943,50 @@ export default function AnalyzePage() {
           </section>
         ) : (
           <section className="space-y-5">
+            {videoURL && (
+              <div className="overflow-hidden rounded-2xl border bg-black" style={{ borderColor: brand.border }}>
+                <video
+                  ref={videoRef}
+                  src={videoURL}
+                  controls
+                  playsInline
+                  className="block w-full bg-black"
+                  style={{ maxHeight: 400 }}
+                />
+                <div className="flex items-center gap-2 border-t bg-white px-3.5 py-2.5" style={{ borderColor: brand.border }}>
+                  <span className="text-[11px]" style={{ color: brand.textSecondary }}>
+                    📹 Click any timestamp in the analysis below to jump to that moment
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {videoURL && keyMoments.length > 0 && (
+              <div className="mb-4 flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white px-4 py-3" style={{ borderColor: brand.border }}>
+                <span className="shrink-0 text-[11px] font-semibold" style={{ color: brand.textSecondary }}>
+                  Key moments:
+                </span>
+                {keyMoments.map(({ ts, label, type }) => (
+                  <button
+                    key={ts}
+                    type="button"
+                    onClick={() => seekTo(ts)}
+                    className="flex shrink-0 flex-col items-center rounded-lg border px-2.5 py-1"
+                    style={{
+                      borderColor: type === 'issue' ? '#FCA5A5' : 'hsl(168,62%,70%)',
+                      background: type === 'issue' ? '#FEF2F2' : brand.tealLight,
+                      color: type === 'issue' ? '#DC2626' : brand.teal,
+                    }}
+                  >
+                    <span className="text-[11px] font-bold">▶ {ts}</span>
+                    <span className="mt-0.5 text-[10px] opacity-80">
+                      {label.length > 12 ? `${label.substring(0, 12)}...` : label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {typeof analysis.overall_score === 'number' && (
               <div className="rounded-3xl border border-primary/25 bg-card p-6 shadow-sm">
                 <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Technique Score</p>
@@ -875,6 +1015,16 @@ export default function AnalyzePage() {
                 {analysis.overall_rating && <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">{analysis.overall_rating}</span>}
                 {analysis.confidence && <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground">{analysis.confidence} confidence</span>}
               </div>
+              <div className="my-4 flex items-center justify-between border-y border-border py-3">
+                <FeedbackButtons
+                  sessionId={savedSessionId}
+                  feedbackType="analysis"
+                  sport={sport}
+                  shotType={shotType}
+                  fullAnalysis={analysis}
+                  size="md"
+                />
+              </div>
               <div className="mt-5 rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -899,12 +1049,14 @@ export default function AnalyzePage() {
                     See full frame-by-frame breakdown ▾
                   </summary>
                   <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{analysis.observations}</p>
+                  {renderTimestampButtons(analysis.observations)}
                 </details>
               )}
               {analysis.technique_notes && (
                 <div className="mt-5 rounded-2xl border border-border bg-muted/40 p-4">
                   <h3 className="font-heading text-sm font-semibold text-foreground">Technique notes</h3>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{analysis.technique_notes}</p>
+                  {renderTimestampButtons(analysis.technique_notes)}
                 </div>
               )}
             </div>
@@ -925,6 +1077,7 @@ export default function AnalyzePage() {
                       <p className="font-semibold text-primary">{strength.area || 'Strength'}</p>
                       {strength.what_i_see && <p className="mt-2 text-sm text-foreground/80">{strength.what_i_see}</p>}
                       {strength.why_it_helps && <p className="mt-2 text-sm text-muted-foreground"><span className="font-semibold text-foreground">Why it helps: </span>{strength.why_it_helps}</p>}
+                      {renderTimestampButtons(strength.what_i_see)}
                     </div>
                   ))}
                 </div>
@@ -958,6 +1111,7 @@ export default function AnalyzePage() {
                                   {issue.success_criteria && <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-sm"><span className="font-semibold">Success: </span>{issue.success_criteria}</p>}
                                 </div>
                               )}
+                              {renderTimestampButtons(issue.what_i_see)}
                               <div className="mt-3">
                                 {coachingVideos[area]?.length ? (
                                   <YouTubeCards videos={coachingVideos[area].slice(0, topCriticalIssue?.area === area ? 1 : 3)} />
@@ -1028,6 +1182,8 @@ export default function AnalyzePage() {
                       onClick={() => {
                         setAnalysis(null)
                         setFile(null)
+                        if (videoURL) URL.revokeObjectURL(videoURL)
+                        setVideoURL(null)
                         setVideoDuration(null)
                         setCoachingVideos({})
                         setChatMessages([])

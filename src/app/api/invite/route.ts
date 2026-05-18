@@ -5,10 +5,12 @@ import { PlayerInviteEmail } from '@/emails/PlayerInviteEmail'
 import { sendEmail } from '@/lib/email'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
-function isMissingFullNameColumn(error: { message?: string } | null) {
+function isMissingOptionalProfileColumn(error: { message?: string } | null) {
   return Boolean(
     error?.message?.includes("Could not find the 'full_name' column") ||
     error?.message?.includes('profiles.full_name') ||
+    error?.message?.includes("Could not find the 'phone' column") ||
+    error?.message?.includes('profiles.phone') ||
     error?.message?.includes('schema cache')
   )
 }
@@ -77,11 +79,10 @@ export async function POST(req: NextRequest) {
       player_id: playerIds[0],
     }
     let { error: profileError } = await supabaseAdmin.from('profiles').upsert(profilePayload)
-    if (isMissingFullNameColumn(profileError)) {
+    if (isMissingOptionalProfileColumn(profileError)) {
       const fallbackProfilePayload = {
         id: profilePayload.id,
         email: profilePayload.email,
-        phone: profilePayload.phone,
         role: profilePayload.role,
         player_id: profilePayload.player_id,
       }

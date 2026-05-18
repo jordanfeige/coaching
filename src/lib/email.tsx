@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { Resend } from 'resend'
 import { render } from '@react-email/render'
+import { ADMIN_EMAILS } from '@/lib/admin'
 
 const FROM = 'Playvia <noreply@playvia.studio>'
 
@@ -232,7 +233,7 @@ export async function sendNewSignupAdmin(props: {
 }) {
   const { NewSignupAdminEmail } = await import('@/emails/NewSignupAdminEmail')
   return sendEmail({
-    to: 'jordanfeige@gmail.com',
+    to: ADMIN_EMAILS[0],
     subject: `New Playvia signup — ${props.name} (${props.role})`,
     template: (
       <NewSignupAdminEmail

@@ -62,29 +62,38 @@ export default function OnboardingAccountPage() {
   }, [role, router])
 
   async function saveProfile(userId: string, normalizedEmail: string, accountRole: Role) {
-    const profilePayload = {
-      id: userId,
-      email: normalizedEmail,
-      full_name: fullName.trim(),
-      role: accountRole,
-      player_id: null,
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert(
+        {
+          id: userId,
+          email: normalizedEmail,
+          role: accountRole,
+          beta_status: 'pending',
+          analyses_used: 0,
+          is_subscribed: false,
+        },
+        { onConflict: 'id' }
+      )
+
+    if (profileError) {
+      console.error('Profile save error:', profileError)
+      try {
+        const { error: fallbackError } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: userId,
+              email: normalizedEmail,
+              role: accountRole,
+            },
+            { onConflict: 'id' }
+          )
+        if (fallbackError) console.error('Profile fallback save error:', fallbackError)
+      } catch (fallbackError) {
+        console.error('Profile fallback save failed:', fallbackError)
+      }
     }
-
-    const { error: profileError } = await supabase.from('profiles').upsert(profilePayload)
-    if (!profileError) return
-
-    if (profileError.message.includes("Could not find the 'full_name' column") || profileError.message.includes('schema cache')) {
-      const { error: fallbackError } = await supabase.from('profiles').upsert({
-        id: userId,
-        email: normalizedEmail,
-        role: accountRole,
-        player_id: null,
-      })
-      if (fallbackError) throw fallbackError
-      return
-    }
-
-    throw profileError
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -117,18 +126,29 @@ export default function OnboardingAccountPage() {
       },
     })
 
-    if (signupError || !data.user) {
-      setError(signupError?.message || 'Could not create account')
+    if (signupError) {
+      const msg = signupError.message?.toLowerCase() || ''
+      if (
+        msg.includes('email') ||
+        msg.includes('smtp') ||
+        msg.includes('confirmation') ||
+        msg.includes('sending')
+      ) {
+        console.warn('Email send failed but continuing:', signupError.message)
+        localStorage.setItem('onboarding_role', role)
+        router.push('/onboarding/profile')
+        return
+      }
+
+      setError(signupError.message || 'Failed to create account. Please try again.')
       setLoading(false)
       return
     }
 
-    try {
+    if (data.user) {
       await saveProfile(data.user.id, normalizedEmail, role)
-    } catch (profileError) {
-      setError(profileError instanceof Error ? profileError.message : 'Could not save your profile')
-      setLoading(false)
-      return
+    } else {
+      console.warn('Signup succeeded without a user object; continuing onboarding')
     }
 
     await fetch('/api/send-email', {

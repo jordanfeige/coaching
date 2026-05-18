@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import FeedbackButtons from '@/components/FeedbackButtons'
 
 type ChatMessage = {
   role: 'user' | 'assistant'
@@ -107,11 +108,13 @@ export default function CoachChatPanel({
   videoId,
   lessonId,
   sport,
+  sessionId,
   disabled,
 }: {
   videoId?: string | null
   lessonId?: string | null
   sport?: string | null
+  sessionId?: string | null
   disabled?: boolean
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -194,6 +197,16 @@ export default function CoachChatPanel({
                   <p className="mb-1 pl-1 text-[11px] font-semibold text-muted-foreground">Coach AI</p>
                   <div className="rounded-2xl rounded-bl-md border border-border bg-white px-4 py-3 text-sm text-foreground shadow-sm">
                     <CoachMessageContent content={message.content} />
+                  </div>
+                  <div className="mt-1 pl-1">
+                    <FeedbackButtons
+                      sessionId={sessionId || undefined}
+                      feedbackType="chat"
+                      sport={sport || undefined}
+                      chatMessage={messages[index - 1]?.content}
+                      chatResponse={message.content}
+                      size="sm"
+                    />
                   </div>
                 </div>
               </div>

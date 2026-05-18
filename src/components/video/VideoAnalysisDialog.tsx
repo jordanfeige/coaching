@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import AnnotatedFrame from '@/components/AnnotatedFrame'
 import CoachChatPanel from '@/components/video/CoachChatPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -46,7 +45,6 @@ export function issueSeverityCounts(analysis: Record<string, unknown> | null | u
 }
 
 type TabKey = 'overview' | 'issues' | 'chat' | 'notes'
-type FramePreview = { index: number; timestamp?: number; dataUrl: string }
 type AnalysisIssue = {
   area?: string
   severity?: string
@@ -60,14 +58,6 @@ type AnalysisIssue = {
   success_criteria?: string
   simple_cue?: string
   drill_media_ref?: string
-}
-type AnalysisAnnotation = {
-  frame_index?: number
-  label: string
-  issue: 'good' | 'warning' | 'error'
-  x: number
-  y: number
-  note: string
 }
 type AnalysisStrength = {
   area?: string
@@ -367,14 +357,6 @@ export default function VideoAnalysisDialog({
     ...(Array.isArray(analysis?.still_needs_work) ? analysis!.still_needs_work : []),
   ]
 
-  const annotations =
-    Array.isArray(analysis?.annotations)
-      ? (analysis!.annotations as AnalysisAnnotation[])
-      : []
-  const framePreviews = Array.isArray(analysis?.frame_previews)
-    ? (analysis!.frame_previews as FramePreview[])
-    : []
-
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -544,12 +526,6 @@ export default function VideoAnalysisDialog({
                     </div>
                   ) : null}
 
-                  {annotations.length > 0 && framePreviews.length === 0 && videoUrl && (
-                    <div>
-                      <h4 className="mb-2 text-sm font-semibold text-foreground">Key frame cues</h4>
-                      <AnnotatedFrame videoUrl={videoUrl} annotations={annotations} className="max-h-72 w-full overflow-hidden rounded-lg" />
-                    </div>
-                  )}
                 </div>
               )}
 

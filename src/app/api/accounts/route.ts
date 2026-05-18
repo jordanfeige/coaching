@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { isAdmin } from '@/lib/admin'
 
 type Player = { id: string; name: string; age?: number | null; email?: string | null }
 type ProfileRow = {
@@ -19,33 +20,29 @@ function adminClient() {
   )
 }
 
-async function requireCoach() {
+async function requireAdmin() {
   const supabase = await createServerSupabaseClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated', status: 401 as const }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profile?.role !== 'coach') return { error: 'Not authorized', status: 403 as const }
+  if (!isAdmin(user.email)) return { error: 'Not authorized', status: 403 as const }
   return { user }
 }
 
-function isMissingFullNameColumn(error: { message?: string } | null) {
+function isMissingOptionalProfileColumn(error: { message?: string } | null) {
   return Boolean(
     error?.message?.includes("Could not find the 'full_name' column") ||
     error?.message?.includes('profiles.full_name') ||
+    error?.message?.includes("Could not find the 'phone' column") ||
+    error?.message?.includes('profiles.phone') ||
     error?.message?.includes('schema cache')
   )
 }
 
 export async function GET() {
-  const auth = await requireCoach()
+  const auth = await requireAdmin()
   if ('error' in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
@@ -62,13 +59,17 @@ export async function GET() {
     let profileRows = profilesResult.data as ProfileRow[] | null
     let profilesError = profilesResult.error
 
-    if (isMissingFullNameColumn(profilesError)) {
+    if (isMissingOptionalProfileColumn(profilesError)) {
       const fallback = await supabaseAdmin
         .from('profiles')
-        .select('id, email, phone, role')
+        .select('id, email, role')
         .eq('role', 'player')
         .order('email')
-      profileRows = (fallback.data ?? []).map(profile => ({ ...profile, full_name: null })) as ProfileRow[]
+      profileRows = (fallback.data ?? []).map(profile => ({
+        ...profile,
+        full_name: null,
+        phone: null,
+      })) as ProfileRow[]
       profilesError = fallback.error
     }
 
@@ -100,7 +101,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireCoach()
+  const auth = await requireAdmin()
   if ('error' in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
@@ -150,11 +151,10 @@ export async function POST(req: NextRequest) {
     }
 
     let { error: profileError } = await supabaseAdmin.from('profiles').upsert(profilePayload)
-    if (isMissingFullNameColumn(profileError)) {
+    if (isMissingOptionalProfileColumn(profileError)) {
       const fallbackProfilePayload = {
         id: profilePayload.id,
         email: profilePayload.email,
-        phone: profilePayload.phone,
         role: profilePayload.role,
         player_id: profilePayload.player_id,
       }

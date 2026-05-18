@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { sendBetaApproved } from '@/lib/email'
+import { isAdmin } from '@/lib/admin'
 
 /*
 -- Run in Supabase SQL editor:
@@ -42,6 +43,14 @@ type PendingBetaUser = {
   beta_status: string | null
 }
 
+type FeedbackRow = {
+  rating: string
+  sport: string | null
+  comment: string | null
+  created_at: string
+  feedback_type: string
+}
+
 type AuthUserMetadata = {
   sports?: unknown
   sport?: unknown
@@ -55,20 +64,14 @@ function adminClient() {
   )
 }
 
-async function requireCoach() {
+async function requireAdmin() {
   const supabase = await createServerSupabaseClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated', status: 401 as const }
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profile?.role !== 'coach') return { error: 'Not authorized', status: 403 as const }
+  if (!isAdmin(user.email)) return { error: 'Not authorized', status: 403 as const }
   return { user }
 }
 
@@ -100,7 +103,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const auth = await requireCoach()
+  const auth = await requireAdmin()
   if ('error' in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
@@ -185,9 +188,20 @@ export async function GET() {
   const { data: pending } = await supabaseAdmin
     .from('profiles')
     .select('id, email, full_name, role, sport, created_at, beta_status')
-    .eq('beta_status', 'pending')
+    .or('beta_status.eq.pending,beta_status.is.null')
+    .neq('email', 'jordanfeige@gmail.com')
     .order('created_at', { ascending: false })
   const pendingBetaUsers = (pending ?? []) as PendingBetaUser[]
+  const feedbackResult = await supabaseAdmin
+    .from('analysis_feedback')
+    .select('rating, sport, comment, created_at, feedback_type')
+    .order('created_at', { ascending: false })
+    .limit(50)
+  const feedbackMissing = Boolean(
+    feedbackResult.error?.message?.includes("Could not find the table 'public.analysis_feedback'") ||
+    feedbackResult.error?.message?.includes('schema cache')
+  )
+  const feedbackStats = feedbackMissing ? [] : (feedbackResult.data ?? []) as FeedbackRow[]
 
   return NextResponse.json({
     entries: waitlistEntries,
@@ -210,12 +224,13 @@ export async function GET() {
       }
     }),
     pendingBetaUsers,
+    feedbackStats,
     sportsBreakdown,
   })
 }
 
 export async function PATCH(req: NextRequest) {
-  const auth = await requireCoach()
+  const auth = await requireAdmin()
   if ('error' in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }

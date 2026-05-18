@@ -18,19 +18,28 @@ function capitalize(value: string) {
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div
+    <table
+      role="presentation"
+      cellPadding="0"
+      cellSpacing="0"
       style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        gap: 16,
+        width: '100%',
         padding: '9px 0',
         borderBottom: '1px solid #E5E7EB',
         fontSize: 14,
       }}
     >
-      <span style={{ color: emailStyles.textSecondary }}>{label}</span>
-      <span style={{ color: emailStyles.text, fontWeight: 600, textAlign: 'right' }}>{children}</span>
-    </div>
+      <tbody>
+        <tr>
+          <td style={{ color: emailStyles.textSecondary, whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+            {label}:
+          </td>
+          <td style={{ color: emailStyles.text, fontWeight: 600, paddingLeft: 8, verticalAlign: 'middle' }}>
+            {children}
+          </td>
+        </tr>
+      </tbody>
+    </table>
   )
 }
 
