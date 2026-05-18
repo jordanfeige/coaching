@@ -2,6 +2,9 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['@google/generative-ai'],
+  generateBuildId: async () => {
+    return `build-${Date.now()}`
+  },
   async headers() {
     return [
       {
@@ -20,7 +23,7 @@ const nextConfig: NextConfig = {
     ]
   },
   experimental: {
-    proxyClientMaxBodySize: '200mb',
+    proxyClientMaxBodySize: '450mb',
     serverActions: {
       bodySizeLimit: '10mb',
     },

@@ -105,6 +105,48 @@ async function writeBase64ToTempFile(base64: string, mimeType: string) {
   return filePath
 }
 
+async function writeUrlToTempFile(url: string, mimeType: string) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Could not fetch uploaded video (${response.status})`)
+  }
+  const arrayBuffer = await response.arrayBuffer()
+  const filePath = path.join(
+    os.tmpdir(),
+    `playvia-analysis-${crypto.randomBytes(8).toString('hex')}.${extensionForMimeType(mimeType)}`
+  )
+  await fs.writeFile(filePath, Buffer.from(arrayBuffer))
+  return filePath
+}
+
+async function uploadUrlMedia(
+  fileManager: GoogleAIFileManager,
+  url: string,
+  mimeType: string,
+  label: string
+): Promise<UploadedMedia> {
+  const tmpPath = await writeUrlToTempFile(url, mimeType)
+  try {
+    const uploaded = await fileManager.uploadFile(tmpPath, {
+      mimeType,
+      displayName: `playvia-${label}-${Date.now()}`,
+    })
+
+    let file = await fileManager.getFile(uploaded.file.name)
+    for (let i = 0; file.state === FileState.PROCESSING && i < 22; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      file = await fileManager.getFile(uploaded.file.name)
+    }
+
+    if (file.state === FileState.FAILED) throw new Error(`${label} upload failed while Gemini processed the file.`)
+    if (file.state !== FileState.ACTIVE) throw new Error(`${label} video is still processing. Try again in a moment.`)
+
+    return { uri: file.uri, mimeType: file.mimeType || mimeType, name: file.name }
+  } finally {
+    await fs.unlink(tmpPath).catch(() => {})
+  }
+}
+
 async function uploadBase64Media(
   fileManager: GoogleAIFileManager,
   base64: string,
@@ -221,6 +263,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     videoBase64,
+    videoUrl,
     videoMimeType = 'video/mp4',
     compareVideoBase64,
     compareVideoMimeType = 'video/mp4',
@@ -244,7 +287,11 @@ export async function POST(req: NextRequest) {
   try {
     const parts: GeminiPart[] = []
 
-    if (videoBase64) {
+    if (videoUrl) {
+      const uploaded = await uploadUrlMedia(fileManager, videoUrl, videoMimeType, 'primary')
+      uploadedFiles.push(uploaded)
+      parts.push({ fileData: { fileUri: uploaded.uri, mimeType: uploaded.mimeType } })
+    } else if (videoBase64) {
       const uploaded = await uploadBase64Media(fileManager, videoBase64, videoMimeType, 'primary')
       uploadedFiles.push(uploaded)
       parts.push({ fileData: { fileUri: uploaded.uri, mimeType: uploaded.mimeType } })

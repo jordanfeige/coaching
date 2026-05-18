@@ -66,7 +66,7 @@ const LOADING_MESSAGES = [
   'Identifying technique patterns...',
   'Building your coaching report...',
 ]
-const MAX_VIDEO_FILE_MB = 140
+const MAX_VIDEO_FILE_MB = 300
 const MAX_VIDEO_DURATION_SECONDS = 60
 const CHAT_STARTERS = [
   'What should I fix first?',
@@ -84,15 +84,6 @@ function decodeResult(value: string): AnalysisResult | null {
   } catch {
     return null
   }
-}
-
-function fileToBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
-    reader.onerror = () => reject(new Error('Could not read video file'))
-    reader.readAsDataURL(file)
-  })
 }
 
 function fileSizeLabel(file: File) {
@@ -129,7 +120,7 @@ async function parseJsonResponse(response: Response) {
     return JSON.parse(text)
   } catch {
     if (text.startsWith('Request Entity Too Large')) {
-      throw new Error('That video is too large to upload. Try a shorter clip or compress the file before analyzing.')
+      throw new Error('That video is too large for the server upload path. Try exporting at 720p, or use a smaller file.')
     }
     throw new Error(text.slice(0, 240) || 'Server returned an unreadable response')
   }
@@ -251,7 +242,7 @@ export default function AnalyzePage() {
   async function analyzeVideo() {
     if (!file) return
     if (file.size > MAX_VIDEO_FILE_MB * 1024 * 1024) {
-      setError(`That video is too large to upload. Try a clip under ${MAX_VIDEO_FILE_MB} MB or compress it before analyzing.`)
+      setError(`That video is ${fileSizeLabel(file)}. Uploads currently support files up to ${MAX_VIDEO_FILE_MB} MB.`)
       return
     }
     if (videoDuration && videoDuration > MAX_VIDEO_DURATION_SECONDS) {
@@ -260,13 +251,40 @@ export default function AnalyzePage() {
     }
     setAnalyzing(true)
     setError('')
+    let uploadPath: string | null = null
     try {
-      const videoBase64 = await fileToBase64(file)
+      const uploadResponse = await fetch('/api/analyze-upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          contentType: file.type || 'video/mp4',
+        }),
+      })
+      const uploadPayload = await parseJsonResponse(uploadResponse)
+      if (!uploadResponse.ok || uploadPayload.error) throw new Error(uploadPayload.error || 'Could not prepare video upload')
+
+      uploadPath = String(uploadPayload.path)
+      const { error: storageError } = await supabase.storage
+        .from('videos')
+        .uploadToSignedUrl(uploadPath, String(uploadPayload.token), file, {
+          contentType: file.type || 'video/mp4',
+        })
+      if (storageError) throw new Error(storageError.message)
+
+      const readResponse = await fetch('/api/analyze-upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'read', path: uploadPath }),
+      })
+      const readPayload = await parseJsonResponse(readResponse)
+      if (!readResponse.ok || readPayload.error) throw new Error(readPayload.error || 'Could not prepare video for analysis')
+
       const response = await fetch('/api/video-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoBase64,
+          videoUrl: readPayload.signedUrl,
           videoMimeType: file.type || 'video/mp4',
           sport,
           shotType,
@@ -292,6 +310,13 @@ export default function AnalyzePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
+      if (uploadPath) {
+        fetch('/api/analyze-upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'delete', path: uploadPath }),
+        }).catch(() => {})
+      }
       setAnalyzing(false)
     }
   }
