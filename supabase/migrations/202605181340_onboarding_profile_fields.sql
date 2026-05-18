@@ -1,0 +1,10 @@
+alter table profiles add column if not exists sports_coached text[] default '{}';
+alter table profiles add column if not exists location text;
+alter table profiles add column if not exists years_experience text;
+alter table profiles add column if not exists hourly_rate numeric;
+alter table profiles add column if not exists sport text;
+alter table profiles add column if not exists skill_level text;
+alter table profiles add column if not exists age int;
+alter table profiles add column if not exists has_coach boolean;
+alter table profiles add column if not exists coach_invite_code text;
+alter table profiles add column if not exists created_at timestamptz default now();

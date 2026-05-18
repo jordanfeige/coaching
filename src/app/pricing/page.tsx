@@ -1,161 +1,122 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
-import { BrandMark } from '@/components/brand/BrandMark'
 
 const teal = 'hsl(168, 62%, 36%)'
 const tealSoft = 'hsl(168, 62%, 95%)'
 const warmBg = 'hsl(40, 20%, 97%)'
 const warmBorder = 'hsl(30, 10%, 88%)'
 const textSecondary = 'hsl(220, 10%, 45%)'
+const textMuted = 'hsl(220, 10%, 65%)'
 
-const tiers = [
-  {
-    name: 'Free',
-    monthly: '$0',
-    annual: '$0',
-    annualNote: 'Always free',
-    subtitle: 'Get started',
-    href: '/signup',
-    button: 'Start free →',
-    features: [
-      ['✓', 'Sign up required'],
-      ['✓', '3 AI analyses included'],
-      ['✓', 'Full coaching report each time'],
-      ['✓', 'Ask Coach AI'],
-      ['✓', 'YouTube coaching videos'],
-      ['✗', 'Progress timeline'],
-      ['✗', 'Score history'],
-      ['✗', 'Unlimited analyses'],
-    ],
-  },
-  {
-    name: 'Pro',
-    monthly: '$12/mo',
-    annual: '$99/yr',
-    annualNote: 'Billed yearly',
-    subtitle: 'Track your improvement',
-    href: '/signup?plan=pro',
-    button: 'Start Pro →',
-    highlighted: true,
-    features: [
-      ['✓', 'Everything in Free'],
-      ['✓', 'Unlimited AI analyses'],
-      ['✓', 'Full progress timeline'],
-      ['✓', 'Technique score history'],
-      ['✓', 'Issues fixed tracker'],
-      ['✓', 'Weekly practice plans'],
-      ['✓', 'Monthly progress report'],
-      ['✓', 'Unlimited Ask Coach AI'],
-      ['✗', 'Multiple athletes'],
-    ],
-  },
-  {
-    name: 'Family',
-    monthly: '$22/mo',
-    annual: '$179/yr',
-    annualNote: 'Billed yearly',
-    subtitle: 'For the whole family',
-    href: '/signup?plan=family',
-    button: 'Start Family →',
-    features: [
-      ['✓', 'Everything in Pro'],
-      ['✓', 'Up to 5 athlete profiles'],
-      ['✓', 'All sports per athlete'],
-      ['✓', 'Parent dashboard'],
-      ['✓', 'Coach connection per athlete'],
-      ['✓', 'One login for everyone'],
-    ],
-  },
+const proFeatures = [
+  'Unlimited AI technique analyses',
+  'Full progress timeline — track your score over time',
+  'Weekly AI-generated practice plans',
+  'Monthly progress reports',
+  'Issues fixed tracker',
+  'Unlimited Ask Coach AI',
 ]
 
-function FeatureList({ features }: { features: string[][] }) {
-  return (
-    <ul className="mt-5 space-y-2">
-      {features.map(([mark, text]) => (
-        <li key={text} className="flex gap-2 text-sm" style={{ color: textSecondary }}>
-          <span className="font-bold" style={{ color: mark === '✓' ? teal : 'hsl(220, 10%, 65%)' }}>{mark}</span>
-          <span>{text}</span>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 export default function PricingPage() {
-  const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
+  const [email, setEmail] = useState('')
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    setSubmitting(true)
+
+    try {
+      const response = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, source: 'pricing' }),
+      })
+      const payload = await response.json()
+      if (!response.ok || payload.error) throw new Error(payload.error || 'Could not join waitlist')
+      setSuccess(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join waitlist')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="min-h-screen" style={{ background: warmBg }}>
-      <main className="mx-auto max-w-5xl px-5 py-16">
-        <div className="mb-10 flex justify-center">
-          <BrandMark size="md" />
-        </div>
-        <section className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-[0.3em]" style={{ color: teal }}>Pricing</p>
-          <h1 className="mt-4 font-heading text-4xl font-black tracking-tight md:text-6xl">Simple pricing</h1>
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed" style={{ color: textSecondary }}>
-            Start free. Upgrade when you&apos;re ready to track progress without limits.
-          </p>
-          <div className="mx-auto mt-8 inline-flex rounded-full border bg-white p-1" style={{ borderColor: warmBorder }}>
-            {[
-              ['monthly', 'Monthly'],
-              ['annual', 'Annual — save ~30%'],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setBilling(value as 'monthly' | 'annual')}
-                className="rounded-full px-4 py-2 text-sm font-semibold"
-                style={{
-                  background: billing === value ? teal : 'transparent',
-                  color: billing === value ? 'white' : textSecondary,
-                }}
-              >
-                {label}
-              </button>
+      <main className="mx-auto max-w-lg px-5 py-24 text-center">
+        <span
+          className="inline-flex rounded-full px-4 py-1 text-xs font-semibold"
+          style={{ background: tealSoft, color: teal }}
+        >
+          Coming soon
+        </span>
+        <h1 className="mt-4 font-heading text-4xl font-black tracking-tight">
+          Playvia Pro is coming.
+        </h1>
+        <p className="mx-auto mt-3 max-w-md text-center text-lg leading-relaxed" style={{ color: textSecondary }}>
+          We&apos;re putting the finishing touches on our Pro plan — unlimited analyses, progress tracking, weekly practice plans, and more. Join the list to get early access and help shape the pricing.
+        </p>
+
+        <section className="mt-8 rounded-2xl bg-white p-6 text-left shadow-sm" style={{ border: `1px solid ${warmBorder}` }}>
+          <h2 className="mb-4 text-sm font-semibold">What&apos;s coming in Pro</h2>
+          <div className="space-y-3">
+            {proFeatures.map(feature => (
+              <div key={feature} className="flex gap-3 text-sm" style={{ color: textSecondary }}>
+                <span className="font-bold" style={{ color: teal }}>✓</span>
+                <span>{feature}</span>
+              </div>
             ))}
           </div>
+          <p className="mt-4 border-t pt-4 text-center text-xs" style={{ borderColor: warmBorder, color: textMuted }}>
+            Early access members get our best rate — locked in forever.
+          </p>
         </section>
 
-        <section className="mt-10 grid gap-6 md:grid-cols-3">
-          {tiers.map(tier => (
-            <div
-              key={tier.name}
-              className="relative flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm"
-              style={{ border: tier.highlighted ? `2px solid ${teal}` : `1px solid ${warmBorder}` }}
+        {success ? (
+          <p className="mt-6 text-sm font-medium" style={{ color: teal }}>
+            ✓ You&apos;re on the list! We&apos;ll reach out before we launch.
+          </p>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-2 sm:flex-row">
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={event => setEmail(event.target.value)}
+              placeholder="your@email.com"
+              className="min-h-11 flex-1 rounded-xl border bg-white px-4 py-2 text-sm outline-none focus:border-primary"
+              style={{ borderColor: warmBorder }}
+            />
+            <button
+              type="submit"
+              disabled={submitting}
+              className="min-h-11 rounded-xl px-4 py-2 text-sm font-bold text-white disabled:opacity-70"
+              style={{ background: teal }}
             >
-              {tier.highlighted && (
-                <span className="absolute right-5 top-5 rounded-full px-3 py-1 text-xs font-bold" style={{ background: tealSoft, color: teal }}>
-                  Most popular
-                </span>
-              )}
-              <h2 className="font-heading text-2xl font-bold">{tier.name}</h2>
-              <p className="mt-2 text-sm" style={{ color: textSecondary }}>{tier.subtitle}</p>
-              <div className="mt-5 min-h-[76px]">
-                <p className="font-heading text-4xl font-black">{billing === 'monthly' ? tier.monthly : tier.annual}</p>
-                <p className="mt-1 text-sm font-medium" style={{ color: textSecondary }}>
-                  {billing === 'monthly' ? (tier.name === 'Free' ? 'Always free' : 'Switch to annual to save ~30%') : tier.annualNote}
-                </p>
-              </div>
-              <FeatureList features={tier.features} />
-              <div className="flex-1" />
-              <Link
-                href={tier.href}
-                className="mt-6 flex w-full justify-center rounded-xl px-4 py-3 text-sm font-bold"
-                style={{
-                  background: tier.highlighted ? teal : 'white',
-                  color: tier.highlighted ? 'white' : teal,
-                  border: tier.highlighted ? 'none' : `1px solid ${teal}`,
-                }}
-              >
-                {tier.button}
-              </Link>
-            </div>
-          ))}
-        </section>
+              {submitting ? 'Joining...' : 'Get early access'}
+            </button>
+          </form>
+        )}
+        {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+        <p className="mt-3 text-center text-xs" style={{ color: textMuted }}>
+          No credit card required · We&apos;ll email you before we launch · Unsubscribe anytime
+        </p>
       </main>
     </div>
   )
 }
+
+/*
+PRICING CARDS — restore when Stripe is ready
+
+The previous pricing page rendered:
+- Free: $0, 3 AI analyses, Ask Coach AI, YouTube coaching videos
+- Pro: $12/mo or $99/yr, unlimited analyses, full progress timeline, score history, issues fixed tracker, weekly practice plans, monthly progress report, unlimited Ask Coach AI
+- Family: $22/mo or $179/yr, up to 5 athlete profiles, all sports per athlete, parent dashboard, coach connection per athlete, one login for everyone
+
+It also included a monthly / annual toggle and three full pricing cards.
+*/

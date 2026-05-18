@@ -24,10 +24,21 @@ export async function middleware(request: NextRequest) {
   try {
     const { data: { user } } = await supabase.auth.getUser()
 
+    const pathname = request.nextUrl.pathname
+    const protectedOnboarding =
+      pathname.startsWith('/onboarding/profile') ||
+      pathname.startsWith('/onboarding/ready') ||
+      pathname.startsWith('/onboarding/role')
+    const protectedAnalyze = pathname === '/analyze' || pathname.startsWith('/analyze/')
+
     if (!user) {
+      if (protectedAnalyze) {
+        return NextResponse.redirect(new URL('/onboarding', request.url))
+      }
       if (
-        request.nextUrl.pathname.startsWith('/dashboard') ||
-        request.nextUrl.pathname.startsWith('/player')
+        pathname.startsWith('/dashboard') ||
+        pathname.startsWith('/player') ||
+        protectedOnboarding
       ) {
         return NextResponse.redirect(new URL('/login', request.url))
       }
@@ -41,11 +52,15 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    const role = profile?.role || 'player'
+    const role = profile?.role
+    if (!role && (pathname.startsWith('/dashboard') || pathname.startsWith('/player') || protectedAnalyze)) {
+      return NextResponse.redirect(new URL('/onboarding/role', request.url))
+    }
+
     const isCoach = role === 'coach'
     const isPlayer = role === 'player'
-    const onDashboard = request.nextUrl.pathname.startsWith('/dashboard')
-    const onPlayer = request.nextUrl.pathname.startsWith('/player')
+    const onDashboard = pathname.startsWith('/dashboard')
+    const onPlayer = pathname.startsWith('/player')
 
     // Player trying to access coach dashboard → redirect to player portal
     if (isPlayer && onDashboard) {
@@ -71,5 +86,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/player/:path*'],
+  matcher: ['/dashboard/:path*', '/player/:path*', '/onboarding/:path*', '/analyze/:path*'],
 }

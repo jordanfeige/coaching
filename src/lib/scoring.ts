@@ -30,19 +30,42 @@ export function calculateScore(analysis: unknown): number {
   const result = asAnalysisResult(analysis)
   if (!result) return 0
 
-  let score = 100
   const areas = Array.isArray(result.areas_to_improve) ? result.areas_to_improve : []
+  const strengths = Array.isArray(result.strengths) ? result.strengths : []
+
+  // Start at 60 — score is earned not assumed
+  let score = 60
+
+  // Issues subtract
   areas.forEach(issue => {
     const severity = issueSeverity(issue)
-    if (severity === 'critical') score -= 15
-    else if (severity === 'moderate') score -= 7
-    else if (severity === 'minor') score -= 3
+    if (severity === 'critical') score -= 12
+    else if (severity === 'moderate') score -= 6
+    else if (severity === 'minor') score -= 2
   })
 
-  const strengths = Array.isArray(result.strengths) ? result.strengths : []
-  score += strengths.length * 5
+  // Strengths add — capped at +20 so they cannot cancel out real issues
+  score += Math.min(strengths.length * 4, 20)
+
+  // Rating bonus from AI overall assessment
+  const ratingBonus: Record<string, number> = {
+    elite: 25,
+    advanced: 18,
+    intermediate: 10,
+    developing: 4,
+    beginner: 0,
+  }
+  const rating = (result as any).overall_rating?.toLowerCase() || 'developing'
+  score += ratingBonus[rating] || 0
+
+  // Confidence adjustment
   if (result.confidence === 'high') score += 3
-  if (result.confidence === 'low') score -= 5
+  if (result.confidence === 'low') score -= 8
+
+  // Safety caps — 0 issues means AI failed not perfect technique
+  if (areas.length === 0) score = Math.min(score, 65)
+  if (areas.length === 1) score = Math.min(score, 78)
+
   return Math.max(0, Math.min(100, Math.round(score)))
 }
 

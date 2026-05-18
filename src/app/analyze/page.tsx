@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Upload, ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
@@ -193,7 +194,9 @@ function YouTubeCards({ videos }: { videos: CoachingVideo[] }) {
 }
 
 export default function AnalyzePage() {
-  const supabase = createClient()
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
+  const [authChecked, setAuthChecked] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userName, setUserName] = useState('')
   const [sport, setSport] = useState<Sport>('tennis')
@@ -238,28 +241,38 @@ export default function AnalyzePage() {
   )
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email ?? null)
-      const fullName = data.user?.user_metadata?.full_name
+    async function loadPage() {
+      const { data } = await supabase.auth.getUser()
+      if (!data.user) {
+        router.replace('/onboarding')
+        return
+      }
+
+      setUserEmail(data.user.email ?? null)
+      const fullName = data.user.user_metadata?.full_name
       setUserName(typeof fullName === 'string' ? fullName : '')
-    })
-    const params = new URLSearchParams(window.location.search)
-    const safeReturnPath = safeReturnTo(params.get('returnTo'))
-    if (safeReturnPath) {
-      queueMicrotask(() => setReturnTo(safeReturnPath))
+
+      const params = new URLSearchParams(window.location.search)
+      const safeReturnPath = safeReturnTo(params.get('returnTo'))
+      if (safeReturnPath) {
+        queueMicrotask(() => setReturnTo(safeReturnPath))
+      }
+      if (params.get('welcome') === 'true') {
+        queueMicrotask(() => setShowWelcome(true))
+      }
+      const message = params.get('message')
+      if (message) {
+        queueMicrotask(() => setNoticeMessage(message))
+      }
+      const encoded = params.get('result')
+      if (encoded) {
+        queueMicrotask(() => setAnalysis(decodeResult(encoded)))
+      }
+      setAuthChecked(true)
     }
-    if (params.get('welcome') === 'true') {
-      queueMicrotask(() => setShowWelcome(true))
-    }
-    const message = params.get('message')
-    if (message) {
-      queueMicrotask(() => setNoticeMessage(message))
-    }
-    const encoded = params.get('result')
-    if (encoded) {
-      queueMicrotask(() => setAnalysis(decodeResult(encoded)))
-    }
-  }, [supabase])
+
+    loadPage()
+  }, [router, supabase])
 
   useEffect(() => {
     if (!showWelcome) return
@@ -500,15 +513,6 @@ export default function AnalyzePage() {
     }
   }
 
-  async function signInWithGoogle() {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/analyze?welcome=true`,
-      },
-    })
-  }
-
   function upgradeScoreText() {
     const scores = analysisGate?.scorePreview
     if (!scores?.length) return null
@@ -571,7 +575,7 @@ export default function AnalyzePage() {
             <p className="mt-1 text-sm text-muted-foreground">
               Create a free account to keep chatting with Coach AI and save future reports.
             </p>
-            <Link href="/signup" className="mt-3 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">
+            <Link href="/onboarding" className="mt-3 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">
               Create free account →
             </Link>
           </div>
@@ -609,6 +613,11 @@ export default function AnalyzePage() {
   }
 
   return (
+    !authChecked ? (
+      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        Loading analyzer...
+      </div>
+    ) : (
     <div className="min-h-screen bg-background text-foreground">
       {analysisGate && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4">
@@ -636,16 +645,9 @@ export default function AnalyzePage() {
             </div>
 
             {analysisGate.type === 'signup' ? (
-              <div className="mt-5 space-y-3">
-                <button
-                  type="button"
-                  onClick={signInWithGoogle}
-                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground hover:border-primary"
-                >
-                  Continue with Google
-                </button>
+              <div className="mt-5">
                 <Link
-                  href="/signup"
+                  href="/onboarding"
                   className="flex w-full justify-center rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground"
                 >
                   Sign up free
@@ -1057,7 +1059,7 @@ export default function AnalyzePage() {
                   <p className="mt-1 text-sm text-muted-foreground">
                     Reports are only saved to an account, so you can come back later, track progress, ask more AI questions, and analyze another video.
                   </p>
-                  <Link href="/signup" className="mt-3 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">
+                  <Link href="/onboarding" className="mt-3 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">
                     Create free account →
                   </Link>
                 </div>
@@ -1068,5 +1070,6 @@ export default function AnalyzePage() {
         )}
       </main>
     </div>
+    )
   )
 }

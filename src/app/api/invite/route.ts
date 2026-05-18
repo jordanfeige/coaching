@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createElement } from 'react'
+import { PlayerInviteEmail } from '@/emails/PlayerInviteEmail'
+import { sendEmail } from '@/lib/email'
+import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 function isMissingFullNameColumn(error: { message?: string } | null) {
   return Boolean(
@@ -22,6 +26,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const supabase = await createServerSupabaseClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    const coachName =
+      typeof user?.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
+        ? user.user_metadata.full_name.trim()
+        : user?.email?.split('@')[0] || 'Your coach'
+
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -100,10 +113,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: linkError.message }, { status: 400 })
     }
 
+    const { data: playerRow } = await supabaseAdmin
+      .from('players')
+      .select('sport')
+      .eq('id', playerIds[0])
+      .maybeSingle()
+    const sport = playerRow?.sport || 'Tennis'
+    const magicLink = linkData?.properties?.action_link
+
+    if (magicLink) {
+      await sendEmail({
+        to: email,
+        subject: `${coachName} invited you to Playvia`,
+        template: createElement(PlayerInviteEmail, {
+          coachName,
+          sport,
+          inviteUrl: magicLink,
+        }),
+        idempotencyKey: `player-invite/${email}/${playerIds.join('-')}`,
+      })
+    }
+
     // Return the magic link so coach can share it manually
     return NextResponse.json({
       success: true,
-      magic_link: linkData?.properties?.action_link,
+      magic_link: magicLink,
     })
 
   } catch (e: unknown) {

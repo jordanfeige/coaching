@@ -7,6 +7,7 @@ import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { calculateScore, extractCheckpointScores } from '@/lib/scoring'
+import { sendAnalysisComplete } from '@/lib/email'
 
 export const maxDuration = 60
 export const runtime = 'nodejs'
@@ -38,6 +39,7 @@ type AnalysisResult = {
   strengths?: unknown[]
   overall_rating?: string
   biggest_win?: string
+  confidence?: string
 }
 
 const SPORT_CHECKLISTS: Record<string, string> = {
@@ -269,6 +271,12 @@ Rules:
 - Estimate measurements when exact values are not possible: degrees, inches, percentage, distance from body, or timing.
 - Do not invent ball flight, make/miss, shot result, contact quality, or tactical outcome if not visible.
 - Prioritize the top 2-4 improvements, each with a drill the player can perform.
+- MANDATORY: areas_to_improve MUST contain at least 2 items on every analysis — no exceptions.
+- MANDATORY: A real athlete always has something to improve. Returning 0 or 1 issues is never acceptable.
+- MANDATORY: Do not add extra strengths to compensate for lack of issues — only list genuine observed strengths with clear visual evidence.
+- Typical amateur: 1 critical + 2 moderate + 1 minor issues. Typical intermediate: 2 moderate + 2 minor. Even elite players have minor issues.
+- If video quality limits visibility, still identify the most likely issues from what IS visible and set confidence to low.
+- strengths array should have a maximum of 3 items — be selective and honest.
 
 Return this exact JSON shape:
 {
@@ -406,6 +414,18 @@ export async function POST(req: NextRequest) {
     const result = await model.generateContent([...parts, { text: prompt }])
     const data = parseJsonFromModel(result.response.text()) as AnalysisResult
     const overallScore = calculateScore(data)
+    console.log('Score breakdown:', {
+      sport,
+      areas_count: data.areas_to_improve?.length || 0,
+      strengths_count: data.strengths?.length || 0,
+      rating: data.overall_rating,
+      confidence: data.confidence,
+      final_score: overallScore,
+      issues: data.areas_to_improve?.map((i: any) => ({
+        area: i.area || i,
+        severity: i.severity || 'moderate',
+      })),
+    })
     const checkpointScores = extractCheckpointScores(data, normalizedSport || 'tennis')
     const issues = Array.isArray(data.areas_to_improve) ? data.areas_to_improve : []
     const topIssue = issues.length ? issueArea(issues[0]) : null
@@ -439,6 +459,20 @@ export async function POST(req: NextRequest) {
       .from('profiles')
       .update({ analyses_used: analysesUsed + 1 })
       .eq('id', user.id)
+
+    if (user.email && overallScore) {
+      await sendAnalysisComplete({
+        to: user.email,
+        playerName: playerName || 'Athlete',
+        sport: normalizedSport || 'tennis',
+        shotType: shotType || '',
+        overallScore,
+        rating: data.overall_rating || 'developing',
+        topIssue: topIssue || 'technique',
+        biggestWin: data.biggest_win || '',
+        analysisUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'https://playvia.studio'}/player/progress`,
+      })
+    }
 
     return NextResponse.json({
       ...data,

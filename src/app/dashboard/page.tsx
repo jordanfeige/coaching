@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { CalendarDays, Users, Video, Dumbbell, Clock, ArrowRight } from 'lucide-react'
+import { CalendarDays, Users, Video, Dumbbell, Clock, ArrowRight, CheckCircle2, Circle } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,8 @@ export default function DashboardPage() {
   const [lessons, setLessons] = useState<any[]>([])
   const [playerCount, setPlayerCount] = useState(0)
   const [videoCount, setVideoCount] = useState(0)
+  const [drillCount, setDrillCount] = useState(0)
+  const [createdAt, setCreatedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
@@ -23,9 +25,16 @@ export default function DashboardPage() {
         .limit(5)
       const { count: pc } = await supabase.from('players').select('*', { count: 'exact', head: true })
       const { count: vc } = await supabase.from('videos').select('*', { count: 'exact', head: true })
+      const { count: dc } = await supabase.from('drills').select('*', { count: 'exact', head: true })
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('created_at').eq('id', user.id).maybeSingle()
+        setCreatedAt(profile?.created_at ?? null)
+      }
       setLessons(l || [])
       setPlayerCount(pc || 0)
       setVideoCount(vc || 0)
+      setDrillCount(dc || 0)
       setLoading(false)
     }
     load()
@@ -39,6 +48,35 @@ export default function DashboardPage() {
 
   const hour = new Date().getHours()
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const checklistItems = [
+    {
+      label: 'Add your first player',
+      done: playerCount > 0,
+      href: '/dashboard/players',
+      cta: 'Add player →',
+    },
+    {
+      label: 'Schedule a lesson',
+      done: lessons.length > 0,
+      href: '/dashboard/schedule',
+      cta: 'Set availability →',
+    },
+    {
+      label: 'Try the AI drill builder',
+      done: drillCount > 0,
+      href: '/dashboard/drills',
+      cta: 'Build drills →',
+    },
+    {
+      label: 'Analyze a player video',
+      done: videoCount > 0,
+      href: '/dashboard/video',
+      cta: 'Upload video →',
+    },
+  ]
+  const completedItems = checklistItems.filter(item => item.done).length
+  const isNewCoach = playerCount === 0 || (createdAt ? Date.now() - new Date(createdAt).getTime() < 7 * 24 * 60 * 60 * 1000 : false)
+  const showChecklist = !loading && isNewCoach && completedItems < checklistItems.length
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -71,6 +109,41 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {showChecklist && (
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-heading text-lg font-bold text-foreground">Get started with Playvia</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{completedItems}/4 complete</p>
+            </div>
+            <div className="h-2 w-full rounded-full bg-muted sm:w-44">
+              <div
+                className="h-2 rounded-full bg-primary transition-all"
+                style={{ width: `${(completedItems / checklistItems.length) * 100}%` }}
+              />
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {checklistItems.map(item => {
+              const Icon = item.done ? CheckCircle2 : Circle
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 transition-colors hover:border-primary/30 hover:bg-primary/[0.04]"
+                >
+                  <span className="flex items-center gap-3 text-sm font-semibold text-foreground">
+                    <Icon className={`size-5 ${item.done ? 'text-primary' : 'text-muted-foreground/50'}`} />
+                    {item.label}
+                  </span>
+                  {!item.done && <span className="text-xs font-bold text-primary">{item.cta}</span>}
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[

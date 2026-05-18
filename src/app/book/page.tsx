@@ -209,7 +209,49 @@ export default function BookingPage() {
 
     const existingNames = chosenExisting.map(p => p.name)
     const createdNames = newPlayerPayloads.map(p => p.name)
-    setBookedNames([...existingNames, ...createdNames])
+    const allNames = [...existingNames, ...createdNames]
+    const primaryPlayerName = allNames[0] || 'Athlete'
+    const primarySport =
+      newPlayerPayloads[0]?.sport ||
+      chosenExisting[0]?.sport ||
+      'Tennis'
+    const formattedDate = format(new Date(selected.starts_at), 'EEEE, MMMM d, yyyy')
+    const formattedTime = format(new Date(selected.starts_at), 'h:mm a')
+    const lessonUrl = `${window.location.origin}/player`
+
+    fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'lesson_booked_player',
+        to: form.email,
+        playerName: primaryPlayerName,
+        coachName: 'Your Coach',
+        date: formattedDate,
+        time: formattedTime,
+        duration: '60',
+        sport: primarySport,
+        lessonUrl,
+      }),
+    }).catch(error => console.error('Could not send booking email:', error))
+
+    fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'lesson_booked_coach',
+        playerName: primaryPlayerName,
+        playerEmail: form.email,
+        date: formattedDate,
+        time: formattedTime,
+        duration: '60',
+        sport: primarySport,
+        skillLevel: newPlayerPayloads[0]?.skill_level || chosenExisting[0]?.skill_level || 'Not specified',
+        lessonUrl: `${window.location.origin}/dashboard/schedule`,
+      }),
+    }).catch(error => console.error('Could not send coach booking email:', error))
+
+    setBookedNames(allNames)
     setBookedLessonId(bookedLessons?.[0]?.id ?? null)
     setSaving(false)
     setStep('confirm')

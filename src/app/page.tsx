@@ -23,63 +23,21 @@ const steps = [
   ['4', '📈', 'Track progress over time', "Every session is saved. Watch your score improve week by week. See exactly which issues you've fixed and which need more work."],
 ]
 
-const pricingCards = [
+const pricingTeasers = [
   {
-    name: 'Free',
-    monthlyPrice: '$0',
-    annualPrice: '$0',
-    annualNote: 'Always free',
-    subtitle: 'Get started',
-    href: '/signup',
+    name: 'Free forever',
+    price: '$0',
+    subtitle: '3 analyses · Full coaching report · Ask Coach AI · YouTube videos',
+    href: '/onboarding',
     button: 'Start free →',
-    features: [
-      ['✓', 'Sign up required'],
-      ['✓', '3 AI analyses included'],
-      ['✓', 'Full coaching report each time'],
-      ['✓', 'Ask Coach AI'],
-      ['✓', 'YouTube coaching videos'],
-      ['✗', 'Progress timeline'],
-      ['✗', 'Score history'],
-      ['✗', 'Unlimited analyses'],
-    ],
   },
   {
-    name: 'Pro',
-    monthlyPrice: '$12/mo',
-    annualPrice: '$99/yr',
-    annualNote: 'or $99 billed yearly',
-    subtitle: 'Track your improvement',
-    href: '/signup?plan=pro',
-    button: 'Start Pro →',
+    name: 'Pro — coming soon',
+    price: '?',
+    subtitle: 'Unlimited analyses · Progress timeline · Weekly plans · Monthly reports',
+    href: '/pricing',
+    button: 'Join waitlist →',
     highlighted: true,
-    features: [
-      ['✓', 'Everything in Free'],
-      ['✓', 'Unlimited AI analyses'],
-      ['✓', 'Full progress timeline'],
-      ['✓', 'Technique score history'],
-      ['✓', 'Issues fixed tracker'],
-      ['✓', 'Weekly practice plans'],
-      ['✓', 'Monthly progress report'],
-      ['✓', 'Unlimited Ask Coach AI'],
-      ['✗', 'Multiple athletes'],
-    ],
-  },
-  {
-    name: 'Family',
-    monthlyPrice: '$22/mo',
-    annualPrice: '$179/yr',
-    annualNote: 'or $179 billed yearly',
-    subtitle: 'For the whole family',
-    href: '/signup?plan=family',
-    button: 'Start Family →',
-    features: [
-      ['✓', 'Everything in Pro'],
-      ['✓', 'Up to 5 athlete profiles'],
-      ['✓', 'All sports per athlete'],
-      ['✓', 'Parent dashboard'],
-      ['✓', 'Coach connection per athlete'],
-      ['✓', 'One login for everyone'],
-    ],
   },
 ]
 
@@ -95,20 +53,7 @@ function TealButton({ href, children }: { href: string; children: React.ReactNod
   )
 }
 
-function FeatureList({ features }: { features: string[][] }) {
-  return (
-    <ul className="mt-5 space-y-2">
-      {features.map(([mark, text]) => (
-        <li key={text} className="flex gap-2 text-sm" style={{ color: textSecondary }}>
-          <span className="font-bold" style={{ color: mark === '✓' ? teal : 'hsl(220, 10%, 65%)' }}>{mark}</span>
-          <span>{text}</span>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function PricingCard({ card }: { card: typeof pricingCards[number] }) {
+function PricingTeaserCard({ card }: { card: typeof pricingTeasers[number] }) {
   return (
     <div
       className="relative flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm"
@@ -116,24 +61,21 @@ function PricingCard({ card }: { card: typeof pricingCards[number] }) {
     >
       {card.highlighted && (
         <span className="absolute right-5 top-5 rounded-full px-3 py-1 text-xs font-bold" style={{ background: tealSoft, color: teal }}>
-          Most popular
+          Coming soon
         </span>
       )}
       <h3 className="font-heading text-2xl font-bold">{card.name}</h3>
-      <p className="mt-2 text-sm" style={{ color: textSecondary }}>{card.subtitle}</p>
-      <div className="mt-5 min-h-[76px]">
-        <p className="font-heading text-4xl font-black">{card.monthlyPrice}</p>
-        <p className="mt-1 text-sm font-medium" style={{ color: textSecondary }}>{card.annualNote}</p>
-      </div>
-      <FeatureList features={card.features} />
+      <p className="mt-5 font-heading text-4xl font-black">{card.price}</p>
+      {card.highlighted && <p className="mt-1 text-sm font-medium" style={{ color: textSecondary }}>Join waitlist for early pricing</p>}
+      <p className="mt-5 text-sm leading-relaxed" style={{ color: textSecondary }}>{card.subtitle}</p>
       <div className="flex-1" />
       <Link
         href={card.href}
         className="mt-6 flex w-full justify-center rounded-xl px-4 py-3 text-sm font-bold"
         style={{
-          background: card.highlighted ? teal : 'white',
-          color: card.highlighted ? 'white' : teal,
-          border: card.highlighted ? 'none' : `1px solid ${teal}`,
+          background: card.highlighted ? 'white' : teal,
+          color: card.highlighted ? teal : 'white',
+          border: card.highlighted ? `1px solid ${teal}` : 'none',
         }}
       >
         {card.button}
@@ -194,7 +136,7 @@ export default function Home() {
           <BrandMark size="md" />
           <div className="flex items-center gap-3">
             <Link href="/login" className="text-sm font-semibold" style={{ color: teal }}>Sign in</Link>
-            <Link href="/signup" className="rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ background: teal }}>Start free</Link>
+            <Link href="/onboarding" className="rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ background: teal }}>Start free</Link>
           </div>
         </div>
       </nav>
@@ -212,7 +154,7 @@ export default function Home() {
           <p className="mx-auto mt-4 max-w-xl text-xl leading-relaxed" style={{ color: textSecondary }}>
             Upload a video. Get an AI coaching report. Track your technique score over time and see exactly what&apos;s improving — and what isn&apos;t.
           </p>
-          <div className="mt-8"><TealButton href="/signup">Start tracking free →</TealButton></div>
+          <div className="mt-8"><TealButton href="/onboarding">Start tracking free →</TealButton></div>
           <p className="mt-3 text-sm" style={{ color: textSecondary }}>
             3 free analyses included · No credit card required · Tennis · Golf · Baseball · Basketball · Pickleball
           </p>
@@ -243,7 +185,7 @@ export default function Home() {
             <p className="mt-3" style={{ color: textSecondary }}>Specialized AI analysis for every game</p>
             <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-5">
               {sports.map(([emoji, title, issues]) => (
-                <Link key={title} href="/signup" className="rounded-2xl bg-white p-5 text-center transition-all hover:shadow-sm" style={{ border: `1px solid ${warmBorder}` }}>
+                <Link key={title} href="/onboarding" className="rounded-2xl bg-white p-5 text-center transition-all hover:shadow-sm" style={{ border: `1px solid ${warmBorder}` }}>
                   <div className="text-4xl">{emoji}</div>
                   <h3 className="mt-4 font-bold">{title}</h3>
                   <p className="mt-2 text-xs leading-relaxed" style={{ color: textSecondary }}>{issues}</p>
@@ -255,10 +197,12 @@ export default function Home() {
 
         <section className="border-t bg-white px-5 py-20" style={{ borderColor: warmBorder }}>
           <div className="mx-auto max-w-4xl text-center">
-            <h2 className="font-heading text-3xl font-bold">Simple pricing</h2>
-            <p className="mt-3" style={{ color: textSecondary }}>Start free. Upgrade when you&apos;re ready.</p>
-            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-              {pricingCards.map(card => <PricingCard key={card.name} card={card} />)}
+            <h2 className="font-heading text-3xl font-bold">Simple pricing — coming soon</h2>
+            <p className="mx-auto mt-3 max-w-2xl" style={{ color: textSecondary }}>
+              Free to start. Pro plan launching soon with unlimited analyses and full progress tracking.
+            </p>
+            <div className="mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-6 md:grid-cols-2">
+              {pricingTeasers.map(card => <PricingTeaserCard key={card.name} card={card} />)}
             </div>
           </div>
         </section>
@@ -266,7 +210,7 @@ export default function Home() {
         <section className="border-t bg-white px-5 py-24 text-center" style={{ borderColor: warmBorder }}>
           <h2 className="font-heading text-4xl font-black">Start tracking your improvement today.</h2>
           <p className="mt-3" style={{ color: textSecondary }}>3 free analyses included. No credit card required.</p>
-          <div className="mt-8"><TealButton href="/signup">Create free account →</TealButton></div>
+          <div className="mt-8"><TealButton href="/onboarding">Create free account →</TealButton></div>
           <p className="mt-4 text-sm" style={{ color: textSecondary }}>
             Already have an account? <Link href="/login" className="font-semibold" style={{ color: teal }}>Sign in →</Link>
           </p>
@@ -279,7 +223,7 @@ export default function Home() {
           <p className="text-sm" style={{ color: textSecondary }}>AI Coaching for Modern Athletes</p>
           <div className="flex items-center gap-4">
             {[
-              ['Analyze', '/analyze'],
+              ['Analyze', '/onboarding'],
               ['Pricing', '/pricing'],
               ['Sign in', '/login'],
             ].map(([label, href]) => (

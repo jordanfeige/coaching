@@ -23,12 +23,16 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    const { data: profile } = await supabase.from('profiles').select('role, player_id').eq('id', data.user.id).single()
+    const { data: profile } = await supabase.from('profiles').select('role, player_id').eq('id', data.user.id).maybeSingle()
 
-    if (profile?.role === 'coach') {
+    if (!profile?.role) {
+      router.push('/onboarding/role')
+    } else if (profile.role === 'coach') {
       router.push('/dashboard')
-    } else {
+    } else if (profile.role === 'player' && profile.player_id) {
       router.push('/player')
+    } else {
+      router.push('/player?welcome=true')
     }
   }
 
@@ -105,7 +109,7 @@ export default function LoginPage() {
           </form>
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{' '}
-            <Link href="/signup" className="font-medium text-primary underline-offset-4 hover:underline">
+            <Link href="/onboarding" className="font-medium text-primary underline-offset-4 hover:underline">
               Sign up free →
             </Link>
           </p>

@@ -195,6 +195,22 @@ export default function LessonDetailPage() {
 
   async function cancelLesson() {
     await supabase.from('lessons').update({ status: 'cancelled' }).eq('id', id)
+    if (player?.email && lesson?.starts_at) {
+      await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'lesson_cancelled_player',
+          to: player.email,
+          playerName: player.name,
+          coachName: 'Coach',
+          date: format(new Date(lesson.starts_at), 'EEEE, MMMM d'),
+          time: format(new Date(lesson.starts_at), 'h:mm a'),
+          sport: player.sport || 'Tennis',
+          bookingUrl: `${window.location.origin}/book`,
+        }),
+      }).catch(error => console.error('Could not send cancellation email:', error))
+    }
     loadAll()
   }
 

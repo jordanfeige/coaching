@@ -5,7 +5,7 @@ export const BRAND_TAGLINE = 'AI Coaching for Modern Athletes'
 
 type BrandMarkProps = {
   variant?: 'sidebar' | 'authHero' | 'authPanel' | 'public'
-  size?: 'sm' | 'md'
+  size?: 'sm' | 'md' | 'lg'
   /** Shown under the tagline on compact layouts (e.g. “Player”). */
   audience?: string
   className?: string
@@ -45,6 +45,11 @@ export function BrandMark({ variant = 'sidebar', size, audience, className, href
     ) : variant === 'public' ? (
       <>
         <p className="text-3xl leading-none md:text-4xl">{wordmark}</p>
+        <div className="mx-auto mt-3 max-w-sm text-sm md:text-base">{tagline}</div>
+      </>
+    ) : size === 'lg' ? (
+      <>
+        <p className="text-4xl leading-none md:text-5xl">{wordmark}</p>
         <div className="mx-auto mt-3 max-w-sm text-sm md:text-base">{tagline}</div>
       </>
     ) : size === 'sm' ? (
