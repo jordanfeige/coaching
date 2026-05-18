@@ -5,13 +5,13 @@ import { createClient } from '@/lib/supabase'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { CalendarDays, Users, Dumbbell, Video, LogOut, Trophy, UserRoundCog, TrendingUp } from 'lucide-react'
+import { CalendarDays, Users, Dumbbell, Video, LogOut, UserRoundCog, TrendingUp } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { brand } from '@/lib/brand'
 import { isAdmin as hasAdminAccess } from '@/lib/admin'
 
 const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: Trophy },
+  { href: '/dashboard/analytics', label: 'Pulse', icon: TrendingUp },
   { href: '/dashboard/schedule', label: 'Schedule', icon: CalendarDays },
   { href: '/dashboard/players', label: 'Players', icon: Users },
   { href: '/dashboard/accounts', label: 'Accounts', icon: UserRoundCog },

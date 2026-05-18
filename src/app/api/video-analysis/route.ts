@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { calculateScore, extractCheckpointScores } from '@/lib/scoring'
 import { sendAnalysisComplete } from '@/lib/email'
+import { ADMIN_EMAILS } from '@/lib/admin'
 
 export const maxDuration = 120
 export const runtime = 'nodejs'
@@ -713,6 +714,7 @@ export async function POST(req: NextRequest) {
     compareImageBase64,
     compareMediaType,
     playerName,
+    playerId,
     sport = 'tennis',
     shotType,
     playerHistory = '',
@@ -724,10 +726,11 @@ export async function POST(req: NextRequest) {
     .select('analyses_used, is_subscribed')
     .eq('id', user.id)
     .single()
-  const analysesUsed = Number(profile?.analyses_used || 0)
-  const isSubscribed = Boolean(profile?.is_subscribed)
+  const isAdmin = Boolean(user.email && ADMIN_EMAILS.includes(user.email.toLowerCase()))
+  const isSubscribed = profile?.is_subscribed === true
+  const analysesUsed = profile?.analyses_used || 0
 
-  if (!isSubscribed && analysesUsed >= 3) {
+  if (!isAdmin && !isSubscribed && analysesUsed >= 3) {
     const { data: scoreRows } = await supabase
       .from('analysis_sessions')
       .select('overall_score')
@@ -870,21 +873,30 @@ export async function POST(req: NextRequest) {
       ? previousRows[0].overall_score
       : null
 
-    const { data: insertedSession } = await supabase.from('analysis_sessions').insert({
-      user_id: user.id,
-      sport: normalizedSport || 'tennis',
-      shot_type: shotType || null,
-      overall_score: overallScore,
-      rating: data.overall_rating,
-      strengths_count: data.strengths?.length || 0,
-      critical_count: issueCount(issues, 'critical'),
-      moderate_count: issueCount(issues, 'moderate'),
-      minor_count: issueCount(issues, 'minor'),
-      top_issue: topIssue,
-      biggest_win: data.biggest_win || null,
-      checkpoint_scores: checkpointScores,
-      full_result: data,
-    }).select('id').single()
+    let insertedSession: { id: string } | null = null
+    const shouldSave = data.confidence !== 'low' || overallScore > 15
+
+    if (shouldSave) {
+      const { data: savedSession } = await supabase.from('analysis_sessions').insert({
+        user_id: user.id,
+        player_id: playerId || null,
+        sport: normalizedSport || 'tennis',
+        shot_type: shotType || null,
+        overall_score: overallScore,
+        rating: data.overall_rating,
+        strengths_count: data.strengths?.length || 0,
+        critical_count: issueCount(issues, 'critical'),
+        moderate_count: issueCount(issues, 'moderate'),
+        minor_count: issueCount(issues, 'minor'),
+        top_issue: topIssue,
+        biggest_win: data.biggest_win || null,
+        checkpoint_scores: checkpointScores,
+        full_result: data,
+      }).select('id').single()
+      insertedSession = savedSession
+    } else {
+      console.log('Skipping save - low confidence + low score')
+    }
     await supabase
       .from('profiles')
       .update({ analyses_used: analysesUsed + 1 })
@@ -908,6 +920,7 @@ export async function POST(req: NextRequest) {
       ...data,
       overall_score: overallScore,
       session_id: insertedSession?.id || null,
+      sessionId: insertedSession?.id || null,
       checkpoint_scores: checkpointScores,
       previous_score: previousScore,
       score_delta: previousScore === null ? null : overallScore - previousScore,

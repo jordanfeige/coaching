@@ -8,6 +8,8 @@ import { createClient } from '@/lib/supabase'
 import { WaitlistForm } from '@/components/waitlist/WaitlistForm'
 import { brand } from '@/lib/brand'
 import FeedbackButtons from '@/components/FeedbackButtons'
+import PDFExportButton from '@/components/PDFExportButton'
+import AnalysisQualityBadges from '@/components/AnalysisQualityBadges'
 
 type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 type Severity = 'critical' | 'moderate' | 'minor'
@@ -221,7 +223,9 @@ export default function AnalyzePage() {
   const [videoURL, setVideoURL] = useState<string | null>(null)
   const [videoDuration, setVideoDuration] = useState<number | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
-  const [savedSessionId, setSavedSessionId] = useState<string | undefined>()
+  const [savedSessionId, setSavedSessionId] = useState<string | null>(null)
+  const [discarded, setDiscarded] = useState(false)
+  const [linkedPlayerId, setLinkedPlayerId] = useState<string | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [loadingIndex, setLoadingIndex] = useState(0)
   const [error, setError] = useState('')
@@ -290,6 +294,12 @@ export default function AnalyzePage() {
       setUserEmail(data.user.email ?? null)
       const fullName = data.user.user_metadata?.full_name
       setUserName(typeof fullName === 'string' ? fullName : '')
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('player_id')
+        .eq('id', data.user.id)
+        .maybeSingle()
+      setLinkedPlayerId(typeof profile?.player_id === 'string' ? profile.player_id : null)
 
       const params = new URLSearchParams(window.location.search)
       const safeReturnPath = safeReturnTo(params.get('returnTo'))
@@ -430,7 +440,8 @@ export default function AnalyzePage() {
     setAnalyzing(true)
     setError('')
     setShareUrl('')
-    setSavedSessionId(undefined)
+    setSavedSessionId(null)
+    setDiscarded(false)
     setAnalysisGate(null)
     let uploadPath: string | null = null
     try {
@@ -471,6 +482,7 @@ export default function AnalyzePage() {
           shotType: shotType || undefined,
           cameraAngle: 'side-on',
           playerName: 'Athlete',
+          playerId: linkedPlayerId,
         }),
       })
       const payload = await parseJsonResponse(response)
@@ -489,7 +501,13 @@ export default function AnalyzePage() {
       }
       if (!response.ok || payload.error) throw new Error(payload.error || 'Analysis failed')
       setAnalysis(payload)
-      setSavedSessionId(typeof payload.session_id === 'string' ? payload.session_id : undefined)
+      setSavedSessionId(
+        typeof payload.sessionId === 'string'
+          ? payload.sessionId
+          : typeof payload.session_id === 'string'
+            ? payload.session_id
+            : null
+      )
       setAutoFetchedIssueArea('')
       saveSharedAnalysis(payload).catch(() => {})
       if (userEmail) {
@@ -534,6 +552,16 @@ export default function AnalyzePage() {
     } finally {
       setLoadingCoachingVideo(null)
     }
+  }
+
+  async function handleDiscard() {
+    if (!savedSessionId) return
+    await supabase
+      .from('analysis_sessions')
+      .delete()
+      .eq('id', savedSessionId)
+    setDiscarded(true)
+    setSavedSessionId(null)
   }
 
   async function saveSharedAnalysis(result: AnalysisResult) {
@@ -646,7 +674,7 @@ export default function AnalyzePage() {
                   </div>
                   <div className="mt-1 pl-1">
                     <FeedbackButtons
-                      sessionId={savedSessionId}
+                      sessionId={savedSessionId ?? undefined}
                       feedbackType="chat"
                       sport={sport}
                       chatMessage={chatMessages[index - 1]?.content}
@@ -1011,13 +1039,13 @@ export default function AnalyzePage() {
             )}
 
             <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-              <div className="flex flex-wrap gap-2">
-                {analysis.overall_rating && <span className="rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">{analysis.overall_rating}</span>}
-                {analysis.confidence && <span className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground">{analysis.confidence} confidence</span>}
-              </div>
+              <AnalysisQualityBadges
+                rating={analysis.overall_rating}
+                confidence={analysis.confidence}
+              />
               <div className="my-4 flex items-center justify-between border-y border-border py-3">
                 <FeedbackButtons
-                  sessionId={savedSessionId}
+                  sessionId={savedSessionId ?? undefined}
                   feedbackType="analysis"
                   sport={sport}
                   shotType={shotType}
@@ -1153,6 +1181,14 @@ export default function AnalyzePage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <PDFExportButton
+                    analysis={analysis}
+                    playerName={userName || 'Athlete'}
+                    sport={sport}
+                    shotType={shotType}
+                    overallScore={analysis.overall_score ?? 0}
+                    playerEmail={userEmail || undefined}
+                  />
                   {returnTo && userEmail && (
                     <Link
                       href={returnTo}
@@ -1192,6 +1228,8 @@ export default function AnalyzePage() {
                         setError('')
                         setCoachPanelOpen(false)
                         setShareUrl('')
+                        setSavedSessionId(null)
+                        setDiscarded(false)
                       }}
                       className="rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground"
                     >
@@ -1208,6 +1246,40 @@ export default function AnalyzePage() {
                   )}
                 </div>
               </div>
+
+              {!discarded && savedSessionId && (
+                <div style={{ textAlign: 'center', marginTop: 12 }}>
+                  <button
+                    onClick={handleDiscard}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: 12,
+                      color: 'hsl(220,10%,65%)',
+                      cursor: 'pointer',
+                      fontFamily: 'Arial, sans-serif',
+                      textDecoration: 'underline',
+                    }}
+                    type="button"
+                  >
+                    Don&apos;t save this analysis
+                  </button>
+                </div>
+              )}
+
+              {discarded && (
+                <div
+                  style={{
+                    textAlign: 'center',
+                    marginTop: 12,
+                    fontSize: 12,
+                    color: 'hsl(220,10%,65%)',
+                    fontFamily: 'Arial, sans-serif',
+                  }}
+                >
+                  Analysis discarded - not saved to your history
+                </div>
+              )}
 
               {!userEmail && showSaveNotice && (
                 <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 p-4">

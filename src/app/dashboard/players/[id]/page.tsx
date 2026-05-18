@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Sparkles, Video, BookOpen, Dumbbell, Clock, RefreshCw, X, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Sparkles, Video, BookOpen, Dumbbell, Clock, RefreshCw, X, CheckCircle, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -25,6 +25,7 @@ import VideoAnalysisDialog, {
 import { cn } from '@/lib/utils'
 import { isImageMediaPath } from '@/lib/video-frames'
 import { titleInitials } from '@/lib/video-thumbnails'
+import PlayerAnalyticsPanel from '@/components/player/PlayerAnalyticsPanel'
 
 /** Legacy rows may still store `baseball`; treat as pickleball for focuses / AI. */
 function normalizeSportKey(s?: string | null): string {
@@ -103,7 +104,8 @@ export default function PlayerDetailPage() {
   const [drills, setDrills] = useState<any[]>([])
   const [lessons, setLessons] = useState<any[]>([])
   const [videos, setVideos] = useState<any[]>([])
-  const [tab, setTab] = useState<'journal' | 'drills' | 'history' | 'video'>('journal')
+  const [playerSessions, setPlayerSessions] = useState<any[]>([])
+  const [tab, setTab] = useState<'journal' | 'drills' | 'history' | 'video' | 'analytics'>('journal')
   const [newEntry, setNewEntry] = useState('')
   const [saving, setSaving] = useState(false)
   const [completeModal, setCompleteModal] = useState<any>(null)
@@ -128,17 +130,36 @@ export default function PlayerDetailPage() {
 
   useEffect(() => { loadAll() }, [id])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const requestedTab = params.get('tab')
+    const focus = params.get('focus') || ''
+    if (requestedTab === 'drills') {
+      setTab('drills')
+      if (focus) {
+        setDrillForm(prev => ({
+          ...prev,
+          workOn: focus,
+          focuses: [focus],
+        }))
+      }
+    }
+    if (requestedTab === 'analytics') setTab('analytics')
+  }, [])
+
   async function loadAll() {
     const { data: p } = await supabase.from('players').select('*').eq('id', id).single()
     const { data: e } = await supabase.from('journal_entries').select('*').eq('player_id', id).order('created_at', { ascending: false })
     const { data: d } = await supabase.from('drills').select('*').eq('player_id', id).order('created_at', { ascending: false })
     const { data: l } = await supabase.from('lessons').select('*, journal_entries(content, created_at)').eq('player_id', id).order('starts_at', { ascending: false })
     const { data: v } = await supabase.from('videos').select('*').eq('player_id', id).order('recorded_at', { ascending: false })
+    const { data: s } = await supabase.from('analysis_sessions').select('*').eq('player_id', id).order('analyzed_at', { ascending: true })
     setPlayer(p)
     setEntries(e || [])
     setDrills(d || [])
     setLessons(l || [])
     setVideos(v || [])
+    setPlayerSessions(s || [])
   }
 
   async function addEntry() {
@@ -265,6 +286,7 @@ export default function PlayerDetailPage() {
               : { compareVideoBase64: compareMedia.base64, compareVideoMimeType: compareMedia.mimeType }
             : {}),
           playerName: player?.name,
+          playerId: player?.id || id || null,
           sport: analysisSportKey(player?.sport),
           shotType,
           playerHistory,
@@ -310,7 +332,17 @@ export default function PlayerDetailPage() {
     }
   }
 
+  function openDrillBuilder(focus?: string) {
+    setTab('drills')
+    setDrillForm(prev => ({
+      ...prev,
+      workOn: focus || prev.workOn,
+      focuses: focus ? [focus] : prev.focuses,
+    }))
+  }
+
   const tabs = [
+    { key: 'analytics', label: 'Analytics', icon: TrendingUp },
     { key: 'journal', label: 'Journal', icon: BookOpen },
     { key: 'drills', label: 'Drills', icon: Dumbbell },
     { key: 'history', label: 'Lesson history', icon: Clock },
@@ -372,6 +404,14 @@ export default function PlayerDetailPage() {
       </div>
 
       {/* Journal tab */}
+      {tab === 'analytics' && (
+        <PlayerAnalyticsPanel
+          player={player}
+          sessions={playerSessions}
+          onGenerateDrillPlan={openDrillBuilder}
+        />
+      )}
+
       {tab === 'journal' && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
@@ -889,6 +929,9 @@ export default function PlayerDetailPage() {
         videoId={sheetVideo?.id ?? null}
         lessonId={sheetVideo?.lesson_id ?? null}
         sport={player?.sport ?? null}
+        shotType={sheetVideo?.shot_type ?? shotType}
+        playerName={player?.name ?? 'Athlete'}
+        playerEmail={player?.email ?? null}
         coachingVideos={coachingVideos}
         loadingCoachingVideo={loadingCoachingVideo}
         onFetchCoachingVideos={fetchCoachingVideos}

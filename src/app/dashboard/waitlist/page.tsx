@@ -131,7 +131,21 @@ export default function WaitlistPage() {
           }),
         }).catch(error => console.error('Could not send approval confirmation:', error))
       }
-      setPendingBetaUsers(current => current.filter(item => item.id !== user.id))
+      if (betaStatus === 'rejected') {
+        setPendingBetaUsers(current => current.filter(item => item.id !== user.id))
+      } else {
+        setPendingBetaUsers(current =>
+          current.map(item =>
+            item.id === user.id
+              ? {
+                  ...item,
+                  ...(payload.user || {}),
+                  beta_status: 'approved',
+                }
+              : item
+          )
+        )
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not update beta status')
     }
@@ -309,7 +323,9 @@ export default function WaitlistPage() {
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-5 py-4">
           <h2 className="font-heading text-sm font-semibold text-foreground">Beta approvals</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Approve pending users for dashboard access.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Review pending and approved beta users. Rejecting deletes the profile row.
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -317,6 +333,7 @@ export default function WaitlistPage() {
               <tr>
                 <th className="px-5 py-3 font-semibold">Email</th>
                 <th className="px-5 py-3 font-semibold">Role</th>
+                <th className="px-5 py-3 font-semibold">Status</th>
                 <th className="px-5 py-3 font-semibold">Signed up</th>
                 <th className="px-5 py-3 font-semibold">Actions</th>
               </tr>
@@ -324,40 +341,56 @@ export default function WaitlistPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-muted-foreground">Loading...</td>
+                  <td colSpan={5} className="px-5 py-10 text-center text-muted-foreground">Loading...</td>
                 </tr>
               ) : pendingBetaUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-muted-foreground">No pending beta applications.</td>
+                  <td colSpan={5} className="px-5 py-10 text-center text-muted-foreground">No beta applications yet.</td>
                 </tr>
               ) : (
-                pendingBetaUsers.map(user => (
-                  <tr key={user.id} className="border-b border-border last:border-b-0">
-                    <td className="px-5 py-4 font-medium text-foreground">{user.email || '—'}</td>
-                    <td className="px-5 py-4 capitalize text-muted-foreground">{user.role || 'player'}</td>
-                    <td className="px-5 py-4 text-muted-foreground">
-                      {user.created_at ? format(new Date(user.created_at), 'MMM d, yyyy') : '—'}
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => updateBetaStatus(user, 'approved')}
-                          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                pendingBetaUsers.map(user => {
+                  const isApproved = user.beta_status === 'approved'
+                  return (
+                    <tr key={user.id} className="border-b border-border last:border-b-0">
+                      <td className="px-5 py-4 font-medium text-foreground">{user.email || '—'}</td>
+                      <td className="px-5 py-4 capitalize text-muted-foreground">{user.role || 'player'}</td>
+                      <td className="px-5 py-4">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            isApproved
+                              ? 'bg-primary/10 text-primary'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
                         >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateBetaStatus(user, 'rejected')}
-                          className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {isApproved ? 'Approved' : 'Pending'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-muted-foreground">
+                        {user.created_at ? format(new Date(user.created_at), 'MMM d, yyyy') : '—'}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          {!isApproved && (
+                            <button
+                              type="button"
+                              onClick={() => updateBetaStatus(user, 'approved')}
+                              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => updateBetaStatus(user, 'rejected')}
+                            className="rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-semibold text-destructive"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>

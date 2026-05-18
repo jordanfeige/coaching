@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { sendBetaApproved } from '@/lib/email'
-import { isAdmin } from '@/lib/admin'
+import { ADMIN_EMAILS, isAdmin } from '@/lib/admin'
 
 /*
 -- Run in Supabase SQL editor:
@@ -185,13 +185,20 @@ export async function GET() {
 
   const waitlistEntries = waitlistMissing ? [] : (waitlistResult.data ?? []) as WaitlistEntry[]
   const totalAnalysesRun = profiles.reduce((sum, profile) => sum + (Number(profile.analyses_used) || 0), 0)
-  const { data: pending } = await supabaseAdmin
+  const { data: pendingUsers, error: pendingError } = await supabaseAdmin
     .from('profiles')
-    .select('id, email, full_name, role, sport, created_at, beta_status')
-    .or('beta_status.eq.pending,beta_status.is.null')
-    .neq('email', 'jordanfeige@gmail.com')
+    .select('id, email, role, beta_status, created_at')
+    .or('beta_status.eq.pending,beta_status.is.null,beta_status.eq.approved')
+    .neq('email', ADMIN_EMAILS[0])
     .order('created_at', { ascending: false })
-  const pendingBetaUsers = (pending ?? []) as PendingBetaUser[]
+
+  console.log('Pending users:', pendingUsers, 'Error:', pendingError)
+
+  if (pendingError) {
+    return NextResponse.json({ error: pendingError.message }, { status: 500 })
+  }
+
+  const pendingBetaUsers = (pendingUsers ?? []) as PendingBetaUser[]
   const feedbackResult = await supabaseAdmin
     .from('analysis_feedback')
     .select('rating, sport, comment, created_at, feedback_type')
@@ -241,19 +248,50 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Valid user id and beta status are required' }, { status: 400 })
     }
 
-    const { data: user, error } = await adminClient()
-      .from('profiles')
-      .update({ beta_status })
-      .eq('id', id)
-      .select('id, email, full_name, role, sport, beta_status')
-      .single()
+    const supabaseAdmin = adminClient()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (beta_status === 'rejected') {
+      const { error: deleteError } = await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .eq('id', id)
+
+      if (deleteError) {
+        return NextResponse.json({ error: deleteError.message }, { status: 500 })
+      }
+
+      return NextResponse.json({ success: true, deleted: true })
+    }
+
+    async function updateAndSelect(select: string) {
+      return supabaseAdmin
+        .from('profiles')
+        .update({ beta_status })
+        .eq('id', id)
+        .select(select)
+        .single()
+    }
+
+    let updateResult = await updateAndSelect('id, email, full_name, role, sport, beta_status, created_at')
+
+    if (updateResult.error?.message?.includes('column profiles.full_name does not exist')) {
+      updateResult = await updateAndSelect('id, email, role, sport, beta_status, created_at')
+    }
+
+    if (updateResult.error?.message?.includes('column profiles.sport does not exist')) {
+      updateResult = await updateAndSelect('id, email, role, beta_status, created_at')
+    }
+
+    if (updateResult.error) {
+      return NextResponse.json({ error: updateResult.error.message }, { status: 500 })
+    }
+
+    const user = updateResult.data as unknown as PendingBetaUser | null
 
     if (beta_status === 'approved' && user?.email) {
       await sendBetaApproved({
         to: user.email,
-        name: user.full_name || user.email.split('@')[0],
+        name: 'full_name' in user && user.full_name ? user.full_name : user.email.split('@')[0],
         role: user.role === 'coach' ? 'coach' : 'player',
       })
     }

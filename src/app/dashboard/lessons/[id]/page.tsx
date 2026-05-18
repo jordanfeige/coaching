@@ -417,6 +417,7 @@ export default function LessonDetailPage() {
               : { compareVideoBase64: compareMedia.base64, compareVideoMimeType: compareMedia.mimeType }
             : {}),
           playerName: player?.name,
+          playerId: player?.id || lesson?.player_id || null,
           sport: analysisSportKey(player?.sport),
           shotType,
           playerHistory,

@@ -1,6 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { differenceInDays } from 'date-fns'
 import { Plus, Search, UserIcon, BookOpen, Mail, Send, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -22,6 +23,13 @@ type Player = {
   created_at: string
 }
 
+type LatestSession = {
+  player_id: string
+  overall_score: number | null
+  analyzed_at: string | null
+  top_issue: string | null
+}
+
 function skillBadgeVariant(level: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (level === 'advanced') return 'destructive'
   if (level === 'intermediate') return 'secondary'
@@ -30,7 +38,7 @@ function skillBadgeVariant(level: string): 'default' | 'secondary' | 'destructiv
 
 export default function PlayersPage() {
   const [players, setPlayers] = useState<Player[]>([])
-  const [filtered, setFiltered] = useState<Player[]>([])
+  const [latestByPlayer, setLatestByPlayer] = useState<Record<string, LatestSession>>({})
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [openPlayer, setOpenPlayer] = useState(false)
@@ -50,28 +58,60 @@ export default function PlayersPage() {
     sport: string
   }>({ name: '', email: '', age: '', skill_level: 'beginner', notes: '', sport: 'tennis' })
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [magicLink, setMagicLink] = useState('')
 
-  useEffect(() => {
-    loadPlayers()
-  }, [])
-  useEffect(() => {
-    setFiltered(
+  const filtered = useMemo(
+    () =>
       players.filter(
-        p =>
-          p.name.toLowerCase().includes(search.toLowerCase()) ||
-          p.email?.toLowerCase().includes(search.toLowerCase())
-      )
-    )
-  }, [search, players])
+        player =>
+          player.name.toLowerCase().includes(search.toLowerCase()) ||
+          player.email?.toLowerCase().includes(search.toLowerCase())
+      ),
+    [players, search]
+  )
 
-  async function loadPlayers() {
+  const loadPlayers = useCallback(async () => {
     const { data } = await supabase.from('players').select('*').order('name')
-    setPlayers(data || [])
-    setFiltered(data || [])
+    const loadedPlayers = data || []
+    setPlayers(loadedPlayers)
+    const playerIds = loadedPlayers.map(player => player.id)
+    if (playerIds.length > 0) {
+      const { data: latestSessions } = await supabase
+        .from('analysis_sessions')
+        .select('player_id, overall_score, analyzed_at, top_issue')
+        .in('player_id', playerIds)
+        .order('analyzed_at', { ascending: false })
+      const latestMap = (latestSessions || []).reduce<Record<string, LatestSession>>((acc, session) => {
+        if (session.player_id && !acc[session.player_id]) acc[session.player_id] = session
+        return acc
+      }, {})
+      setLatestByPlayer(latestMap)
+    } else {
+      setLatestByPlayer({})
+    }
     setLoading(false)
-  }
+  }, [supabase])
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadPlayers()
+    })
+  }, [loadPlayers])
+
+  const formFields: Array<{
+    label: string
+    key: 'name' | 'age' | 'email'
+    placeholder: string
+    type: string
+  }> = useMemo(
+    () => [
+      { label: 'Name *', key: 'name', placeholder: 'Jane Smith', type: 'text' },
+      { label: 'Age', key: 'age', placeholder: '12', type: 'number' },
+      { label: 'Email', key: 'email', placeholder: 'jane@email.com', type: 'email' },
+    ],
+    []
+  )
 
   async function handleDelete(playerId: string, playerName: string) {
     if (!confirm(`Delete ${playerName}? This removes lessons, drills, and videos for this player.`)) return
@@ -110,8 +150,8 @@ export default function PlayersPage() {
       }
       setMagicLink(data.magic_link || '')
       setInviteSent(true)
-    } catch (e: any) {
-      alert(`Failed: ${e.message}`)
+    } catch (error) {
+      alert(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
     setSaving(false)
   }
@@ -154,11 +194,16 @@ export default function PlayersPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map(player => (
-            <div
-              key={player.id}
-              className="flex flex-col rounded-2xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
-            >
+          {filtered.map(player => {
+            const latest = latestByPlayer[player.id]
+            const daysSince = latest?.analyzed_at
+              ? differenceInDays(new Date(), new Date(latest.analyzed_at))
+              : null
+            return (
+              <div
+                key={player.id}
+                className="flex flex-col rounded-2xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
+              >
               <div className="mb-4 flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/15 text-lg font-bold text-primary">
@@ -174,6 +219,30 @@ export default function PlayersPage() {
                 <Badge variant={skillBadgeVariant(player.skill_level)} className="capitalize shrink-0">
                   {player.skill_level}
                 </Badge>
+              </div>
+              <div className="mb-4 rounded-xl border border-border bg-muted/20 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-muted-foreground">Latest analysis</span>
+                  {latest?.overall_score ? (
+                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
+                      {latest.overall_score}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No score</span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {daysSince === null
+                    ? 'Never analyzed'
+                    : daysSince === 0
+                      ? 'Last analyzed today'
+                      : `Last analyzed ${daysSince} day${daysSince === 1 ? '' : 's'} ago`}
+                </p>
+                {latest?.top_issue && (
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    Focus: {latest.top_issue}
+                  </p>
+                )}
               </div>
               <div className="mt-auto flex gap-2">
                 <Link
@@ -206,8 +275,9 @@ export default function PlayersPage() {
                   <Trash2 size={14} />
                 </Button>
               </div>
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -217,18 +287,14 @@ export default function PlayersPage() {
             <DialogTitle>Add player</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            {[
-              { label: 'Name *', key: 'name', placeholder: 'Jane Smith', type: 'text' },
-              { label: 'Age', key: 'age', placeholder: '12', type: 'number' },
-              { label: 'Email', key: 'email', placeholder: 'jane@email.com', type: 'email' },
-            ].map(({ label, key, placeholder, type }) => (
+            {formFields.map(({ label, key, placeholder, type }) => (
               <div key={key} className="space-y-2">
                 <Label htmlFor={key}>{label}</Label>
                 <Input
                   id={key}
                   type={type}
                   placeholder={placeholder}
-                  value={(form as any)[key]}
+                  value={form[key]}
                   onChange={e => setForm({ ...form, [key]: e.target.value })}
                   className="rounded-xl"
                 />

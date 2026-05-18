@@ -6,6 +6,7 @@ import {
   sendLessonCancelledPlayer,
   sendLessonRescheduledCoach,
   sendLessonRescheduledPlayer,
+  sendAnalysisComplete,
   sendNewSignupAdmin,
   sendProUpgrade,
   sendWelcome,
@@ -59,6 +60,19 @@ export async function POST(req: NextRequest) {
           role: props.role,
           sport: props.sport,
           signedUpAt: props.signedUpAt,
+        })
+        break
+      case 'analysis_pdf':
+        await sendAnalysisComplete({
+          to: recipient,
+          playerName: props.playerName,
+          sport: props.sport,
+          shotType: props.shotType || '',
+          overallScore: props.overallScore,
+          rating: props.analysis?.overall_rating || 'developing',
+          topIssue: props.analysis?.areas_to_improve?.[0]?.area || '',
+          biggestWin: props.analysis?.biggest_win || '',
+          analysisUrl: `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://playvia.studio'}/player/progress`,
         })
         break
       default:

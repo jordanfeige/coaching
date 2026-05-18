@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { brand } from '@/lib/brand'
+import PDFExportButton from '@/components/PDFExportButton'
+import AnalysisQualityBadges from '@/components/AnalysisQualityBadges'
 
 export function analysisPreviewHeadline(analysis: Record<string, unknown> | null | undefined): string {
   if (!analysis) return ''
@@ -80,10 +82,11 @@ function tabBtn(active: boolean) {
   )
 }
 
-function confidenceVariant(c: string): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (c === 'high') return 'default'
-  if (c === 'medium') return 'secondary'
-  return 'destructive'
+function analysisScore(analysis: Record<string, unknown> | null | undefined) {
+  const score = analysis?.overall_score
+  if (typeof score === 'number') return score
+  if (typeof score === 'string') return Number(score) || 0
+  return 0
 }
 
 function renderIssuesGrouped(
@@ -326,6 +329,9 @@ export default function VideoAnalysisDialog({
   videoId,
   lessonId,
   sport,
+  shotType,
+  playerName,
+  playerEmail,
   coachingVideos,
   loadingCoachingVideo,
   onFetchCoachingVideos,
@@ -340,6 +346,9 @@ export default function VideoAnalysisDialog({
   videoId?: string | null
   lessonId?: string | null
   sport?: string | null
+  shotType?: string | null
+  playerName?: string | null
+  playerEmail?: string | null
   coachingVideos?: Record<string, CoachingVideo[]>
   loadingCoachingVideo?: string | null
   onFetchCoachingVideos?: (issueArea: string, drill?: string) => void
@@ -402,15 +411,19 @@ export default function VideoAnalysisDialog({
 
               {tab === 'overview' && (
                 <div className="space-y-4">
-                  <div className="flex flex-wrap gap-2">
-                    {typeof analysis.overall_rating === 'string' && (
-                      <Badge variant="secondary">{analysis.overall_rating}</Badge>
-                    )}
-                    {typeof analysis.confidence === 'string' && (
-                      <Badge variant={confidenceVariant(analysis.confidence)}>
-                        {analysis.confidence} confidence
-                      </Badge>
-                    )}
+                  <div className="space-y-2">
+                    <AnalysisQualityBadges
+                      rating={
+                        typeof analysis.overall_rating === 'string'
+                          ? analysis.overall_rating
+                          : null
+                      }
+                      confidence={
+                        typeof analysis.confidence === 'string'
+                          ? analysis.confidence
+                          : null
+                      }
+                    />
                     {isComparison && (
                       <Badge variant="outline">Comparison</Badge>
                     )}
@@ -613,7 +626,19 @@ export default function VideoAnalysisDialog({
           )}
         </div>
 
-        <div className="flex justify-end border-t border-border bg-muted/40 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-muted/40 px-5 py-3">
+          {analysis ? (
+            <PDFExportButton
+              analysis={analysis}
+              playerName={playerName || 'Athlete'}
+              sport={sport || 'tennis'}
+              shotType={shotType || undefined}
+              overallScore={analysisScore(analysis)}
+              playerEmail={playerEmail || undefined}
+            />
+          ) : (
+            <div />
+          )}
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
             Close
           </Button>
