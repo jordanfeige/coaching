@@ -15,6 +15,7 @@ const tiers = [
     name: 'Free',
     monthly: '$0',
     annual: '$0',
+    annualNote: 'Always free',
     subtitle: 'Get started',
     href: '/signup',
     button: 'Start free →',
@@ -33,6 +34,7 @@ const tiers = [
     name: 'Pro',
     monthly: '$12/mo',
     annual: '$99/yr',
+    annualNote: 'Billed yearly',
     subtitle: 'Track your improvement',
     href: '/signup?plan=pro',
     button: 'Start Pro →',
@@ -53,6 +55,7 @@ const tiers = [
     name: 'Family',
     monthly: '$22/mo',
     annual: '$179/yr',
+    annualNote: 'Billed yearly',
     subtitle: 'For the whole family',
     href: '/signup?plan=family',
     button: 'Start Family →',
@@ -85,17 +88,10 @@ export default function PricingPage() {
 
   return (
     <div className="min-h-screen" style={{ background: warmBg }}>
-      <nav className="border-b bg-white/95 px-5 py-4" style={{ borderColor: warmBorder }}>
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <BrandMark size="md" />
-          <div className="flex items-center gap-3">
-            <Link href="/login" className="text-sm font-semibold" style={{ color: teal }}>Sign in</Link>
-            <Link href="/signup" className="rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ background: teal }}>Start free</Link>
-          </div>
-        </div>
-      </nav>
-
       <main className="mx-auto max-w-5xl px-5 py-16">
+        <div className="mb-10 flex justify-center">
+          <BrandMark size="md" />
+        </div>
         <section className="mx-auto max-w-3xl text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.3em]" style={{ color: teal }}>Pricing</p>
           <h1 className="mt-4 font-heading text-4xl font-black tracking-tight md:text-6xl">Simple pricing</h1>
@@ -127,7 +123,7 @@ export default function PricingPage() {
           {tiers.map(tier => (
             <div
               key={tier.name}
-              className="relative rounded-3xl bg-white p-6 shadow-sm"
+              className="relative flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm"
               style={{ border: tier.highlighted ? `2px solid ${teal}` : `1px solid ${warmBorder}` }}
             >
               {tier.highlighted && (
@@ -137,8 +133,14 @@ export default function PricingPage() {
               )}
               <h2 className="font-heading text-2xl font-bold">{tier.name}</h2>
               <p className="mt-2 text-sm" style={{ color: textSecondary }}>{tier.subtitle}</p>
-              <p className="mt-5 font-heading text-3xl font-black">{billing === 'monthly' ? tier.monthly : tier.annual}</p>
+              <div className="mt-5 min-h-[76px]">
+                <p className="font-heading text-4xl font-black">{billing === 'monthly' ? tier.monthly : tier.annual}</p>
+                <p className="mt-1 text-sm font-medium" style={{ color: textSecondary }}>
+                  {billing === 'monthly' ? (tier.name === 'Free' ? 'Always free' : 'Switch to annual to save ~30%') : tier.annualNote}
+                </p>
+              </div>
               <FeatureList features={tier.features} />
+              <div className="flex-1" />
               <Link
                 href={tier.href}
                 className="mt-6 flex w-full justify-center rounded-xl px-4 py-3 text-sm font-bold"

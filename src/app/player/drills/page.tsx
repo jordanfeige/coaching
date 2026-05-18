@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
-import PlayerSidebar from '@/components/layout/PlayerSidebar'
 import { Badge } from '@/components/ui/badge'
 import { Dumbbell } from 'lucide-react'
 import { format } from 'date-fns'
@@ -52,9 +51,7 @@ export default function PlayerDrillsPage() {
   const filteredDrills = selectedPlayerId === 'all' ? drills : drills.filter(d => d.player_id === selectedPlayerId)
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <PlayerSidebar />
-      <main className="flex-1 space-y-6 overflow-auto p-4 pb-28 md:p-8 md:pb-8">
+    <div className="space-y-6">
         <div>
           <h1 className="font-heading text-xl font-bold tracking-tight text-foreground md:text-2xl">My drills</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -132,7 +129,6 @@ export default function PlayerDrillsPage() {
             })}
           </div>
         )}
-      </main>
     </div>
   )
 }

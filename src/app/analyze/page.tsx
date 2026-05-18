@@ -4,8 +4,8 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Upload, ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
-import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
 import { WaitlistForm } from '@/components/waitlist/WaitlistForm'
+import { brand } from '@/lib/brand'
 
 type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 type Severity = 'critical' | 'moderate' | 'minor'
@@ -164,7 +164,7 @@ function YouTubeCards({ videos }: { videos: CoachingVideo[] }) {
           target="_blank"
           rel="noreferrer"
           className="flex cursor-pointer items-center gap-3 overflow-hidden rounded-xl border p-2 transition-all hover:border-[#FF4444]"
-          style={{ background: '#1A1A1A', borderColor: '#222222' }}
+          style={{ background: brand.cardAlt, borderColor: brand.border }}
         >
           {video.thumbnail ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -175,7 +175,7 @@ function YouTubeCards({ videos }: { videos: CoachingVideo[] }) {
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className="line-clamp-2 text-[11px] font-semibold text-white">
+            <p className="line-clamp-2 text-[11px] font-semibold" style={{ color: brand.text }}>
               {video.title.length > 60 ? `${video.title.slice(0, 60)}...` : video.title}
             </p>
             <div className="mt-1 flex items-center gap-1">
@@ -183,7 +183,7 @@ function YouTubeCards({ videos }: { videos: CoachingVideo[] }) {
                 <rect width="13" height="9" rx="2" fill="#FF0000" />
                 <path d="M5.2 2.2L8.8 4.5L5.2 6.8V2.2Z" fill="white" />
               </svg>
-              <p className="truncate text-[10px]" style={{ color: '#777777' }}>{video.channelTitle}</p>
+              <p className="truncate text-[10px]" style={{ color: brand.textSecondary }}>{video.channelTitle}</p>
             </div>
           </div>
         </a>
@@ -500,11 +500,6 @@ export default function AnalyzePage() {
     }
   }
 
-  async function signOut() {
-    await supabase.auth.signOut()
-    setUserEmail(null)
-  }
-
   async function signInWithGoogle() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -682,40 +677,6 @@ export default function AnalyzePage() {
           </div>
         </div>
       )}
-
-      <nav className="border-b border-border bg-background/95 px-5 py-4">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <SmartBrandMark variant="sidebar" />
-          {userEmail ? (
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              {returnTo && (
-                <Link href={returnTo} className="font-semibold text-primary hover:underline">
-                  Dashboard
-                </Link>
-              )}
-              <Link href="/analyze/progress" className="font-semibold text-primary hover:underline">
-                My Progress →
-              </Link>
-              <Link href="/pricing" className="font-semibold text-primary hover:underline">
-                Pricing
-              </Link>
-              <span>{userEmail}</span>
-              <button type="button" onClick={signOut} className="rounded-full border border-border px-3 py-1.5 text-foreground hover:border-primary">
-                Sign out
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Link href="/login" className="rounded-full border border-border px-4 py-2 text-sm text-foreground hover:border-primary">
-                Sign in
-              </Link>
-              <Link href="/signup" className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-                Start free
-              </Link>
-            </div>
-          )}
-        </div>
-      </nav>
 
       <main className="mx-auto max-w-5xl space-y-8 px-5 py-10">
         {showWelcome && (

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
-import PlayerSidebar from '@/components/layout/PlayerSidebar'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -244,9 +243,7 @@ export default function PlayerDashboardPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <PlayerSidebar />
-      <main className="flex-1 space-y-8 overflow-auto p-4 pb-28 md:p-8 md:pb-8">
+    <div className="space-y-8">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
             Hi, {firstName}
@@ -590,7 +587,6 @@ export default function PlayerDashboardPage() {
             </div>
           </>
         )}
-      </main>
     </div>
   )
 }

@@ -26,7 +26,9 @@ const steps = [
 const pricingCards = [
   {
     name: 'Free',
-    price: '$0',
+    monthlyPrice: '$0',
+    annualPrice: '$0',
+    annualNote: 'Always free',
     subtitle: 'Get started',
     href: '/signup',
     button: 'Start free →',
@@ -43,7 +45,9 @@ const pricingCards = [
   },
   {
     name: 'Pro',
-    price: '$12/mo · $99/yr',
+    monthlyPrice: '$12/mo',
+    annualPrice: '$99/yr',
+    annualNote: 'or $99 billed yearly',
     subtitle: 'Track your improvement',
     href: '/signup?plan=pro',
     button: 'Start Pro →',
@@ -62,7 +66,9 @@ const pricingCards = [
   },
   {
     name: 'Family',
-    price: '$22/mo · $179/yr',
+    monthlyPrice: '$22/mo',
+    annualPrice: '$179/yr',
+    annualNote: 'or $179 billed yearly',
     subtitle: 'For the whole family',
     href: '/signup?plan=family',
     button: 'Start Family →',
@@ -105,7 +111,7 @@ function FeatureList({ features }: { features: string[][] }) {
 function PricingCard({ card }: { card: typeof pricingCards[number] }) {
   return (
     <div
-      className="relative rounded-3xl bg-white p-6 shadow-sm"
+      className="relative flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm"
       style={{ border: card.highlighted ? `2px solid ${teal}` : `1px solid ${warmBorder}` }}
     >
       {card.highlighted && (
@@ -115,8 +121,12 @@ function PricingCard({ card }: { card: typeof pricingCards[number] }) {
       )}
       <h3 className="font-heading text-2xl font-bold">{card.name}</h3>
       <p className="mt-2 text-sm" style={{ color: textSecondary }}>{card.subtitle}</p>
-      <p className="mt-5 font-heading text-3xl font-black">{card.price}</p>
+      <div className="mt-5 min-h-[76px]">
+        <p className="font-heading text-4xl font-black">{card.monthlyPrice}</p>
+        <p className="mt-1 text-sm font-medium" style={{ color: textSecondary }}>{card.annualNote}</p>
+      </div>
       <FeatureList features={card.features} />
+      <div className="flex-1" />
       <Link
         href={card.href}
         className="mt-6 flex w-full justify-center rounded-xl px-4 py-3 text-sm font-bold"

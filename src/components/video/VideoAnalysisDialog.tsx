@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { brand } from '@/lib/brand'
 
 export function analysisPreviewHeadline(analysis: Record<string, unknown> | null | undefined): string {
   if (!analysis) return ''
@@ -212,7 +213,7 @@ function renderIssuesGrouped(
                                 target="_blank"
                                 rel="noreferrer"
                                 className="flex cursor-pointer items-center gap-3 overflow-hidden rounded-xl border p-2 transition-all hover:border-[#FF4444]"
-                                style={{ background: '#1A1A1A', borderColor: '#222222' }}
+                                style={{ background: brand.cardAlt, borderColor: brand.border }}
                               >
                                 {video.thumbnail ? (
                                   // eslint-disable-next-line @next/next/no-img-element
@@ -229,7 +230,7 @@ function renderIssuesGrouped(
                                   </div>
                                 )}
                                 <div className="min-w-0 flex-1">
-                                  <p className="line-clamp-2 text-[11px] font-semibold text-white">
+                                  <p className="line-clamp-2 text-[11px] font-semibold" style={{ color: brand.text }}>
                                     {video.title.length > 60 ? `${video.title.slice(0, 60)}...` : video.title}
                                   </p>
                                   <div className="mt-1 flex items-center gap-1">
@@ -237,7 +238,7 @@ function renderIssuesGrouped(
                                       <rect width="13" height="9" rx="2" fill="#FF0000" />
                                       <path d="M5.2 2.2L8.8 4.5L5.2 6.8V2.2Z" fill="white" />
                                     </svg>
-                                    <p className="truncate text-[10px]" style={{ color: '#555555' }}>
+                                    <p className="truncate text-[10px]" style={{ color: brand.textMuted }}>
                                       {video.channelTitle}
                                     </p>
                                   </div>

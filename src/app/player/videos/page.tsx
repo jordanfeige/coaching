@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
-import PlayerSidebar from '@/components/layout/PlayerSidebar'
 import VideoAnalysisDialog, {
   analysisPreviewHeadline,
   issueSeverityCounts,
@@ -103,9 +102,7 @@ export default function PlayerVideosPage() {
   const filteredVideos = selectedPlayerId === 'all' ? videos : videos.filter(v => v.player_id === selectedPlayerId)
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <PlayerSidebar />
-      <main className="flex-1 space-y-6 overflow-auto p-4 pb-24 md:p-8 md:pb-8">
+    <div className="space-y-6">
         <div>
           <div>
             <h1 className="font-heading text-xl font-bold text-foreground md:text-2xl">My Videos</h1>
@@ -221,7 +218,6 @@ export default function PlayerVideosPage() {
             })}
           </div>
         )}
-      </main>
 
       <VideoAnalysisDialog
         open={!!sheetVideo}

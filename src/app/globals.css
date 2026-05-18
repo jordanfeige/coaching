@@ -35,19 +35,19 @@
 
 :root {
   /* Slightly warm off-white canvas — reads friendly without losing clarity */
-  --background: 210 38% 96%;
-  --foreground: 222 42% 12%;
+  --background: 40 20% 97%;
+  --foreground: 220 20% 15%;
   --card: 0 0% 100%;
-  --card-foreground: 222 42% 12%;
+  --card-foreground: 220 20% 15%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 42% 12%;
+  --popover-foreground: 220 20% 15%;
   /* Court-inspired teal: growth / “go” — primary actions */
   --primary: 168 62% 36%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 210 30% 93%;
-  --secondary-foreground: 222 42% 12%;
-  --muted: 210 26% 94%;
-  --muted-foreground: 215 16% 42%;
+  --secondary: 40 20% 96%;
+  --secondary-foreground: 220 20% 15%;
+  --muted: 40 20% 96%;
+  --muted-foreground: 220 10% 45%;
   /* Warm coral highlight: energy / attention — focus rings, subtle emphasis */
   --accent: 24 92% 58%;
   --accent-foreground: 0 0% 100%;
@@ -58,8 +58,8 @@
   /* Calm blue for informational chips (availability, links, “tips”) */
   --info: 211 88% 52%;
   --info-foreground: 0 0% 100%;
-  --border: 214 26% 88%;
-  --input: 214 26% 88%;
+  --border: 30 10% 88%;
+  --input: 30 10% 88%;
   --ring: 168 62% 36%;
   --radius: 0.875rem;
 }
@@ -69,7 +69,8 @@
     border-color: hsl(var(--border));
   }
   body {
-    background-color: hsl(var(--background));
+    min-height: 100vh;
+    background-color: hsl(40, 20%, 97%);
     color: hsl(var(--foreground));
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;

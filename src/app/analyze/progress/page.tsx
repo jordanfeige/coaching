@@ -20,7 +20,6 @@ import {
   YAxis,
 } from 'recharts'
 import { createClient } from '@/lib/supabase'
-import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
 
 type Sport = 'all' | 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 type Severity = 'critical' | 'moderate' | 'minor'
@@ -277,16 +276,7 @@ export default function ProgressPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: WARM_BG }}>
-      <nav className="border-b border-border bg-background/95 px-5 py-4">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <SmartBrandMark variant="sidebar" />
-          <Link href="/analyze" className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-            New analysis
-          </Link>
-        </div>
-      </nav>
-
+    <div style={{ background: WARM_BG }}>
       <main className="mx-auto max-w-6xl space-y-6 px-5 py-8">
         <section className="space-y-4">
           <div>

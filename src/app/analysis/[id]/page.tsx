@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
-import { SmartBrandMark } from '@/components/brand/SmartBrandMark'
 
 type AnalysisIssue = {
   area?: string
@@ -112,15 +111,6 @@ export default async function PublicAnalysisPage({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <nav className="border-b border-border bg-background/95 px-5 py-4">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <SmartBrandMark variant="sidebar" />
-          <Link href="/analyze" className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-            Get your free analysis →
-          </Link>
-        </div>
-      </nav>
-
       <main className="mx-auto max-w-5xl space-y-6 px-5 py-10">
         <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
           <div className="flex flex-wrap gap-2">
