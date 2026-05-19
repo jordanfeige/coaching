@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import ViaBar from '@/components/ViaBar'
 import { cn } from '@/lib/utils'
 import { BOOKING_TIERS, bookingTierConfig, bookingTierLabel, type BookingTier } from '@/lib/booking'
 
@@ -179,6 +180,8 @@ export default function SchedulePage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      <ViaBar role="coach" />
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">Schedule</h1>

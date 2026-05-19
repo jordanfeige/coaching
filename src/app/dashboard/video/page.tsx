@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Video, Upload, Circle, Square, Trash2, Play } from 'lucide-react'
 import { format } from 'date-fns'
+import ViaBar from '@/components/ViaBar'
 import { isImageMediaPath } from '@/lib/video-frames'
 import { generateMediaThumbnailDataUrl, titleInitials } from '@/lib/video-thumbnails'
 
@@ -134,6 +135,8 @@ export default function VideoPage() {
 
   return (
     <div className="space-y-6">
+      <ViaBar role="coach" />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">Video</h1>

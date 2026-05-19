@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { format, isAfter, subDays } from 'date-fns'
+import { useRouter } from 'next/navigation'
 import {
   CartesianGrid,
   Line,
@@ -15,8 +16,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Download, Sparkles } from 'lucide-react'
-import PDFExportButton from '@/components/PDFExportButton'
+import { ChevronDown, Loader, Sparkles } from 'lucide-react'
+import type { AnalysisPDF } from '@/lib/generateAnalysisPDF'
 
 const TEAL = 'hsl(168,62%,36%)'
 const BORDER = 'hsl(30,10%,88%)'
@@ -24,8 +25,11 @@ const TEXT_SEC = 'hsl(220,10%,45%)'
 const TEXT_MUTED = 'hsl(220,10%,65%)'
 const WARM_BG = 'hsl(40,20%,97%)'
 const RED = 'hsl(0,70%,55%)'
+const RED_LIGHT = 'hsl(0,70%,95%)'
 const AMBER = 'hsl(38,92%,50%)'
+const AMBER_LIGHT = 'hsl(38,92%,95%)'
 const GREEN = 'hsl(145,60%,40%)'
+const GREEN_LIGHT = 'hsl(145,60%,95%)'
 
 type Player = {
   id: string
@@ -40,6 +44,7 @@ type AnalysisIssue = {
   area?: string
   severity?: 'critical' | 'moderate' | 'minor' | string
   what_i_see?: string
+  simple_cue?: string
 }
 
 type AnalysisSession = {
@@ -95,7 +100,11 @@ export default function PlayerAnalyticsPanel({
 }) {
   const [summary, setSummary] = useState('')
   const [summaryLoading, setSummaryLoading] = useState(false)
-  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
+  const [expandedSession, setExpandedSession] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [emailing, setEmailing] = useState(false)
+  const [emailSent, setEmailSent] = useState(false)
+  const router = useRouter()
   const sortedSessions = useMemo(
     () => [...sessions].sort((a, b) => new Date(a.analyzed_at).getTime() - new Date(b.analyzed_at).getTime()),
     [sessions],
@@ -181,6 +190,102 @@ export default function PlayerAnalyticsPanel({
     }
   }, [player, sortedSessions])
 
+  async function handleDownloadPDF() {
+    if (!latest?.full_result) return
+    setDownloading(true)
+    try {
+      const { AnalysisPDFDocument } = await import('@/lib/generateAnalysisPDF')
+      const { pdf } = await import('@react-pdf/renderer')
+      const analyzedAt = latest.analyzed_at
+        ? format(new Date(latest.analyzed_at), 'MMMM d, yyyy')
+        : format(new Date(), 'MMMM d, yyyy')
+      const blob = await pdf(
+        <AnalysisPDFDocument
+          analysis={latest.full_result as AnalysisPDF}
+          playerName={player.name}
+          sport={latest.sport || player.sport || 'tennis'}
+          shotType={latest.shot_type || undefined}
+          overallScore={latest.overall_score || 0}
+          analyzedAt={analyzedAt}
+        />,
+      ).toBlob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `playvia-${player.name.toLowerCase().replace(/\s+/g, '-')}-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  async function handleEmailPDF() {
+    if (!latest?.full_result || !player.email) return
+    setEmailing(true)
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'analysis_pdf',
+          to: player.email,
+          playerName: player.name,
+          sport: latest.sport || player.sport || 'tennis',
+          shotType: latest.shot_type || undefined,
+          overallScore: latest.overall_score || 0,
+          analyzedAt: latest.analyzed_at
+            ? format(new Date(latest.analyzed_at), 'MMMM d, yyyy')
+            : format(new Date(), 'MMMM d, yyyy'),
+          analysis: latest.full_result,
+        }),
+      })
+      if (!response.ok) throw new Error('Email request failed')
+      setEmailSent(true)
+      window.setTimeout(() => setEmailSent(false), 3000)
+    } finally {
+      setEmailing(false)
+    }
+  }
+
+  const quickActions = [
+    {
+      label: 'Analyze video',
+      icon: '📹',
+      primary: true,
+      disabled: false,
+      onClick: () => router.push(`/dashboard/video?player=${player.id}`),
+    },
+    {
+      label: 'Schedule lesson',
+      icon: '📅',
+      primary: false,
+      disabled: false,
+      onClick: () => router.push(`/dashboard/schedule?player=${player.id}`),
+    },
+    {
+      label: 'Generate drills',
+      icon: '🏋️',
+      primary: false,
+      disabled: false,
+      onClick: () => onGenerateDrillPlan(issueRows[0]?.issue),
+    },
+    {
+      label: downloading ? 'Preparing PDF...' : 'Download PDF',
+      icon: '📄',
+      primary: false,
+      disabled: !latest?.full_result || downloading,
+      onClick: handleDownloadPDF,
+    },
+    {
+      label: emailSent ? 'Email sent' : emailing ? 'Sending email...' : 'Email report',
+      icon: '✉️',
+      primary: false,
+      disabled: !latest?.full_result || !player.email || emailing || emailSent,
+      onClick: handleEmailPDF,
+    },
+  ]
+
   if (sortedSessions.length === 0) {
     return (
       <div className={cardClass('text-center')}>
@@ -197,6 +302,55 @@ export default function PlayerAnalyticsPanel({
 
   return (
     <div className="space-y-5">
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+          marginBottom: 24,
+        }}
+      >
+        {quickActions.map(action => (
+          <button
+            key={action.label}
+            onClick={action.onClick}
+            disabled={action.disabled}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: action.disabled ? 'not-allowed' : 'pointer',
+              fontFamily: 'Arial, sans-serif',
+              border: action.primary ? 'none' : `1px solid ${BORDER}`,
+              background: action.primary ? TEAL : 'white',
+              color: action.primary ? 'white' : TEXT_SEC,
+              opacity: action.disabled ? 0.6 : 1,
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={event => {
+              if (!action.primary && !action.disabled) {
+                event.currentTarget.style.background = WARM_BG
+                event.currentTarget.style.borderColor = TEAL
+              }
+            }}
+            onMouseLeave={event => {
+              if (!action.primary && !action.disabled) {
+                event.currentTarget.style.background = 'white'
+                event.currentTarget.style.borderColor = BORDER
+              }
+            }}
+            type="button"
+          >
+            {downloading && action.label.includes('PDF') ? <Loader size={13} className="animate-spin" /> : <span>{action.icon}</span>}
+            {action.label}
+          </button>
+        ))}
+      </div>
+
       <div className={cardClass()}>
         <div className="mb-4">
           <h3 className="font-heading text-base font-semibold text-foreground">Score history</h3>
@@ -306,48 +460,174 @@ export default function PlayerAnalyticsPanel({
 
       <div className={cardClass()}>
         <h3 className="font-heading mb-4 text-base font-semibold text-foreground">Session history</h3>
-        <div className="space-y-2">
-          {[...sortedSessions].reverse().map((session, index, arr) => {
-            const previous = arr[index + 1]
+        <div>
+          {[...sortedSessions].reverse().map((session, index, sessionsNewestFirst) => {
+            const prev = sessionsNewestFirst[index + 1]
             const delta =
-              typeof session.overall_score === 'number' && typeof previous?.overall_score === 'number'
-                ? session.overall_score - previous.overall_score
+              typeof session.overall_score === 'number' && typeof prev?.overall_score === 'number'
+                ? session.overall_score - prev.overall_score
                 : null
-            const expanded = expandedSessionId === session.id
+            const isExpanded = expandedSession === session.id
             return (
-              <div key={session.id} className="rounded-xl border border-border bg-muted/20">
-                <button
-                  type="button"
-                  onClick={() => setExpandedSessionId(expanded ? null : session.id)}
-                  className="w-full px-4 py-3 text-left"
+              <div
+                key={session.id}
+                style={{
+                  border: `1px solid ${BORDER}`,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  marginBottom: 8,
+                  background: 'white',
+                }}
+              >
+                <div
+                  onClick={() => setExpandedSession(isExpanded ? null : session.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 16px',
+                    cursor: 'pointer',
+                  }}
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">
-                        {sportEmoji[session.sport || player.sport || ''] || ''} {format(new Date(session.analyzed_at), 'MMM d, yyyy')}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">{session.top_issue || 'No top issue recorded'}</p>
+                  <span style={{ fontSize: 20, flexShrink: 0 }}>
+                    {sportEmoji[session.sport || player.sport || ''] || '🎯'}
+                  </span>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'hsl(220,20%,15%)' }}>
+                      {format(new Date(session.analyzed_at), 'MMMM d, yyyy')}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {session.rating && <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">{session.rating}</span>}
-                      <span className="text-lg font-black" style={{ color: TEAL }}>{session.overall_score ?? '—'}</span>
-                      {delta !== null && <span className="text-xs font-bold" style={{ color: delta >= 0 ? GREEN : RED }}>{delta >= 0 ? '+' : ''}{delta}</span>}
-                    </div>
+                    {session.top_issue && (
+                      <div style={{ fontSize: 11, color: TEXT_SEC, marginTop: 2 }}>
+                        Top issue: {session.top_issue}
+                      </div>
+                    )}
                   </div>
-                </button>
-                {expanded && (
-                  <div className="border-t border-border px-4 py-3">
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                      {session.full_result?.technique_notes || session.biggest_win || 'No detailed summary saved.'}
-                    </p>
-                    <details className="mt-3">
-                      <summary className="cursor-pointer text-xs font-semibold text-primary">
-                        View full analysis
-                      </summary>
-                      <pre className="mt-3 max-h-72 overflow-auto rounded-xl bg-background p-3 text-xs text-muted-foreground">
-                        {JSON.stringify(session.full_result || {}, null, 2)}
-                      </pre>
-                    </details>
+
+                  {session.rating && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        fontWeight: 600,
+                        background: WARM_BG,
+                        border: `1px solid ${BORDER}`,
+                        color: TEXT_SEC,
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {session.rating}
+                    </span>
+                  )}
+
+                  <div style={{ textAlign: 'right', minWidth: 48 }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: TEAL }}>
+                      {session.overall_score ?? '—'}
+                    </div>
+                    {delta !== null && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: delta > 0 ? GREEN : delta < 0 ? RED : TEXT_MUTED,
+                        }}
+                      >
+                        {delta > 0 ? '+' : ''}{delta}
+                      </div>
+                    )}
+                  </div>
+
+                  <ChevronDown
+                    size={16}
+                    color={TEXT_MUTED}
+                    style={{
+                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)',
+                      transition: 'transform 0.2s',
+                      flexShrink: 0,
+                    }}
+                  />
+                </div>
+
+                {isExpanded && session.full_result && (
+                  <div
+                    style={{
+                      borderTop: `1px solid ${BORDER}`,
+                      padding: '14px 16px',
+                      background: WARM_BG,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10,
+                    }}
+                  >
+                    {session.full_result.biggest_win && (
+                      <div
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: GREEN_LIGHT,
+                          border: '1px solid hsl(145,60%,70%)',
+                          fontSize: 12,
+                          color: GREEN,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        <strong>Biggest win:</strong> {session.full_result.biggest_win}
+                      </div>
+                    )}
+
+                    {session.full_result.areas_to_improve?.slice(0, 2).map((issue, issueIndex) => (
+                      <div
+                        key={`${issue.area || 'issue'}-${issueIndex}`}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: issue.severity === 'critical' ? RED_LIGHT : AMBER_LIGHT,
+                          border: `1px solid ${
+                            issue.severity === 'critical'
+                              ? 'hsl(0,70%,75%)'
+                              : 'hsl(38,92%,70%)'
+                          }`,
+                          fontSize: 12,
+                          color: issue.severity === 'critical' ? RED : AMBER,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        <strong>{issue.area}:</strong> {issue.what_i_see}
+                        {issue.simple_cue && (
+                          <span
+                            style={{
+                              marginLeft: 8,
+                              padding: '1px 6px',
+                              background: 'rgba(255,255,255,0.6)',
+                              borderRadius: 4,
+                              fontSize: 11,
+                            }}
+                          >
+                            Cue: &quot;{issue.simple_cue}&quot;
+                          </span>
+                        )}
+                      </div>
+                    ))}
+
+                    {session.full_result.priority_focus && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: TEXT_SEC,
+                          fontStyle: 'italic',
+                          padding: '8px 12px',
+                          borderRadius: 8,
+                          background: 'white',
+                          border: `1px solid ${BORDER}`,
+                        }}
+                      >
+                        <strong style={{ color: 'hsl(220,20%,15%)', fontStyle: 'normal' }}>
+                          Priority:
+                        </strong>{' '}
+                        {session.full_result.priority_focus}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -356,32 +636,6 @@ export default function PlayerAnalyticsPanel({
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-4">
-        <a href={`/dashboard/video?player=${player.id}`} className="rounded-xl bg-primary px-3 py-2 text-center text-sm font-bold text-primary-foreground">
-          Analyze video
-        </a>
-        <a href={`/dashboard/schedule?player=${player.id}`} className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-center text-sm font-semibold text-primary">
-          Schedule lesson
-        </a>
-        <button type="button" onClick={() => onGenerateDrillPlan(issueRows[0]?.issue)} className="rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground">
-          Generate drill plan
-        </button>
-        {latest?.full_result ? (
-          <PDFExportButton
-            analysis={latest.full_result}
-            playerName={player.name}
-            sport={latest.sport || player.sport || 'tennis'}
-            shotType={latest.shot_type || undefined}
-            overallScore={latest.overall_score || 0}
-            playerEmail={player.email || undefined}
-          />
-        ) : (
-          <button type="button" className="rounded-xl border border-border px-3 py-2 text-sm font-semibold text-muted-foreground">
-            <Download className="mr-1 inline size-3" />
-            Export PDF report
-          </button>
-        )}
-      </div>
     </div>
   )
 }

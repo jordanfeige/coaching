@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import CoachChatPanel from '@/components/video/CoachChatPanel'
+import FeedbackButtons from '@/components/FeedbackButtons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -87,6 +88,11 @@ function analysisScore(analysis: Record<string, unknown> | null | undefined) {
   if (typeof score === 'number') return score
   if (typeof score === 'string') return Number(score) || 0
   return 0
+}
+
+function analysisSessionId(analysis: Record<string, unknown> | null | undefined) {
+  const sessionId = analysis?.sessionId ?? analysis?.session_id
+  return typeof sessionId === 'string' && sessionId.trim() ? sessionId : undefined
 }
 
 function renderIssuesGrouped(
@@ -356,6 +362,7 @@ export default function VideoAnalysisDialog({
   const [tab, setTab] = useState<TabKey>('overview')
 
   const isComparison = !!(analysis?.observations_old || analysis?.improvements)
+  const savedSessionId = analysisSessionId(analysis)
 
   const bullets = Array.isArray(analysis?.overview_bullets)
     ? (analysis!.overview_bullets as string[]).filter(Boolean)
@@ -433,6 +440,38 @@ export default function VideoAnalysisDialog({
                     {analysis.ai_coach_enhanced === false && (
                       <Badge variant="secondary">Local fallback</Badge>
                     )}
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px 0',
+                      borderTop: '1px solid hsl(30,10%,88%)',
+                      borderBottom: '1px solid hsl(30,10%,88%)',
+                      margin: '12px 0',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: 'hsl(220,10%,55%)',
+                        fontFamily: 'Arial, sans-serif',
+                      }}
+                    >
+                      Was this analysis helpful?
+                    </span>
+                    <FeedbackButtons
+                      sessionId={savedSessionId}
+                      feedbackType="analysis"
+                      sport={sport || undefined}
+                      shotType={shotType || undefined}
+                      fullAnalysis={analysis}
+                      size="md"
+                    />
                   </div>
 
                   <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">

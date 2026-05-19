@@ -8,6 +8,10 @@ type PulseChatMessage = {
   content: string
 }
 
+type PulseRosterContext = {
+  currentPage?: string
+}
+
 export async function POST(req: NextRequest) {
   const { messages, rosterContext } = (await req.json()) as {
     messages?: PulseChatMessage[]
@@ -29,11 +33,35 @@ export async function POST(req: NextRequest) {
     apiKey: process.env.ANTHROPIC_API_KEY,
   })
 
-  const systemPrompt = `You are an expert coaching assistant
-built into Playvia. You have full context on the coach's roster.
+  const currentPage =
+    rosterContext && typeof rosterContext === 'object' && 'currentPage' in rosterContext
+      ? String((rosterContext as PulseRosterContext).currentPage || 'dashboard')
+      : 'dashboard'
+  const pageDescription = currentPage.includes('analytics')
+    ? 'Pulse analytics page'
+    : currentPage.includes('players')
+      ? 'Players page'
+      : currentPage.includes('schedule')
+        ? 'Schedule page'
+        : currentPage.includes('video')
+          ? 'Video page'
+          : currentPage.includes('drills')
+            ? 'Drills page'
+            : 'main dashboard'
+
+  const systemPrompt = `You are Via - Playvia's AI coaching assistant.
+You are knowledgeable, direct, and action-oriented.
+You speak like a trusted colleague, not a corporate bot.
+Your name is Via. Sign your responses naturally - you don't
+need to say "Via here" every time but occasionally refer to
+yourself by name.
+You have full context on the coach's roster.
 
 ROSTER CONTEXT:
 ${JSON.stringify(rosterContext, null, 2)}
+
+CURRENT PAGE: ${currentPage}
+The coach is currently on the ${pageDescription}. Tailor your suggestions to be relevant to what they are currently doing.
 
 YOUR CAPABILITIES:
 You can help the coach take actions by returning structured

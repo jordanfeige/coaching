@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { Lock, Video } from 'lucide-react'
 import {
@@ -20,6 +20,8 @@ import {
   YAxis,
 } from 'recharts'
 import { createClient } from '@/lib/supabase'
+import ViaBar from '@/components/ViaBar'
+import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
 
 type Sport = 'all' | 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 type Severity = 'critical' | 'moderate' | 'minor'
@@ -184,8 +186,10 @@ function lastSeenLabel(indexFromNewest: number) {
 
 export default function ProgressPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const supabase = useMemo(() => createClient(), [])
   const [sessions, setSessions] = useState<AnalysisSession[]>([])
+  const [player, setPlayer] = useState<LinkedPlayer | null>(null)
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [sportFilter, setSportFilter] = useState<Sport>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -202,13 +206,14 @@ export default function ProgressPage() {
         return
       }
 
-      const [{ data: profile }, { data, error }] = await Promise.all([
+      const [{ data: profile }, { data, error }, linkedPlayers] = await Promise.all([
         supabase.from('profiles').select('is_subscribed').eq('id', user.id).maybeSingle(),
         supabase
           .from('analysis_sessions')
           .select('id, sport, shot_type, overall_score, rating, top_issue, biggest_win, checkpoint_scores, full_result, video_id, analyzed_at')
           .eq('user_id', user.id)
           .order('analyzed_at', { ascending: true }),
+        getLinkedPlayersForUser(supabase, user.id),
       ])
 
       if (error || !data?.length) {
@@ -217,6 +222,7 @@ export default function ProgressPage() {
       }
 
       setIsSubscribed(Boolean(profile?.is_subscribed))
+      setPlayer(linkedPlayers[0] || null)
       setSessions(data as AnalysisSession[])
       setLoading(false)
     }
@@ -278,6 +284,18 @@ export default function ProgressPage() {
   return (
     <div style={{ background: WARM_BG }}>
       <main className="mx-auto max-w-6xl space-y-6 px-5 py-8">
+        {pathname.startsWith('/player') && player && (
+          <ViaBar
+            role="player"
+            playerContext={{
+              id: player.id,
+              name: player.name,
+              sport: player.sport || 'tennis',
+              skillLevel: player.skill_level,
+            }}
+          />
+        )}
+
         <section className="space-y-4">
           <div>
             <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground md:text-5xl">Your Progress</h1>

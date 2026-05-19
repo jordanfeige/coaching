@@ -5,6 +5,7 @@ import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
 import { Badge } from '@/components/ui/badge'
 import { Dumbbell } from 'lucide-react'
 import { format } from 'date-fns'
+import ViaBar from '@/components/ViaBar'
 
 export default function PlayerDrillsPage() {
   const [drills, setDrills] = useState<any[]>([])
@@ -49,9 +50,22 @@ export default function PlayerDrillsPage() {
   }
 
   const filteredDrills = selectedPlayerId === 'all' ? drills : drills.filter(d => d.player_id === selectedPlayerId)
+  const viaPlayer = players.find(player => player.id === selectedPlayerId) || players[0]
 
   return (
     <div className="space-y-6">
+        {viaPlayer && (
+          <ViaBar
+            role="player"
+            playerContext={{
+              id: viaPlayer.id,
+              name: viaPlayer.name,
+              sport: viaPlayer.sport || 'tennis',
+              skillLevel: viaPlayer.skill_level,
+            }}
+          />
+        )}
+
         <div>
           <h1 className="font-heading text-xl font-bold tracking-tight text-foreground md:text-2xl">My drills</h1>
           <p className="mt-1 text-sm text-muted-foreground">

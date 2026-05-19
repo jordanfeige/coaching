@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { ArrowRight, BookOpen, CalendarDays, Clock, Dumbbell, Sparkles, UserPlus, Video } from 'lucide-react'
 import { format } from 'date-fns'
 import { calendarEvent } from '@/lib/calendar'
+import ViaBar from '@/components/ViaBar'
 
 type AnalysisResult = {
   observations?: string
@@ -80,6 +81,7 @@ export default function PlayerDashboardPage() {
   const [accountName, setAccountName] = useState('')
   const [loading, setLoading] = useState(true)
   const supabase = useMemo(() => createClient(), [])
+  const viaPlayer = players[0]
 
   const cancelLessonRecord = useCallback(async (lessonId: string) => {
     const { data: lesson } = await supabase
@@ -244,6 +246,18 @@ export default function PlayerDashboardPage() {
 
   return (
     <div className="space-y-8">
+        {viaPlayer && (
+          <ViaBar
+            role="player"
+            playerContext={{
+              id: viaPlayer.id,
+              name: viaPlayer.name,
+              sport: viaPlayer.sport || 'tennis',
+              skillLevel: viaPlayer.skill_level,
+            }}
+          />
+        )}
+
         <div>
           <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
             Hi, {firstName}

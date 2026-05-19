@@ -105,7 +105,7 @@ export default function PlayerDetailPage() {
   const [lessons, setLessons] = useState<any[]>([])
   const [videos, setVideos] = useState<any[]>([])
   const [playerSessions, setPlayerSessions] = useState<any[]>([])
-  const [tab, setTab] = useState<'journal' | 'drills' | 'history' | 'video' | 'analytics'>('journal')
+  const [tab, setTab] = useState<'journal' | 'drills' | 'history' | 'video' | 'analytics'>('analytics')
   const [newEntry, setNewEntry] = useState('')
   const [saving, setSaving] = useState(false)
   const [completeModal, setCompleteModal] = useState<any>(null)
@@ -342,7 +342,7 @@ export default function PlayerDetailPage() {
   }
 
   const tabs = [
-    { key: 'analytics', label: 'Analytics', icon: TrendingUp },
+    { key: 'analytics', label: 'Pulse', icon: TrendingUp },
     { key: 'journal', label: 'Journal', icon: BookOpen },
     { key: 'drills', label: 'Drills', icon: Dumbbell },
     { key: 'history', label: 'Lesson history', icon: Clock },
@@ -390,6 +390,7 @@ export default function PlayerDetailPage() {
           <button
             key={key}
             type="button"
+            data-tab={key}
             onClick={() => setTab(key as any)}
             className={cn(
               'flex shrink-0 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors',

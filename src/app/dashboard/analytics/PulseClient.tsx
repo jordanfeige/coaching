@@ -1,18 +1,19 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { differenceInDays, format } from 'date-fns'
 import {
   AlertCircle,
   ArrowRight,
   ChevronRight,
+  Clock,
   TrendingDown,
   TrendingUp,
   Users,
   Zap,
 } from 'lucide-react'
-import PulseChat from './PulseChat'
+import ViaBar from '@/components/ViaBar'
 
 const TEAL = 'hsl(168,62%,36%)'
 const TEAL_LIGHT = 'hsl(168,62%,95%)'
@@ -160,48 +161,128 @@ function Sparkline({
   )
 }
 
-function ScoreRing({ score, size = 56 }: { score: number; size?: number }) {
-  const r = (size - 8) / 2
-  const circ = 2 * Math.PI * r
-  const fill = (score / 100) * circ
-  const color = score >= 75 ? GREEN : score >= 55 ? AMBER : RED
+function StatusBadge({ player }: { player: PlayerSummary }) {
+  const daysSince = player.daysSince
 
-  return (
-    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }} aria-label={`Score ${score}`}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={BORDER} strokeWidth="4" />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="4"
-        strokeDasharray={`${fill} ${circ}`}
-        strokeLinecap="round"
-      />
-      <text
-        x={size / 2}
-        y={size / 2}
-        textAnchor="middle"
-        dominantBaseline="middle"
+  if (player.status === 'attention') {
+    if (player.delta !== null && player.delta <= -5) {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 3,
+            fontSize: 10,
+            fontWeight: 500,
+            color: 'hsl(0,70%,45%)',
+            padding: '2px 7px',
+            borderRadius: 20,
+            background: 'hsl(0,70%,95%)',
+            border: '0.5px solid hsl(0,70%,80%)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <AlertCircle size={10} />
+          {Math.abs(player.delta)} pt drop
+        </div>
+      )
+    }
+    if (daysSince >= 14) {
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 3,
+            fontSize: 10,
+            fontWeight: 500,
+            color: 'hsl(38,92%,35%)',
+            padding: '2px 7px',
+            borderRadius: 20,
+            background: 'hsl(38,92%,95%)',
+            border: '0.5px solid hsl(38,92%,75%)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Clock size={10} />
+          {daysSince}d inactive
+        </div>
+      )
+    }
+  }
+
+  if (player.status === 'levelup') {
+    return (
+      <div
         style={{
-          transform: 'rotate(90deg)',
-          transformOrigin: `${size / 2}px ${size / 2}px`,
-          fontSize: size < 50 ? 13 : 15,
-          fontWeight: 800,
-          fontFamily: 'Arial, sans-serif',
-          fill: color,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+          fontSize: 10,
+          fontWeight: 500,
+          color: PURPLE,
+          padding: '2px 7px',
+          borderRadius: 20,
+          background: PURPLE_LIGHT,
+          border: '0.5px solid hsl(258,70%,78%)',
+          whiteSpace: 'nowrap',
         }}
       >
-        {score}
-      </text>
-    </svg>
-  )
+        <Zap size={10} />
+        {player.consecutiveClean} clean sessions
+      </div>
+    )
+  }
+
+  if (player.status === 'ontrack' && player.delta !== null) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+          fontSize: 10,
+          fontWeight: 500,
+          color: 'hsl(145,60%,32%)',
+          padding: '2px 7px',
+          borderRadius: 20,
+          background: 'hsl(145,60%,95%)',
+          border: '0.5px solid hsl(145,60%,72%)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <TrendingUp size={10} />
+        Improving
+      </div>
+    )
+  }
+
+  if (player.status === 'new' || player.sessionCount === 0) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+          fontSize: 10,
+          fontWeight: 500,
+          color: 'hsl(220,10%,55%)',
+          padding: '2px 7px',
+          borderRadius: 20,
+          background: 'hsl(40,20%,96%)',
+          border: '0.5px solid hsl(30,10%,88%)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Upload first video
+      </div>
+    )
+  }
+
+  return null
 }
 
-export default function PulseClient({ players, sessions, coachEmail }: Props) {
-  const [brief, setBrief] = useState('')
-  const [briefLoading, setBriefLoading] = useState(true)
+export default function PulseClient({ players, sessions }: Props) {
   const [selectedSport, setSelectedSport] = useState('all')
   const router = useRouter()
 
@@ -337,7 +418,7 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
     playerSummaries.forEach(player => {
       if (player.status === 'attention' && player.daysSince >= 14) {
         chips.push({
-          label: `${playerName(player)} inactive ${player.daysSince}d`,
+          label: `${playerName(player)}: ${player.daysSince}d no analysis`,
           color: AMBER,
           bg: AMBER_LIGHT,
           href: `/dashboard/players/${player.id}`,
@@ -346,7 +427,7 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
       }
       if (player.status === 'attention' && player.delta !== null && player.delta <= -5) {
         chips.push({
-          label: `${playerName(player)} dropped ${player.delta}pts`,
+          label: `${playerName(player)} dropped ${Math.abs(player.delta)} pts`,
           color: RED,
           bg: RED_LIGHT,
           href: `/dashboard/players/${player.id}`,
@@ -355,9 +436,9 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
       }
       if (player.status === 'levelup') {
         chips.push({
-          label: `${playerName(player)} ready to level up`,
-          color: PURPLE,
-          bg: PURPLE_LIGHT,
+          label: `${playerName(player)}: ${player.consecutiveClean} clean sessions`,
+          color: TEAL,
+          bg: TEAL_LIGHT,
           href: `/dashboard/players/${player.id}`,
           icon: '⚡',
         })
@@ -387,96 +468,12 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
     return chips
   }, [commonIssues, playerSummaries, unlinkedSessions.length])
 
-  const rosterContext = useMemo(
-    () => ({
-      coachEmail,
-      totalPlayers: players.length,
-      rosterHealth,
-      actionChips: actionChips.map(chip => chip.label),
-      commonIssues,
-      unlinkedSessionCount: unlinkedSessions.length,
-      unlinkedSports: [...new Set(unlinkedSessions.map(session => session.sport))],
-      recentUnlinkedScores: unlinkedSessions.slice(0, 3).map(session => ({
-        sport: session.sport,
-        score: session.overall_score,
-        date: session.analyzed_at,
-      })),
-      mostImproved: mostImproved.map(player => ({
-        name: playerName(player),
-        sport: player.sport,
-        totalGain: player.totalGain,
-        firstScore: player.first?.overall_score,
-        latestScore: player.latestScore,
-      })),
-      players: playerSummaries.map(player => ({
-        id: player.id,
-        name: playerName(player),
-        sport: player.sport,
-        status: player.status,
-        latestScore: player.latestScore,
-        delta: player.delta,
-        daysSince: player.daysSince,
-        topIssue: player.topIssue,
-        sessions: player.sessionCount,
-      })),
-    }),
-    [
-      actionChips,
-      coachEmail,
-      commonIssues,
-      mostImproved,
-      playerSummaries,
-      players.length,
-      rosterHealth,
-      unlinkedSessions,
-    ],
-  )
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function generateBrief() {
-      if (playerSummaries.length === 0 && unlinkedSessions.length === 0) {
-        setBrief('Add players and run analyses to get your coaching brief.')
-        setBriefLoading(false)
-        return
-      }
-
-      try {
-        const response = await fetch('/api/coaching-brief', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ context: rosterContext }),
-        })
-        const data = (await response.json()) as { brief?: string }
-        if (!cancelled) setBrief(data.brief || '')
-      } catch {
-        if (!cancelled) {
-          setBrief(
-            `${actionChips.length} item${actionChips.length !== 1 ? 's' : ''} need your attention today.`,
-          )
-        }
-      } finally {
-        if (!cancelled) setBriefLoading(false)
-      }
-    }
-
-    generateBrief()
-    return () => {
-      cancelled = true
-    }
-  }, [actionChips.length, playerSummaries.length, rosterContext, unlinkedSessions.length])
-
   const sports = [...new Set(players.map(player => player.sport).filter((sport): sport is string => Boolean(sport)))]
-  const statusConfig = {
-    attention: { label: 'Needs attention', color: RED, bg: RED_LIGHT },
-    levelup: { label: 'Ready to level up', color: PURPLE, bg: PURPLE_LIGHT },
-    ontrack: { label: 'On track', color: GREEN, bg: GREEN_LIGHT },
-    new: { label: 'Not analyzed', color: TEXT_MUTED, bg: WARM_BG },
-  }
 
   return (
-    <div style={{ color: TEXT, fontFamily: 'Arial, sans-serif', maxWidth: 1000 }}>
+    <div style={{ color: TEXT, fontFamily: 'Arial, sans-serif', maxWidth: 1000, background: WARM_BG }}>
+      <ViaBar role="coach" />
+
       <div
         style={{
           display: 'flex',
@@ -489,7 +486,7 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
       >
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>Pulse</h1>
-          <p style={{ fontSize: 13, color: TEXT_SEC, marginTop: 4 }}>
+          <p style={{ fontSize: 12, color: TEXT_SEC, marginTop: 4 }}>
             {format(new Date(), 'EEEE, MMMM d')} · {players.length} players
             {rosterHealth && (
               <>
@@ -534,7 +531,7 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
                 }}
               >
                 <TrendingUp size={13} />
-                {rosterHealth.improving} improving
+                {rosterHealth.improving} improving this week
               </div>
             )}
             {rosterHealth.attention > 0 && (
@@ -553,70 +550,11 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
                 }}
               >
                 <AlertCircle size={13} />
-                {rosterHealth.attention} need attention
+                {rosterHealth.attention} need check-in
               </div>
             )}
           </div>
         )}
-      </div>
-
-      <div
-        style={{
-          background: TEAL,
-          borderRadius: 16,
-          padding: '16px 20px',
-          marginBottom: 16,
-          display: 'flex',
-          gap: 12,
-          alignItems: 'flex-start',
-        }}
-      >
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            flexShrink: 0,
-            background: 'rgba(255,255,255,0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Zap size={16} color="white" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <p
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: 'rgba(255,255,255,0.65)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              margin: '0 0 5px',
-            }}
-          >
-            Coaching brief
-          </p>
-          {briefLoading ? (
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              {[0, 1, 2].map(index => (
-                <div
-                  key={index}
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: 'rgba(255,255,255,0.5)',
-                    animation: `pulse 1.2s ease-in-out ${index * 0.2}s infinite`,
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            <p style={{ fontSize: 14, color: 'white', margin: 0, lineHeight: 1.6 }}>{brief}</p>
-          )}
-        </div>
       </div>
 
       {actionChips.length > 0 && (
@@ -650,6 +588,7 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
                 fontFamily: 'Arial, sans-serif',
                 flexShrink: 0,
                 transition: 'all 0.15s',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
               }}
               type="button"
             >
@@ -700,7 +639,6 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
             return order[a.status] - order[b.status]
           })
           .map(player => {
-            const config = statusConfig[player.status]
             const trendColor =
               player.delta === null
                 ? TEXT_MUTED
@@ -714,207 +652,208 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
                 key={player.id}
                 onClick={() => router.push(`/dashboard/players/${player.id}`)}
                 style={{
-                  background: CARD,
-                  border: `1px solid ${
+                  background: 'white',
+                  border: `0.5px solid ${
                     player.status === 'attention'
-                      ? 'hsl(0,70%,80%)'
-                      : player.status === 'levelup'
-                        ? 'hsl(258,70%,75%)'
-                        : BORDER
+                      ? 'hsl(0,70%,82%)'
+                      : 'hsl(30,10%,91%)'
                   }`,
                   borderRadius: 16,
-                  padding: 16,
+                  padding: 14,
                   cursor: 'pointer',
-                  transition: 'all 0.15s',
-                  position: 'relative',
-                  overflow: 'hidden',
+                  transition: 'box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease',
+                  boxShadow: player.status === 'attention'
+                    ? '0 2px 8px rgba(220,50,50,0.08), 0 1px 3px rgba(0,0,0,0.05)'
+                    : '0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
                 }}
                 onMouseEnter={event => {
+                  event.currentTarget.style.boxShadow = player.status === 'attention'
+                    ? '0 8px 24px rgba(220,50,50,0.12), 0 2px 8px rgba(0,0,0,0.06)'
+                    : '0 8px 24px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)'
                   event.currentTarget.style.transform = 'translateY(-2px)'
-                  event.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'
+                  event.currentTarget.style.borderColor =
+                    player.status === 'attention'
+                      ? 'hsl(0,70%,72%)'
+                      : 'hsl(168,62%,60%)'
                 }}
                 onMouseLeave={event => {
+                  event.currentTarget.style.boxShadow = player.status === 'attention'
+                    ? '0 2px 8px rgba(220,50,50,0.08), 0 1px 3px rgba(0,0,0,0.05)'
+                    : '0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)'
                   event.currentTarget.style.transform = 'translateY(0)'
-                  event.currentTarget.style.boxShadow = 'none'
+                  event.currentTarget.style.borderColor =
+                    player.status === 'attention'
+                      ? 'hsl(0,70%,82%)'
+                      : 'hsl(30,10%,91%)'
                 }}
               >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 3,
-                    background: config.color,
-                    borderRadius: '16px 16px 0 0',
-                    opacity: player.status === 'new' ? 0 : 1,
-                  }}
-                />
-
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'flex-start',
                     justifyContent: 'space-between',
                     marginBottom: 12,
-                    gap: 8,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div
                       style={{
-                        width: 36,
-                        height: 36,
+                        width: 34,
+                        height: 34,
                         borderRadius: '50%',
-                        background: config.bg,
-                        color: config.color,
+                        background: player.status === 'attention' ? RED_LIGHT : TEAL_LIGHT,
+                        color: player.status === 'attention' ? 'hsl(0,70%,45%)' : TEAL,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: 15,
-                        fontWeight: 700,
+                        fontSize: 13,
+                        fontWeight: 600,
                         flexShrink: 0,
                       }}
                     >
                       {playerName(player).charAt(0)}
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>
-                        {playerName(player)}
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: TEXT,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {playerName(player).split(' ')[0]}
                       </div>
-                      <div style={{ fontSize: 11, color: TEXT_MUTED }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: 'hsl(220,10%,55%)',
+                          marginTop: 1,
+                        }}
+                      >
                         {player.sport ? `${sportEmoji[player.sport] || ''} ${player.sport}` : 'Sport not set'}
                       </div>
                     </div>
                   </div>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      padding: '2px 7px',
-                      borderRadius: 999,
-                      fontWeight: 700,
-                      background: config.bg,
-                      color: config.color,
-                      border: `1px solid ${config.color}`,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {player.status === 'attention'
-                      ? '⚠️'
-                      : player.status === 'levelup'
-                        ? '⚡'
-                        : player.status === 'ontrack'
-                          ? '✓'
-                          : '+'}{' '}
-                    {config.label}
-                  </span>
+
+                  <StatusBadge player={player} />
                 </div>
 
                 <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    alignItems: 'flex-end',
                     justifyContent: 'space-between',
                     marginBottom: 10,
                   }}
                 >
-                  {player.latestScore ? (
-                    <ScoreRing score={player.latestScore} size={52} />
+                  {player.latestScore !== null ? (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 26,
+                          fontWeight: 700,
+                          color: player.delta !== null && player.delta < -4 ? RED : TEAL,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {player.latestScore}
+                      </div>
+                      {player.delta !== null && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: trendColor,
+                            marginTop: 2,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 2,
+                          }}
+                        >
+                          {player.delta > 0 ? (
+                            <TrendingUp size={11} />
+                          ) : player.delta < 0 ? (
+                            <TrendingDown size={11} />
+                          ) : null}
+                          {player.delta > 0 ? '+' : ''}
+                          {player.delta} pts
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    <div
-                      style={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: '50%',
-                        background: WARM_BG,
-                        border: `2px dashed ${BORDER}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <span style={{ fontSize: 18 }}>—</span>
+                    <div style={{ fontSize: 13, color: TEXT_MUTED, fontStyle: 'italic' }}>
+                      No data yet
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    <Sparkline data={player.sparkline} color={trendColor} />
-                    {player.delta !== null && (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: trendColor,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 2,
-                        }}
-                      >
-                        {player.delta > 0 ? (
-                          <TrendingUp size={12} />
-                        ) : player.delta < 0 ? (
-                          <TrendingDown size={12} />
-                        ) : null}
-                        {player.delta > 0 ? '+' : ''}
-                        {player.delta} pts
-                      </div>
-                    )}
-                  </div>
+                  <Sparkline data={player.sparkline} color={trendColor} />
                 </div>
 
                 <div
                   style={{
-                    borderTop: `1px solid ${BORDER}`,
-                    paddingTop: 10,
+                    borderTop: '0.5px solid hsl(30,10%,93%)',
+                    paddingTop: 8,
                     display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4,
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
                   }}
                 >
-                  {player.topIssue ? (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: TEXT_SEC,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: '50%',
-                          background: RED,
-                          flexShrink: 0,
-                          display: 'inline-block',
-                        }}
-                      />
-                      {player.topIssue}
-                    </div>
-                  ) : player.sessionCount === 0 ? (
-                    <div style={{ fontSize: 11, color: TEXT_MUTED }}>No analyses yet</div>
-                  ) : null}
-
                   <div
                     style={{
-                      fontSize: 11,
-                      color: TEXT_MUTED,
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
+                      gap: 5,
+                      flex: 1,
+                      minWidth: 0,
                     }}
                   >
-                    <span>
-                      {player.sessionCount} session{player.sessionCount !== 1 ? 's' : ''}
-                    </span>
-                    {player.daysSince < 999 && (
-                      <span style={{ color: player.daysSince >= 14 ? AMBER : TEXT_MUTED }}>
-                        {player.daysSince === 0 ? 'Today' : `${player.daysSince}d ago`}
+                    {player.topIssue && (
+                      <>
+                        <div
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: '50%',
+                            background: RED,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: 'hsl(220,10%,55%)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {player.topIssue}
+                        </span>
+                      </>
+                    )}
+                    {!player.topIssue && player.sessionCount === 0 && (
+                      <span style={{ fontSize: 11, color: TEXT_MUTED }}>
+                        Upload first video
                       </span>
                     )}
                   </div>
+                  {player.daysSince < 999 && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: player.daysSince >= 14 ? 'hsl(38,92%,45%)' : TEXT_MUTED,
+                        flexShrink: 0,
+                        marginLeft: 6,
+                      }}
+                    >
+                      {player.daysSince === 0
+                        ? 'Today'
+                        : player.daysSince === 1
+                          ? '1d ago'
+                          : `${player.daysSince}d ago`}
+                    </span>
+                  )}
                 </div>
               </div>
             )
@@ -974,7 +913,15 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
           }}
         >
           {commonIssues.length > 0 && (
-            <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 20 }}>
+            <div
+              style={{
+                background: CARD,
+                border: `1px solid ${BORDER}`,
+                borderRadius: 16,
+                padding: 20,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+              }}
+            >
               <div
                 style={{
                   display: 'flex',
@@ -1074,7 +1021,15 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
           )}
 
           {mostImproved.length > 0 && (
-            <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 20 }}>
+            <div
+              style={{
+                background: CARD,
+                border: `1px solid ${BORDER}`,
+                borderRadius: 16,
+                padding: 20,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+              }}
+            >
               <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: TEXT }}>
                 Most improved
               </h3>
@@ -1167,8 +1122,6 @@ export default function PulseClient({ players, sessions, coachEmail }: Props) {
           </button>
         </div>
       )}
-
-      <PulseChat rosterContext={rosterContext} />
 
       <style>{`
         @keyframes pulse {
