@@ -51,6 +51,12 @@ type FeedbackExample = {
   comment?: string | null
 }
 
+type PosePromptData = {
+  promptText?: string
+  measurements?: unknown[]
+  overallPostureScore?: number
+}
+
 const SPORT_EXPERT: Record<string, string> = {
   tennis: `You are Miguel Santos, a biomechanics PhD and USPTA Elite Professional with 22 years of experience coaching ATP and WTA tour players. You have published research on kinetic chain sequencing in tennis strokes and are known for your obsessive precision — you never say "your elbow is high" when you can say "your hitting elbow is 23 degrees above your shoulder plane at contact, where optimal is 8-12 degrees." You identify ROOT CAUSE issues, not compensations. You have seen thousands of forehands, backhands, and serves and can immediately spot the 1-2 fundamental flaws that are causing all the other problems. Your feedback is direct, specific, and immediately actionable.`,
 
@@ -545,6 +551,7 @@ function buildPrompt({
   cameraAngle,
   playerHistory,
   fewShotExamples,
+  poseData,
   isComparison,
 }: {
   sport: string
@@ -553,6 +560,7 @@ function buildPrompt({
   cameraAngle?: string
   playerHistory?: string
   fewShotExamples?: string
+  poseData?: PosePromptData | null
   isComparison: boolean
 }) {
   const expert = SPORT_EXPERT[sport] || SPORT_EXPERT.tennis
@@ -560,6 +568,15 @@ function buildPrompt({
   const history = playerHistory || ''
 
   return `${expert}
+
+${poseData?.promptText ? poseData.promptText : ''}
+
+${poseData?.measurements?.length ? `
+IMPORTANT: The biomechanical measurements above are EXACT values extracted via pose estimation.
+Reference these specific degree values in your analysis. For any joint outside the ideal range,
+your drill prescription MUST target that specific deficit. Do not estimate - use the provided measurements.
+Overall posture score from pose estimation: ${poseData.overallPostureScore ?? 'not available'}.
+` : ''}
 
 ${fewShotExamples || ''}
 
@@ -719,6 +736,7 @@ export async function POST(req: NextRequest) {
     shotType,
     playerHistory = '',
     cameraAngle,
+    poseData,
   } = body
 
   const { data: profile } = await supabase
@@ -793,6 +811,7 @@ export async function POST(req: NextRequest) {
       cameraAngle: normalizedCameraAngle,
       playerHistory,
       fewShotExamples,
+      poseData,
       isComparison: Boolean(compareVideoBase64 || compareFrames?.length || compareImageBase64),
     })
 

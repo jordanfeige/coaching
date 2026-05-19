@@ -1,236 +1,718 @@
-import Link from 'next/link'
-import { BrandMark } from '@/components/brand/BrandMark'
+'use client'
 
-const teal = 'hsl(168, 62%, 36%)'
-const tealSoft = 'hsl(168, 62%, 95%)'
-const warmBg = 'hsl(40, 20%, 97%)'
-const warmBorder = 'hsl(30, 10%, 88%)'
-const textPrimary = 'hsl(220, 20%, 15%)'
-const textSecondary = 'hsl(220, 10%, 45%)'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
-const sports = [
-  ['🎾', 'Tennis', 'Grip · Swing path · Contact · Footwork'],
-  ['⛳', 'Golf', 'Backswing · Hip rotation · Lag · Impact'],
-  ['⚾', 'Baseball', 'Load · Hip rotation · Bat path · Extension'],
-  ['🏀', 'Basketball', 'Shot pocket · Elbow · Release · Follow through'],
-  ['🏓', 'Pickleball', 'Kitchen game · Dinking · Third shot · Positioning'],
-]
+const CSS = `
+  @keyframes lava1 {
+    0% { border-radius: 62% 38% 46% 54% / 60% 44% 56% 40%; }
+    25% { border-radius: 40% 60% 54% 46% / 48% 62% 38% 52%; }
+    50% { border-radius: 54% 46% 38% 62% / 56% 40% 60% 44%; }
+    75% { border-radius: 46% 54% 62% 38% / 44% 56% 42% 58%; }
+    100% { border-radius: 62% 38% 46% 54% / 60% 44% 56% 40%; }
+  }
+  @keyframes lava2 {
+    0% { border-radius: 38% 62% 54% 46% / 44% 56% 44% 56%; }
+    33% { border-radius: 56% 44% 40% 60% / 60% 40% 58% 42%; }
+    66% { border-radius: 44% 56% 62% 38% / 38% 62% 46% 54%; }
+    100% { border-radius: 38% 62% 54% 46% / 44% 56% 44% 56%; }
+  }
+  @keyframes lava3 {
+    0% { border-radius: 50% 50% 40% 60% / 55% 45% 55% 45%; }
+    50% { border-radius: 40% 60% 55% 45% / 45% 55% 45% 55%; }
+    100% { border-radius: 50% 50% 40% 60% / 55% 45% 55% 45%; }
+  }
+  @keyframes floatBlob {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(-12px); }
+  }
+  @keyframes orbDrift {
+    0% { transform: translate(0, 0); }
+    25% { transform: translate(10px, -14px); }
+    50% { transform: translate(-8px, 10px); }
+    75% { transform: translate(12px, 5px); }
+    100% { transform: translate(0, 0); }
+  }
+  @keyframes orbDrift2 {
+    0% { transform: translate(0, 0); }
+    33% { transform: translate(-12px, 8px); }
+    66% { transform: translate(8px, -10px); }
+    100% { transform: translate(0, 0); }
+  }
+  @keyframes pulseRing {
+    0%,100% { opacity: .12; transform: scale(1); }
+    50% { opacity: .28; transform: scale(1.06); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes cardPop {
+    from { opacity: 0; transform: translateY(14px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes shimmerBar {
+    from { width: 0%; }
+    to { width: var(--bar-w); }
+  }
+  @keyframes countUp {
+    from { opacity: 0; transform: scale(0.85); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes typing {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+  @keyframes blink {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  .via-blob-outer { animation: lava1 5s ease-in-out infinite, floatBlob 7s ease-in-out infinite; }
+  .via-blob-inner { animation: lava2 4s ease-in-out infinite; }
+  .via-blob-core { animation: lava3 3s ease-in-out infinite; }
+  .via-sat-1 { animation: lava1 6s ease-in-out infinite, orbDrift 9s ease-in-out infinite; }
+  .via-sat-2 { animation: lava2 5s ease-in-out infinite, orbDrift2 11s ease-in-out infinite; }
+  .pulse-ring-1 { animation: pulseRing 3s ease-in-out infinite; }
+  .pulse-ring-2 { animation: pulseRing 2.5s ease-in-out 0.4s infinite; }
+  .bar-elbow { animation: shimmerBar 1.2s ease-out 3.8s forwards; width: 0; --bar-w: 42%; }
+  .bar-hip { animation: shimmerBar 1.2s ease-out 4.0s forwards; width: 0; --bar-w: 58%; }
+  .bar-knee { animation: shimmerBar 1.2s ease-out 4.2s forwards; width: 0; --bar-w: 85%; }
+  @media (max-width: 860px) {
+    .landing-hero, .pulse-grid, .how-grid { grid-template-columns: 1fr !important; }
+    .landing-nav-links { display: none !important; }
+    .sport-strip { flex-wrap: wrap; gap: 16px; justify-content: center !important; }
+    .pulse-player-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  }
+`
 
-const steps = [
-  ['1', '📹', 'Record yourself', 'Film a 30-second clip of your technique on your phone'],
-  ['2', '🤖', 'AI analyzes your motion', 'Gemini AI watches your full video and scores every aspect of your technique with timestamp references'],
-  ['3', '📊', 'Get your score', 'Receive a 0-100 technique score with specific issues ranked by severity, drills to fix each one, and coaching videos'],
-  ['4', '📈', 'Track progress over time', "Every session is saved. Watch your score improve week by week. See exactly which issues you've fixed and which need more work."],
-]
+const TEAL = '#1D9E75'
+const TEAL_LIGHT = '#E1F5EE'
+const TEXT = 'hsl(220,20%,10%)'
+const TEXT_SEC = 'hsl(220,10%,45%)'
+const BORDER = 'hsl(30,10%,88%)'
 
-const pricingTeasers = [
-  {
-    name: 'Free forever',
-    price: '$0',
-    subtitle: '3 analyses · Full coaching report · Ask Coach AI · YouTube videos',
-    href: '/onboarding',
-    button: 'Start free →',
-  },
-  {
-    name: 'Pro',
-    subtitle: 'Unlimited analyses · Progress timeline · Weekly plans · Monthly reports',
-    href: '/pricing',
-    button: 'Join waitlist →',
-    highlighted: true,
-  },
-]
-
-function TealButton({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center justify-center rounded-2xl px-8 py-4 text-lg font-bold text-white transition-colors"
-      style={{ background: teal }}
-    >
-      {children}
-    </Link>
-  )
-}
-
-function PricingTeaserCard({ card }: { card: typeof pricingTeasers[number] }) {
+function ViaBlob({ size = 130 }: { size?: number }) {
   return (
     <div
-      className="relative flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm"
-      style={{ border: card.highlighted ? `2px solid ${teal}` : `1px solid ${warmBorder}` }}
+      style={{
+        position: 'relative',
+        width: size,
+        height: size,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
     >
-      {card.highlighted && (
-        <span className="absolute right-5 top-5 rounded-full px-3 py-1 text-xs font-bold" style={{ background: tealSoft, color: teal }}>
-          Coming soon
-        </span>
-      )}
-      <h3 className="font-heading text-2xl font-bold">{card.name}</h3>
-      {'price' in card && <p className="mt-5 font-heading text-4xl font-black">{card.price}</p>}
-      <p className="mt-5 text-sm leading-relaxed" style={{ color: textSecondary }}>{card.subtitle}</p>
-      <div className="flex-1" />
-      <Link
-        href={card.href}
-        className="mt-6 flex w-full justify-center rounded-xl px-4 py-3 text-sm font-bold"
+      <div
+        className="pulse-ring-1"
         style={{
-          background: card.highlighted ? 'white' : teal,
-          color: card.highlighted ? teal : 'white',
-          border: card.highlighted ? `1px solid ${teal}` : 'none',
+          position: 'absolute',
+          width: size * 1.45,
+          height: size * 1.45,
+          borderRadius: '50%',
+          border: '1px solid rgba(29,158,117,0.15)',
+        }}
+      />
+      <div
+        className="pulse-ring-2"
+        style={{
+          position: 'absolute',
+          width: size * 1.2,
+          height: size * 1.2,
+          borderRadius: '50%',
+          border: '1px solid rgba(29,158,117,0.2)',
+        }}
+      />
+      <div
+        className="via-sat-1"
+        style={{
+          position: 'absolute',
+          width: size * 0.3,
+          height: size * 0.3,
+          background: 'rgba(29,158,117,0.18)',
+          backdropFilter: 'blur(8px)',
+          border: '0.5px solid rgba(255,255,255,0.2)',
+          top: -4,
+          right: 4,
+        }}
+      />
+      <div
+        className="via-sat-2"
+        style={{
+          position: 'absolute',
+          width: size * 0.22,
+          height: size * 0.22,
+          background: 'rgba(29,158,117,0.12)',
+          backdropFilter: 'blur(6px)',
+          border: '0.5px solid rgba(255,255,255,0.15)',
+          bottom: 4,
+          left: -4,
+        }}
+      />
+      <div
+        className="via-blob-outer"
+        style={{
+          width: size,
+          height: size,
+          background: 'rgba(240,250,246,0.55)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          border: '0.5px solid rgba(255,255,255,0.6)',
+          boxShadow:
+            '0 8px 32px rgba(29,158,117,0.15), 0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.8), inset 0 -1px 0 rgba(29,158,117,0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        {card.button}
-      </Link>
+        <div
+          style={{
+            position: 'absolute',
+            top: '-20%',
+            left: '-10%',
+            width: '60%',
+            height: '60%',
+            background: 'radial-gradient(circle, rgba(255,255,255,0.6) 0%, transparent 70%)',
+            borderRadius: '50%',
+          }}
+        />
+        <div
+          className="via-blob-inner"
+          style={{
+            width: size * 0.52,
+            height: size * 0.52,
+            background: 'linear-gradient(135deg, #1D9E75 0%, #085041 100%)',
+            boxShadow: '0 0 24px rgba(29,158,117,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            className="via-blob-core"
+            style={{
+              width: size * 0.24,
+              height: size * 0.24,
+              background: 'rgba(255,255,255,0.28)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)',
+            }}
+          />
+        </div>
+      </div>
     </div>
   )
 }
 
-function ScoreMockup() {
+function MiniViaIcon({ size = 28 }: { size?: number }) {
   return (
-    <section className="mx-auto max-w-4xl px-5 py-16">
-      <div className="rounded-2xl bg-white p-6 shadow-sm" style={{ border: `1px solid ${warmBorder}` }}>
-        <div className="flex items-center justify-between gap-4">
-          <p className="font-heading text-lg font-bold">Your Technique Score</p>
-          <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: tealSoft, color: teal }}>Tennis · Forehand</span>
+    <div
+      style={{
+        width: size,
+        height: size,
+        animation: 'lava1 4s ease-in-out infinite',
+        background: TEAL,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          width: size * 0.4,
+          height: size * 0.4,
+          animation: 'lava2 3s ease-in-out infinite',
+          background: 'rgba(255,255,255,0.28)',
+        }}
+      />
+    </div>
+  )
+}
+
+function ViaDemo() {
+  const [step, setStep] = useState(0)
+
+  useEffect(() => {
+    const timers = [
+      window.setTimeout(() => setStep(1), 800),
+      window.setTimeout(() => setStep(2), 2200),
+      window.setTimeout(() => setStep(3), 3600),
+      window.setTimeout(() => setStep(4), 4800),
+      window.setTimeout(() => setStep(0), 8000),
+    ]
+    return () => timers.forEach(timer => window.clearTimeout(timer))
+  }, [step])
+
+  return (
+    <div
+      style={{
+        background: 'white',
+        border: `0.5px solid ${BORDER}`,
+        borderRadius: 16,
+        padding: 16,
+        boxShadow: '0 4px 24px rgba(0,0,0,0.07)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 14,
+          paddingBottom: 12,
+          borderBottom: '0.5px solid hsl(30,10%,93%)',
+        }}
+      >
+        <MiniViaIcon />
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: TEAL }}>Via</div>
+          <div style={{ fontSize: 10, color: 'hsl(220,10%,60%)' }}>AI Coaching Agent</div>
         </div>
-        <svg viewBox="0 0 400 120" className="mt-6 h-[180px] w-full">
-          {[20, 50, 80, 110].map(y => <line key={y} x1="0" y1={y} x2="400" y2={y} stroke="hsl(30, 10%, 88%)" strokeWidth="1" />)}
-          <path d="M20 96 L70 88 L120 76 L170 82 L220 62 L270 54 L330 38 L380 24 L380 120 L20 120 Z" fill={teal} opacity="0.2" />
-          <polyline points="20,96 70,88 120,76 170,82 220,62 270,54 330,38 380,24" fill="none" stroke={teal} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          {[['20', '96'], ['70', '88'], ['120', '76'], ['170', '82'], ['220', '62'], ['270', '54'], ['330', '38'], ['380', '24']].map(([x, y]) => (
-            <circle key={`${x}-${y}`} cx={x} cy={y} r="5" fill={teal} />
-          ))}
-          <text x="14" y="112" fontSize="13" fontWeight="700" fill={textSecondary}>58</text>
-          <text x="365" y="18" fontSize="13" fontWeight="700" fill={teal}>82</text>
-        </svg>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {[
-            ['↑ +24 points', 'hsl(142, 45%, 92%)', 'hsl(142, 58%, 30%)'],
-            ['8 sessions', tealSoft, teal],
-            ['3 issues fixed ✓', 'hsl(142, 45%, 92%)', 'hsl(142, 58%, 30%)'],
-          ].map(([label, bg, color]) => (
-            <div key={label} className="rounded-full px-4 py-2 text-center text-sm font-bold" style={{ background: bg, color }}>{label}</div>
-          ))}
+        <div style={{ marginLeft: 'auto', background: TEAL_LIGHT, padding: '2px 8px', borderRadius: 999 }}>
+          <span style={{ fontSize: 9, color: '#0F6E56', fontWeight: 700 }}>LIVE</span>
         </div>
-        <div className="mt-5 space-y-2">
-          {[
-            ['✅', 'Early arm extension', 'Fixed 3 weeks ago'],
-            ['📈', 'Narrow base width', 'Improving'],
-            ['🔴', 'Follow through', 'Still working on it'],
-          ].map(([emoji, issue, status]) => (
-            <div key={issue} className="flex items-center justify-between rounded-xl border px-4 py-3 text-sm" style={{ borderColor: warmBorder }}>
-              <span><span className="mr-2">{emoji}</span><span className="font-semibold">{issue}</span></span>
-              <span style={{ color: textSecondary }}>{status}</span>
+      </div>
+
+      {step >= 1 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10, animation: 'fadeUp 0.3s ease forwards' }}>
+          <div style={{ background: 'hsl(220,20%,96%)', borderRadius: '10px 10px 3px 10px', padding: '8px 12px', maxWidth: '85%' }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: 'hsl(220,20%,20%)',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                animation: 'typing 1s steps(30) forwards',
+              }}
+            >
+              Why is my swing losing power?
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', animation: 'fadeUp 0.3s ease forwards' }}>
+          <MiniViaIcon size={18} />
+          <div style={{ display: 'flex', gap: 3 }}>
+            {[0, 1, 2].map(index => (
+              <div
+                key={index}
+                style={{
+                  width: 5,
+                  height: 5,
+                  borderRadius: '50%',
+                  background: TEAL,
+                  opacity: 0.5,
+                  animation: `blink 1.2s ease-in-out ${index * 0.2}s infinite`,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {step >= 3 && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, animation: 'fadeUp 0.4s ease forwards' }}>
+          <MiniViaIcon size={20} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: TEAL, marginBottom: 4 }}>Via</div>
+            <div style={{ fontSize: 12, color: 'hsl(220,20%,20%)', lineHeight: 1.55, marginBottom: step >= 4 ? 8 : 0 }}>
+              Your elbow measured at <span style={{ color: '#DC2626', fontWeight: 700 }}>52 deg</span> - ideal is
+              85-95 deg. That 33 deg deficit is cutting your power at contact.
+            </div>
+            {step >= 4 && (
+              <div
+                style={{
+                  background: TEAL_LIGHT,
+                  border: '0.5px solid hsl(168,62%,70%)',
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  animation: 'cardPop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards',
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#0F6E56', marginBottom: 2 }}>Prescribed by Via</div>
+                <div style={{ fontSize: 11, color: 'hsl(220,20%,20%)' }}>Elbow elevation drill · 3 sets · 15 reps</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MeasurementCard() {
+  const measurements = [
+    { label: 'Elbow angle', measured: '52 deg', ideal: '85-95 deg', barClass: 'bar-elbow', color: '#DC2626', status: 'critical' },
+    { label: 'Hip rotation', measured: '34 deg', ideal: '45-55 deg', barClass: 'bar-hip', color: '#D97706', status: 'warning' },
+    { label: 'Knee bend', measured: '148 deg', ideal: '130-160 deg', barClass: 'bar-knee', color: TEAL, status: 'good' },
+  ]
+
+  return (
+    <div
+      style={{
+        background: 'white',
+        border: `0.5px solid ${BORDER}`,
+        borderRadius: 14,
+        padding: 16,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color: TEAL, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        Joint analysis
+      </div>
+
+      {measurements.map(measurement => (
+        <div key={measurement.label} style={{ marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontSize: 11, color: TEXT_SEC }}>{measurement.label}</span>
+            <div style={{ display: 'flex', gap: 5 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: measurement.color }}>{measurement.measured}</span>
+              <span style={{ fontSize: 10, color: 'hsl(220,10%,65%)' }}>/ {measurement.ideal}</span>
+              {measurement.status === 'good' && <span style={{ fontSize: 10, color: TEAL }}>✓</span>}
+            </div>
+          </div>
+          <div style={{ height: 5, background: 'hsl(30,10%,93%)', borderRadius: 3, overflow: 'hidden' }}>
+            <div className={measurement.barClass} style={{ height: 5, background: measurement.color, borderRadius: 3 }} />
+          </div>
+        </div>
+      ))}
+
+      <div style={{ borderTop: '0.5px solid hsl(30,10%,93%)', paddingTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 11, color: 'hsl(220,10%,55%)' }}>Technique score</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 18, fontWeight: 800, color: 'hsl(220,10%,65%)', animation: 'countUp 0.5s ease 4.5s both', opacity: 0 }}>74</span>
+          <span style={{ fontSize: 12, color: 'hsl(220,10%,70%)' }}>→</span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: TEAL, animation: 'countUp 0.5s ease 4.8s both', opacity: 0 }}>89</span>
+          <span style={{ fontSize: 11, color: TEAL, fontWeight: 600, animation: 'fadeUp 0.4s ease 5s both', opacity: 0 }}>+15</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PulsePreview() {
+  const players = [
+    { init: 'O', name: 'Olivia', score: 67, delta: '-4', status: 'attention' },
+    { init: 'M', name: 'Marcus', score: 87, delta: '0', status: 'ok' },
+    { init: 'N', name: 'Noah', score: 85, delta: '+12', status: 'good' },
+    { init: 'A', name: 'Aiden', score: 95, delta: '+3', status: 'levelup' },
+    { init: 'S', name: 'Sarah', score: 97, delta: '+10', status: 'levelup' },
+  ]
+  const statusColor = (status: string) => (status === 'attention' ? '#DC2626' : status === 'levelup' ? '#7C3AED' : TEAL)
+
+  return (
+    <div style={{ background: '#04342C', borderRadius: 16, padding: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#5DCAA5', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 3 }}>
+            Pulse · Coach Dashboard
+          </div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Via gives coaches a live view of every player</div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {['All sports', '5 players'].map((label, index) => (
+            <div
+              key={label}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 6,
+                background: index === 1 ? 'rgba(29,158,117,0.15)' : 'rgba(255,255,255,0.06)',
+                border: `0.5px solid ${index === 1 ? 'rgba(29,158,117,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                fontSize: 10,
+                color: index === 1 ? '#5DCAA5' : 'rgba(255,255,255,0.5)',
+                fontWeight: 600,
+              }}
+            >
+              {label}
             </div>
           ))}
         </div>
       </div>
-    </section>
+
+      <div className="pulse-player-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8, marginBottom: 14 }}>
+        {players.map(player => (
+          <div
+            key={player.name}
+            style={{
+              background: player.status === 'attention' ? 'rgba(220,38,38,0.08)' : 'rgba(255,255,255,0.03)',
+              border: `0.5px solid ${player.status === 'attention' ? 'rgba(220,38,38,0.2)' : 'rgba(255,255,255,0.08)'}`,
+              borderRadius: 10,
+              padding: '10px 8px',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                background: `${statusColor(player.status)}22`,
+                color: statusColor(player.status),
+                fontSize: 11,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 6px',
+              }}
+            >
+              {player.init}
+            </div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginBottom: 3 }}>{player.name}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: statusColor(player.status) }}>{player.score}</div>
+            <div style={{ fontSize: 9, marginTop: 2, color: `${statusColor(player.status)}bb` }}>
+              {player.status === 'attention' ? 'needs help' : player.status === 'levelup' ? 'level up' : player.delta !== '0' ? `${player.delta} pts` : 'on track'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ borderLeft: `3px solid ${TEAL}`, padding: '10px 14px', background: 'rgba(29,158,117,0.08)', borderRadius: '0 8px 8px 0', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <MiniViaIcon size={20} />
+        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', margin: 0, lineHeight: 1.55 }}>
+          <span style={{ color: '#5DCAA5', fontWeight: 700 }}>Via says:</span> Olivia needs attention - her score dropped 4 points.
+          Sarah and Aiden are ready to level up. Schedule a group session around follow through - 3 of 5 players share that issue.
+        </p>
+      </div>
+    </div>
   )
 }
 
-export default function Home() {
+export default function LandingPage() {
+  const router = useRouter()
+
   return (
-    <div className="min-h-screen" style={{ background: warmBg, color: textPrimary }}>
-      <nav className="sticky top-0 z-50 bg-white/95 px-5 py-4 backdrop-blur" style={{ borderBottom: `1px solid ${warmBorder}` }}>
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <BrandMark size="md" />
-          <div className="flex items-center gap-3">
-            <Link href="/login" className="text-sm font-semibold" style={{ color: teal }}>Sign in</Link>
-            <Link href="/onboarding" className="rounded-xl px-4 py-2 text-sm font-semibold text-white" style={{ background: teal }}>Start free</Link>
-          </div>
+    <div style={{ fontFamily: 'Arial, sans-serif', background: 'hsl(40,20%,97%)', minHeight: '100vh' }}>
+      <style>{CSS}</style>
+
+      <nav
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 40px',
+          background: 'rgba(250,249,246,0.85)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderBottom: '0.5px solid hsl(30,10%,90%)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+        }}
+      >
+        <div style={{ fontSize: 20, fontWeight: 800, color: 'hsl(220,20%,15%)', letterSpacing: '-0.5px' }}>
+          Play<span style={{ color: TEAL }}>via</span>
+        </div>
+        <div className="landing-nav-links" style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: 'hsl(220,10%,55%)' }}>For coaches</span>
+          <span style={{ fontSize: 13, color: 'hsl(220,10%,55%)' }}>For players</span>
+          <button type="button" onClick={() => router.push('/login')} style={navButtonStyle('white', TEXT)}>
+            Sign in
+          </button>
+          <button type="button" onClick={() => router.push('/onboarding')} style={navButtonStyle(TEAL, 'white', true)}>
+            Try free
+          </button>
         </div>
       </nav>
 
-      <main>
-        <section className="mx-auto max-w-3xl px-5 py-24 text-center">
-          <div className="mb-6 inline-flex rounded-full border px-4 py-1 text-xs font-semibold" style={{ background: tealSoft, color: teal, borderColor: 'hsla(168, 62%, 36%, 0.3)' }}>
-            Now in beta — join free
+      <section
+        className="landing-hero"
+        style={{
+          maxWidth: 1100,
+          margin: '0 auto',
+          padding: '72px 40px 48px',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 48,
+          alignItems: 'center',
+        }}
+      >
+        <div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, background: TEAL_LIGHT, marginBottom: 20 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: TEAL, animation: 'pulseRing 2s ease-in-out infinite' }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#0F6E56', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              Meet Via - AI Coaching Agent
+            </span>
           </div>
-          <h1 className="font-heading text-5xl leading-tight font-black md:text-6xl">
-            Watch yourself
-            <br />
-            <span style={{ color: teal }}>actually get better.</span>
+
+          <h1 style={{ fontSize: 46, fontWeight: 800, color: TEXT, margin: '0 0 16px', lineHeight: 1.1, letterSpacing: '-1.5px' }}>
+            The AI coach that watches your video.
           </h1>
-          <p className="mx-auto mt-4 max-w-xl text-xl leading-relaxed" style={{ color: textSecondary }}>
-            Upload a video. Get an AI coaching report. Track your technique score over time and see exactly what&apos;s improving — and what isn&apos;t.
+
+          <p style={{ fontSize: 15, color: TEXT_SEC, margin: '0 0 28px', lineHeight: 1.7, maxWidth: 420 }}>
+            Via measures your joint angles, identifies exactly what is wrong, and prescribes the specific drills to fix it.
+            In under 60 seconds.
           </p>
-          <div className="mt-8"><TealButton href="/onboarding">Start tracking free →</TealButton></div>
-          <p className="mt-3 text-sm" style={{ color: textSecondary }}>
-            3 free analyses included · No credit card required · Tennis · Golf · Baseball · Basketball · Pickleball
+
+          <div style={{ marginBottom: 28 }}>
+            <ViaDemo />
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => router.push('/analyze')} style={ctaStyle('hsl(220,20%,10%)', 'white')}>
+              Analyze my technique
+            </button>
+            <button type="button" onClick={() => router.push('/onboarding')} style={ctaStyle('white', 'hsl(220,20%,25%)', true)}>
+              I&apos;m a coach →
+            </button>
+          </div>
+
+          <p style={{ fontSize: 11, color: 'hsl(220,10%,65%)', margin: '12px 0 0' }}>
+            3 free analyses · No credit card · Tennis · Golf · Basketball · Pickleball · Baseball
           </p>
-        </section>
+        </div>
 
-        <ScoreMockup />
-
-        <section className="border-t px-5 py-20" style={{ borderColor: warmBorder }}>
-          <div className="mx-auto max-w-5xl text-center">
-            <h2 className="font-heading text-3xl font-bold">How Playvia works</h2>
-            <p className="mt-3" style={{ color: textSecondary }}>From raw footage to real improvement</p>
-            <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-              {steps.map(([number, emoji, title, description]) => (
-                <div key={number} className="rounded-2xl bg-white p-6 text-center shadow-sm" style={{ border: `1px solid ${warmBorder}` }}>
-                  <div className="mx-auto flex size-9 items-center justify-center rounded-full text-sm font-bold text-white" style={{ background: teal }}>{number}</div>
-                  <div className="mt-4 text-4xl">{emoji}</div>
-                  <h3 className="mt-3 font-bold">{title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed" style={{ color: textSecondary }}>{description}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-t px-5 py-20" style={{ borderColor: warmBorder }}>
-          <div className="mx-auto max-w-5xl text-center">
-            <h2 className="font-heading text-3xl font-bold">Built for your sport</h2>
-            <p className="mt-3" style={{ color: textSecondary }}>Specialized AI analysis for every game</p>
-            <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-5">
-              {sports.map(([emoji, title, issues]) => (
-                <Link key={title} href="/onboarding" className="rounded-2xl bg-white p-5 text-center transition-all hover:shadow-sm" style={{ border: `1px solid ${warmBorder}` }}>
-                  <div className="text-4xl">{emoji}</div>
-                  <h3 className="mt-4 font-bold">{title}</h3>
-                  <p className="mt-2 text-xs leading-relaxed" style={{ color: textSecondary }}>{issues}</p>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-t bg-white px-5 py-20" style={{ borderColor: warmBorder }}>
-          <div className="mx-auto max-w-4xl text-center">
-            <h2 className="font-heading text-3xl font-bold">Simple pricing — coming soon</h2>
-            <p className="mx-auto mt-3 max-w-2xl" style={{ color: textSecondary }}>
-              Free to start. Pro plan launching soon with unlimited analyses and full progress tracking.
-            </p>
-            <div className="mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-6 md:grid-cols-2">
-              {pricingTeasers.map(card => <PricingTeaserCard key={card.name} card={card} />)}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-t bg-white px-5 py-24 text-center" style={{ borderColor: warmBorder }}>
-          <h2 className="font-heading text-4xl font-black">Start tracking your improvement today.</h2>
-          <p className="mt-3" style={{ color: textSecondary }}>3 free analyses included. No credit card required.</p>
-          <div className="mt-8"><TealButton href="/onboarding">Create free account →</TealButton></div>
-          <p className="mt-4 text-sm" style={{ color: textSecondary }}>
-            Already have an account? <Link href="/login" className="font-semibold" style={{ color: teal }}>Sign in →</Link>
-          </p>
-        </section>
-      </main>
-
-      <footer className="border-t bg-white px-5 py-8" style={{ borderColor: warmBorder }}>
-        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-5 md:flex-row">
-          <BrandMark size="sm" />
-          <p className="text-sm" style={{ color: textSecondary }}>AI Coaching for Modern Athletes</p>
-          <div className="flex items-center gap-4">
-            {[
-              ['Analyze', '/onboarding'],
-              ['Pricing', '/pricing'],
-              ['Sign in', '/login'],
-            ].map(([label, href]) => (
-              <Link key={href} href={href} className="text-sm" style={{ color: textSecondary }}>{label}</Link>
-            ))}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, position: 'relative' }}>
+          <div
+            style={{
+              position: 'absolute',
+              width: 320,
+              height: 320,
+              background: 'radial-gradient(circle, rgba(29,158,117,0.08) 0%, transparent 70%)',
+              borderRadius: '50%',
+              top: '10%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <ViaBlob size={140} />
+          <div style={{ position: 'relative', zIndex: 2, width: '100%' }}>
+            <MeasurementCard />
           </div>
         </div>
-        <p className="mt-6 text-center text-sm" style={{ color: textSecondary }}>© 2026 Playvia · playvia.studio</p>
+      </section>
+
+      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '0 40px 64px' }}>
+        <div style={{ textAlign: 'center', marginBottom: 40 }}>
+          <h2 style={{ fontSize: 32, fontWeight: 800, color: TEXT, margin: '0 0 10px', letterSpacing: '-0.8px' }}>How Via works</h2>
+          <p style={{ fontSize: 14, color: 'hsl(220,10%,50%)', margin: 0 }}>From video to drill plan in under 60 seconds</p>
+        </div>
+        <div className="how-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
+          {[
+            ['01', 'Film 30 seconds', 'Record yourself from the side. Via works with any phone camera - no special equipment needed.', TEAL_LIGHT, TEAL],
+            ['02', 'Via measures your joints', 'Via analyzes elbow angles, hip rotation, knee bend, and more - in exact degrees, not guesses.', '#E6F1FB', '#185FA5'],
+            ['03', 'Get your drill plan', 'Via prescribes drills for your specific deficits. No generic advice - everything targets your measurements.', '#EDE9FE', '#7C3AED'],
+          ].map(([step, title, body, bg, color]) => (
+            <div key={step} style={{ background: 'white', border: `0.5px solid ${BORDER}`, borderRadius: 16, padding: '24px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color }}>{step}</span>
+              </div>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT, margin: '0 0 8px' }}>{title}</h3>
+              <p style={{ fontSize: 13, color: 'hsl(220,10%,50%)', margin: 0, lineHeight: 1.6 }}>{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '0 40px 80px' }}>
+        <div className="pulse-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 48, alignItems: 'center' }}>
+          <div>
+            <div style={{ display: 'inline-block', padding: '4px 10px', borderRadius: 999, background: TEAL_LIGHT, marginBottom: 14 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#0F6E56', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                For coaches
+              </span>
+            </div>
+            <h2 style={{ fontSize: 30, fontWeight: 800, color: TEXT, margin: '0 0 14px', lineHeight: 1.15, letterSpacing: '-0.6px' }}>
+              Via watches your whole roster.
+            </h2>
+            <p style={{ fontSize: 14, color: 'hsl(220,10%,50%)', margin: '0 0 20px', lineHeight: 1.7 }}>
+              Pulse gives you a live dashboard of every player&apos;s technique score, trends, and issues. Via tells you who needs attention before your next lesson.
+            </p>
+            {['Who regressed this week', 'What issue 4 players share', 'Who is ready to be challenged more'].map(item => (
+              <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ width: 16, height: 16, borderRadius: '50%', background: TEAL_LIGHT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{ fontSize: 9, color: TEAL }}>✓</span>
+                </div>
+                <span style={{ fontSize: 13, color: 'hsl(220,20%,25%)' }}>{item}</span>
+              </div>
+            ))}
+            <button type="button" onClick={() => router.push('/onboarding')} style={{ marginTop: 20, ...ctaStyle(TEAL, 'white') }}>
+              Start coaching with Via →
+            </button>
+          </div>
+          <PulsePreview />
+        </div>
+      </section>
+
+      <section style={{ borderTop: `0.5px solid ${BORDER}`, borderBottom: `0.5px solid ${BORDER}`, background: 'white', padding: '20px 40px' }}>
+        <div className="sport-strip" style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 11, color: 'hsl(220,10%,60%)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>5 sports</span>
+          {[
+            ['🎾', 'Tennis'],
+            ['⛳', 'Golf'],
+            ['🏀', 'Basketball'],
+            ['🏓', 'Pickleball'],
+            ['⚾', 'Baseball'],
+          ].map(([emoji, name]) => (
+            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 18 }}>{emoji}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'hsl(220,20%,25%)' }}>{name}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section style={{ maxWidth: 600, margin: '0 auto', padding: '80px 40px', textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
+          <ViaBlob size={80} />
+        </div>
+        <h2 style={{ fontSize: 36, fontWeight: 800, color: TEXT, margin: '0 0 14px', letterSpacing: '-1px' }}>
+          Your path to better play starts with Via.
+        </h2>
+        <p style={{ fontSize: 14, color: 'hsl(220,10%,50%)', margin: '0 0 28px', lineHeight: 1.7 }}>
+          Upload your first video free. No credit card. Via will tell you exactly what to work on.
+        </p>
+        <button type="button" onClick={() => router.push('/analyze')} style={{ padding: '14px 36px', borderRadius: 14, border: 'none', background: TEAL, color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Arial, sans-serif', boxShadow: '0 4px 20px rgba(29,158,117,0.3)' }}>
+          Analyze my technique free
+        </button>
+        <p style={{ fontSize: 11, color: 'hsl(220,10%,65%)', margin: '12px 0 0' }}>3 free analyses · No account required to try</p>
+      </section>
+
+      <footer style={{ borderTop: `0.5px solid ${BORDER}`, padding: '20px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'hsl(220,20%,15%)', letterSpacing: '-0.4px' }}>
+          Play<span style={{ color: TEAL }}>via</span>
+        </div>
+        <p style={{ fontSize: 11, color: 'hsl(220,10%,65%)', margin: 0 }}>AI Coaching for Modern Athletes · playvia.studio</p>
+        <div style={{ display: 'flex', gap: 16 }}>
+          {['Privacy', 'Terms', 'Contact'].map(item => (
+            <span key={item} style={{ fontSize: 12, color: 'hsl(220,10%,60%)' }}>{item}</span>
+          ))}
+        </div>
       </footer>
     </div>
   )
+}
+
+function navButtonStyle(background: string, color: string, primary = false): React.CSSProperties {
+  return {
+    padding: primary ? '8px 18px' : '7px 16px',
+    borderRadius: 8,
+    border: primary ? 'none' : '0.5px solid hsl(30,10%,85%)',
+    background,
+    color,
+    fontSize: 13,
+    fontWeight: primary ? 700 : 400,
+    cursor: 'pointer',
+    fontFamily: 'Arial, sans-serif',
+    boxShadow: primary ? '0 2px 12px rgba(29,158,117,0.25)' : undefined,
+  }
+}
+
+function ctaStyle(background: string, color: string, bordered = false): React.CSSProperties {
+  return {
+    padding: '13px 24px',
+    borderRadius: 12,
+    border: bordered ? `0.5px solid ${BORDER}` : 'none',
+    background,
+    color,
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: 'Arial, sans-serif',
+  }
 }

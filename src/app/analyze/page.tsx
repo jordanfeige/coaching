@@ -10,6 +10,8 @@ import { brand } from '@/lib/brand'
 import FeedbackButtons from '@/components/FeedbackButtons'
 import PDFExportButton from '@/components/PDFExportButton'
 import AnalysisQualityBadges from '@/components/AnalysisQualityBadges'
+import PoseOverlay from '@/components/PoseOverlay'
+import { measurementsToPromptText, type PoseAnalysisResult } from '@/lib/poseAnalysis'
 
 type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 type Severity = 'critical' | 'moderate' | 'minor'
@@ -222,6 +224,8 @@ export default function AnalyzePage() {
   const [file, setFile] = useState<File | null>(null)
   const [videoURL, setVideoURL] = useState<string | null>(null)
   const [videoDuration, setVideoDuration] = useState<number | null>(null)
+  const [poseResult, setPoseResult] = useState<PoseAnalysisResult | null>(null)
+  const [showOverlay, setShowOverlay] = useState(false)
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null)
   const [discarded, setDiscarded] = useState(false)
@@ -374,6 +378,7 @@ export default function AnalyzePage() {
   function selectSport(nextSport: Sport) {
     setSport(nextSport)
     setShotType('')
+    setPoseResult(null)
   }
 
   function seekTo(timestamp: string) {
@@ -416,6 +421,8 @@ export default function AnalyzePage() {
     setFile(nextFile)
     setVideoURL(nextFile ? URL.createObjectURL(nextFile) : null)
     setVideoDuration(null)
+    setPoseResult(null)
+    setShowOverlay(false)
     setError('')
     if (!nextFile) return
 
@@ -483,6 +490,13 @@ export default function AnalyzePage() {
           cameraAngle: 'side-on',
           playerName: 'Athlete',
           playerId: linkedPlayerId,
+          poseData: poseResult
+            ? {
+                measurements: poseResult.measurements,
+                overallPostureScore: poseResult.overallPostureScore,
+                promptText: measurementsToPromptText(poseResult.measurements, sport),
+              }
+            : null,
         }),
       })
       const payload = await parseJsonResponse(response)
@@ -926,6 +940,47 @@ export default function AnalyzePage() {
                     <span className="font-semibold text-foreground">{file.name}</span> · {fileSizeLabel(file)}
                     {videoDuration ? <> · {durationLabel(videoDuration)}</> : null}
                   </div>
+                  {videoURL && (
+                    <div>
+                      <div className="relative overflow-hidden rounded-2xl border bg-black" style={{ borderColor: brand.border }}>
+                        <video
+                          ref={videoRef}
+                          src={videoURL}
+                          controls
+                          playsInline
+                          className="block w-full bg-black"
+                          style={{ maxHeight: 400 }}
+                        />
+                        <PoseOverlay
+                          videoRef={videoRef}
+                          sport={sport}
+                          show={showOverlay}
+                          onMeasurementsReady={result => {
+                            setPoseResult(result)
+                            console.log('Pose measurements:', result.measurements)
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowOverlay(!showOverlay)}
+                        style={{
+                          marginTop: 8,
+                          padding: '6px 14px',
+                          borderRadius: 8,
+                          border: '1px solid hsl(30,10%,88%)',
+                          background: showOverlay ? 'hsl(168,62%,95%)' : 'white',
+                          color: showOverlay ? 'hsl(168,62%,36%)' : 'hsl(220,10%,55%)',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          fontFamily: 'Arial, sans-serif',
+                        }}
+                      >
+                        {showOverlay ? 'Hide pose overlay' : 'Show pose overlay'}
+                      </button>
+                    </div>
+                  )}
                   <div
                     className={`rounded-2xl border p-4 text-sm ${
                       fileTooLarge || durationTooLong
@@ -973,20 +1028,53 @@ export default function AnalyzePage() {
           <section className="space-y-5">
             {videoURL && (
               <div className="overflow-hidden rounded-2xl border bg-black" style={{ borderColor: brand.border }}>
-                <video
-                  ref={videoRef}
-                  src={videoURL}
-                  controls
-                  playsInline
-                  className="block w-full bg-black"
-                  style={{ maxHeight: 400 }}
-                />
+                <div className="relative">
+                  <video
+                    ref={videoRef}
+                    src={videoURL}
+                    controls
+                    playsInline
+                    className="block w-full bg-black"
+                    style={{ maxHeight: 400 }}
+                  />
+                  <PoseOverlay
+                    videoRef={videoRef}
+                    sport={sport}
+                    show={showOverlay}
+                    onMeasurementsReady={result => {
+                      setPoseResult(result)
+                      console.log('Pose measurements:', result.measurements)
+                    }}
+                  />
+                </div>
                 <div className="flex items-center gap-2 border-t bg-white px-3.5 py-2.5" style={{ borderColor: brand.border }}>
                   <span className="text-[11px]" style={{ color: brand.textSecondary }}>
                     📹 Click any timestamp in the analysis below to jump to that moment
                   </span>
                 </div>
               </div>
+            )}
+
+            {videoURL && (
+              <button
+                type="button"
+                onClick={() => setShowOverlay(!showOverlay)}
+                style={{
+                  marginTop: -8,
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  border: '1px solid hsl(30,10%,88%)',
+                  background: showOverlay ? 'hsl(168,62%,95%)' : 'white',
+                  color: showOverlay ? 'hsl(168,62%,36%)' : 'hsl(220,10%,55%)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'Arial, sans-serif',
+                  width: 'fit-content',
+                }}
+              >
+                {showOverlay ? 'Hide pose overlay' : 'Show pose overlay'}
+              </button>
             )}
 
             {videoURL && keyMoments.length > 0 && (
@@ -1221,6 +1309,8 @@ export default function AnalyzePage() {
                         if (videoURL) URL.revokeObjectURL(videoURL)
                         setVideoURL(null)
                         setVideoDuration(null)
+                        setPoseResult(null)
+                        setShowOverlay(false)
                         setCoachingVideos({})
                         setChatMessages([])
                         setChatInput('')
