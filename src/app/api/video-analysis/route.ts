@@ -741,18 +741,20 @@ export async function POST(req: NextRequest) {
     poseData,
     storagePath: storagePathInput,
     videoDurationSeconds,
+    lessonId,
   } = body
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('analyses_used, is_subscribed')
+    .select('analyses_used, is_subscribed, role')
     .eq('id', user.id)
     .single()
   const isAdmin = Boolean(user.email && ADMIN_EMAILS.includes(user.email.toLowerCase()))
   const isSubscribed = profile?.is_subscribed === true
+  const isCoach = profile?.role === 'coach'
   const analysesUsed = profile?.analyses_used || 0
 
-  if (!isAdmin && !isSubscribed && analysesUsed >= 3) {
+  if (!isAdmin && !isSubscribed && !isCoach && analysesUsed >= 3) {
     const { data: scoreRows } = await supabase
       .from('analysis_sessions')
       .select('overall_score')
@@ -932,9 +934,11 @@ export async function POST(req: NextRequest) {
       const { data: savedSession } = await supabase.from('analysis_sessions').insert({
         user_id: user.id,
         player_id: playerId || null,
+        lesson_id: lessonId || null,
         sport: normalizedSport || 'tennis',
         source: 'video',
-        published_to_player: true,
+        published_to_player: isCoach ? false : true,
+        coach_verified: false,
         shot_type: shotType || null,
         overall_score: overallScore,
         rating: data.overall_rating,
@@ -954,10 +958,12 @@ export async function POST(req: NextRequest) {
     } else {
       console.log('Skipping save - low confidence + low score')
     }
-    await supabase
-      .from('profiles')
-      .update({ analyses_used: analysesUsed + 1 })
-      .eq('id', user.id)
+    if (!isCoach) {
+      await supabase
+        .from('profiles')
+        .update({ analyses_used: analysesUsed + 1 })
+        .eq('id', user.id)
+    }
 
     if (user.email && overallScore) {
       await sendAnalysisComplete({

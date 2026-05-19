@@ -1,455 +1,1131 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { differenceInDays } from 'date-fns'
-import { Plus, Search, UserIcon, BookOpen, Mail, Send, Trash2 } from 'lucide-react'
-import Link from 'next/link'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Textarea } from '@/components/ui/textarea'
-import ViaBar from '@/components/ViaBar'
-import { cn } from '@/lib/utils'
+import { formatDistanceToNow } from 'date-fns'
 
-type Player = {
+const TEAL = '#1D9E75'
+const TEAL_DARK = '#085041'
+const BORDER = 'hsl(30,10%,88%)'
+const TEXT = 'hsl(220,20%,15%)'
+const TEXT_SEC = 'hsl(220,10%,45%)'
+const TEXT_MUTED = 'hsl(220,10%,65%)'
+const WARM_BG = 'hsl(40,20%,97%)'
+
+interface Player {
   id: string
   name: string
-  email: string
-  age?: number | null
-  skill_level: string
-  notes: string
+  email: string | null
+  sport: string
+  skill_level: string | null
+  age: number | null
   created_at: string
-}
-
-type LatestSession = {
-  player_id: string
-  overall_score: number | null
-  analyzed_at: string | null
+  latest_score: number | null
+  previous_score: number | null
+  score_delta: number | null
+  last_analyzed: string | null
   top_issue: string | null
+  session_count: number
+  score_history: number[]
+  profile_id: string | null
+  is_invited: boolean
 }
 
-function skillBadgeVariant(level: string): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (level === 'advanced') return 'destructive'
-  if (level === 'intermediate') return 'secondary'
-  return 'default'
+type SortMode = 'attention' | 'alpha' | 'recent'
+type SportFilter = 'all' | string
+
+function getUrgency(player: Player): 
+  'regression' | 'no_sessions' | 'stale' | 'ok' {
+  if (!player.latest_score && 
+      player.session_count === 0) return 'no_sessions'
+  if (player.score_delta !== null && 
+      player.score_delta <= -10) return 'regression'
+  if (player.last_analyzed) {
+    const days = Math.floor(
+      (Date.now() - 
+        new Date(player.last_analyzed).getTime()
+      ) / 86400000
+    )
+    if (days > 14) return 'stale'
+  }
+  return 'ok'
 }
 
-export default function PlayersPage() {
-  const [players, setPlayers] = useState<Player[]>([])
-  const [latestByPlayer, setLatestByPlayer] = useState<Record<string, LatestSession>>({})
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [openPlayer, setOpenPlayer] = useState(false)
-  const [openInvite, setOpenInvite] = useState(false)
-  const [invitePlayerId, setInvitePlayerId] = useState('')
-  const [inviteFullName, setInviteFullName] = useState('')
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [invitePhone, setInvitePhone] = useState('')
-  const [inviteSent, setInviteSent] = useState(false)
+function Avatar({ 
+  name, 
+  urgency 
+}: { 
+  name: string
+  urgency: string 
+}) {
+  const initials = name
+    .split(' ')
+    .map(w => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2)
+
+  const colors = {
+    regression: { bg: '#FCEBEB', color: '#A32D2D' },
+    no_sessions: { bg: '#FAEEDA', color: '#633806' },
+    stale: { bg: '#FAEEDA', color: '#633806' },
+    ok: { bg: '#E1F5EE', color: '#085041' },
+  }
+  const c = colors[urgency as keyof typeof colors] 
+    || colors.ok
+
+  return (
+    <div style={{
+      width: 36, height: 36,
+      borderRadius: '50%',
+      background: c.bg,
+      color: c.color,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: 13,
+      fontWeight: 500,
+      flexShrink: 0,
+      fontFamily: 'Arial, sans-serif',
+    }}>
+      {initials}
+    </div>
+  )
+}
+
+function Sparkline({ 
+  scores,
+  urgency,
+}: { 
+  scores: number[]
+  urgency: string
+}) {
+  if (!scores.length) return (
+    <div style={{ width: 28 }} />
+  )
+
+  const max = Math.max(...scores)
+  const color = urgency === 'regression' 
+    ? '#E24B4A' : TEAL
+
+  return (
+    <div style={{
+      display: 'flex',
+      gap: 2,
+      alignItems: 'flex-end',
+      height: 18,
+      flexShrink: 0,
+    }}>
+      {scores.slice(-5).map((s, i, arr) => (
+        <div key={i} style={{
+          width: 4,
+          borderRadius: 1,
+          background: i === arr.length - 1 
+            ? color 
+            : BORDER,
+          height: `${Math.max(20, (s / max) * 100)}%`,
+        }} />
+      ))}
+    </div>
+  )
+}
+
+function PlayerRow({ 
+  player, 
+  onClick,
+  onEdit,
+  onMessage,
+  onDelete,
+}: {
+  player: Player
+  onClick: () => void
+  onEdit: () => void
+  onMessage: () => void
+  onDelete: () => void
+}) {
+  const urgency = getUrgency(player)
+  const [showActions, setShowActions] = 
+    useState(false)
+
+  const rowBg = urgency === 'regression' 
+    ? 'var(--color-background-danger)'
+    : urgency === 'no_sessions' || 
+      urgency === 'stale'
+    ? 'var(--color-background-warning)'
+    : 'white'
+
+  const scoreColor = urgency === 'regression'
+    ? 'var(--color-text-danger)'
+    : player.score_delta && player.score_delta > 0
+    ? TEAL_DARK
+    : TEXT
+
+  const urgencyBadge = urgency === 'regression'
+    ? { label: 'Score dropped', 
+        bg: '#FCEBEB', 
+        color: '#A32D2D',
+        border: '#F09595' }
+    : urgency === 'no_sessions'
+    ? { label: 'No sessions', 
+        bg: '#FAEEDA', 
+        color: '#633806',
+        border: '#EF9F27' }
+    : urgency === 'stale'
+    ? { label: 'No recent session', 
+        bg: '#FAEEDA', 
+        color: '#633806',
+        border: '#EF9F27' }
+    : null
+
+  const lastSeen = player.last_analyzed
+    ? formatDistanceToNow(
+        new Date(player.last_analyzed),
+        { addSuffix: true }
+      )
+    : null
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '11px 20px',
+        borderBottom: `0.5px solid ${BORDER}`,
+        background: rowBg,
+        cursor: 'pointer',
+        transition: 'background 0.1s',
+        fontFamily: 'Arial, sans-serif',
+      }}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
+      onClick={onClick}
+    >
+      <Avatar name={player.name} urgency={urgency} />
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          marginBottom: 2,
+          flexWrap: 'wrap',
+        }}>
+          <span style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: TEXT,
+          }}>
+            {player.name}
+          </span>
+          {urgencyBadge && (
+            <span style={{
+              padding: '1px 7px',
+              borderRadius: 999,
+              background: urgencyBadge.bg,
+              border: `0.5px solid ${urgencyBadge.border}`,
+              fontSize: 10,
+              color: urgencyBadge.color,
+            }}>
+              {urgencyBadge.label}
+            </span>
+          )}
+        </div>
+        <div style={{
+          fontSize: 11,
+          color: TEXT_MUTED,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {[
+            player.sport 
+              ? player.sport.charAt(0).toUpperCase() + 
+                player.sport.slice(1)
+              : null,
+            player.skill_level 
+              ? player.skill_level
+                  .charAt(0).toUpperCase() + 
+                player.skill_level.slice(1)
+              : null,
+            lastSeen || 'Never analyzed',
+            player.top_issue || null,
+          ].filter(Boolean).join(' · ')}
+        </div>
+      </div>
+
+      {/* Sparkline */}
+      {player.score_history.length > 0 && (
+        <Sparkline 
+          scores={player.score_history} 
+          urgency={urgency}
+        />
+      )}
+
+      {/* Score */}
+      <div style={{
+        textAlign: 'right',
+        minWidth: 44,
+        flexShrink: 0,
+      }}>
+        {player.latest_score !== null ? (
+          <>
+            <div style={{
+              fontSize: 18,
+              fontWeight: 500,
+              color: scoreColor,
+              lineHeight: 1,
+            }}>
+              {player.latest_score}
+            </div>
+            {player.score_delta !== null && 
+              player.score_delta !== 0 && (
+              <div style={{
+                fontSize: 10,
+                color: player.score_delta > 0 
+                  ? TEAL : 'var(--color-text-danger)',
+              }}>
+                {player.score_delta > 0 ? '↑' : '↓'}{' '}
+                {Math.abs(player.score_delta)}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{
+            fontSize: 13,
+            color: TEXT_MUTED,
+          }}>
+            —
+          </div>
+        )}
+      </div>
+
+      {/* Action buttons — show on hover */}
+      <div style={{
+        display: 'flex',
+        gap: 4,
+        marginLeft: 4,
+        opacity: showActions ? 1 : 0,
+        transition: 'opacity 0.15s',
+        flexShrink: 0,
+      }}>
+        <button
+          onClick={e => { 
+            e.stopPropagation()
+            onMessage() 
+          }}
+          aria-label="Message player"
+          style={{
+            width: 30, height: 30,
+            borderRadius: 8,
+            border: `0.5px solid ${BORDER}`,
+            background: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            color: TEXT_SEC,
+            fontSize: 14,
+          }}
+        >
+          <svg width="14" height="14" 
+            viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5">
+            <path d="M4 4h16v12H4z"/>
+            <path d="M4 16l4-4"/>
+          </svg>
+        </button>
+        <button
+          onClick={e => { 
+            e.stopPropagation()
+            onEdit() 
+          }}
+          aria-label="Edit player account"
+          style={{
+            width: 30, height: 30,
+            borderRadius: 8,
+            border: `0.5px solid ${BORDER}`,
+            background: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            color: TEXT_SEC,
+            fontSize: 14,
+          }}
+        >
+          <svg width="14" height="14"
+            viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
+        <button
+          onClick={e => { 
+            e.stopPropagation()
+            if (confirm(
+              `Delete ${player.name}? ` +
+              'This cannot be undone.'
+            )) onDelete()
+          }}
+          aria-label="Delete player"
+          style={{
+            width: 30, height: 30,
+            borderRadius: 8,
+            border: `0.5px solid ${BORDER}`,
+            background: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            color: 'var(--color-text-danger)',
+            fontSize: 14,
+          }}
+        >
+          <svg width="14" height="14"
+            viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.5">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4h6v2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Edit player modal ────────────────────────────
+function EditPlayerModal({
+  player,
+  onClose,
+  onSaved,
+}: {
+  player: Player
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const supabase = createClient()
+  const [name, setName] = useState(player.name)
+  const [email, setEmail] = useState(
+    player.email || ''
+  )
+  const [sport, setSport] = useState(player.sport)
+  const [skillLevel, setSkillLevel] = useState(
+    player.skill_level || 'beginner'
+  )
+  const [age, setAge] = useState(
+    player.age?.toString() || ''
+  )
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState<{
-    name: string
-    email: string
-    age: string
-    skill_level: string | null
-    notes: string
-    sport: string
-  }>({ name: '', email: '', age: '', skill_level: 'beginner', notes: '', sport: 'tennis' })
 
-  const supabase = useMemo(() => createClient(), [])
-  const [magicLink, setMagicLink] = useState('')
-
-  const filtered = useMemo(
-    () =>
-      players.filter(
-        player =>
-          player.name.toLowerCase().includes(search.toLowerCase()) ||
-          player.email?.toLowerCase().includes(search.toLowerCase())
-      ),
-    [players, search]
-  )
-
-  const loadPlayers = useCallback(async () => {
-    const { data } = await supabase.from('players').select('*').order('name')
-    const loadedPlayers = data || []
-    setPlayers(loadedPlayers)
-    const playerIds = loadedPlayers.map(player => player.id)
-    if (playerIds.length > 0) {
-      const { data: latestSessions } = await supabase
-        .from('analysis_sessions')
-        .select('player_id, overall_score, analyzed_at, top_issue')
-        .in('player_id', playerIds)
-        .order('analyzed_at', { ascending: false })
-      const latestMap = (latestSessions || []).reduce<Record<string, LatestSession>>((acc, session) => {
-        if (session.player_id && !acc[session.player_id]) acc[session.player_id] = session
-        return acc
-      }, {})
-      setLatestByPlayer(latestMap)
-    } else {
-      setLatestByPlayer({})
-    }
-    setLoading(false)
-  }, [supabase])
-
-  useEffect(() => {
-    queueMicrotask(() => {
-      void loadPlayers()
-    })
-  }, [loadPlayers])
-
-  const formFields: Array<{
-    label: string
-    key: 'name' | 'age' | 'email'
-    placeholder: string
-    type: string
-  }> = useMemo(
-    () => [
-      { label: 'Name *', key: 'name', placeholder: 'Jane Smith', type: 'text' },
-      { label: 'Age', key: 'age', placeholder: '12', type: 'number' },
-      { label: 'Email', key: 'email', placeholder: 'jane@email.com', type: 'email' },
-    ],
-    []
-  )
-
-  async function handleDelete(playerId: string, playerName: string) {
-    if (!confirm(`Delete ${playerName}? This removes lessons, drills, and videos for this player.`)) return
-    await supabase.from('players').delete().eq('id', playerId)
-    loadPlayers()
-  }
-
-  async function handleSave() {
-    if (!form.name) return
+  async function save() {
     setSaving(true)
-    const age = Number.parseInt(form.age, 10)
-    await supabase.from('players').insert({
-      ...form,
-      age: Number.isNaN(age) ? null : age,
-    })
-    setForm({ name: '', email: '', age: '', skill_level: 'beginner', notes: '', sport: 'tennis' })
-    setOpenPlayer(false)
-    setSaving(false)
-    loadPlayers()
-  }
-
-  async function handleInvite() {
-    if (!inviteEmail || !inviteFullName.trim() || !invitePlayerId) return
-    setSaving(true)
-    try {
-      const res = await fetch('/api/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail, full_name: inviteFullName, phone: invitePhone, player_id: invitePlayerId }),
+    await supabase
+      .from('players')
+      .update({
+        name,
+        email: email || null,
+        sport,
+        skill_level: skillLevel,
+        age: age ? parseInt(age) : null,
       })
-      const data = await res.json()
-      if (data.error) {
-        alert(`Failed: ${data.error}`)
-        setSaving(false)
-        return
-      }
-      setMagicLink(data.magic_link || '')
-      setInviteSent(true)
-    } catch (error) {
-      alert(`Failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
+      .eq('id', player.id)
+    onSaved()
     setSaving(false)
+  }
+
+  const inputStyle = {
+    width: '100%',
+    padding: '9px 12px',
+    borderRadius: 9,
+    border: `0.5px solid ${BORDER}`,
+    background: WARM_BG,
+    fontSize: 13,
+    color: TEXT,
+    fontFamily: 'Arial, sans-serif',
+    outline: 'none',
+  }
+
+  const labelStyle = {
+    fontSize: 11,
+    color: TEXT_MUTED,
+    marginBottom: 4,
+    display: 'block',
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <ViaBar role="coach" />
-
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">Players</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {players.length} player{players.length !== 1 ? 's' : ''} on your roster
-          </p>
-        </div>
-        <Button onClick={() => setOpenPlayer(true)} className="gap-2 shrink-0">
-          <Plus size={16} /> Add player
-        </Button>
-      </div>
-
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name or email..."
-          className="h-11 rounded-xl border-border bg-background pl-10"
-        />
-      </div>
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-muted/20 py-16 text-center">
-          <UserIcon className="mx-auto mb-3 size-10 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">No players match your search.</p>
-          {players.length === 0 && (
-            <Button className="mt-4" variant="secondary" onClick={() => setOpenPlayer(true)}>
-              Add your first player
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map(player => {
-            const latest = latestByPlayer[player.id]
-            const daysSince = latest?.analyzed_at
-              ? differenceInDays(new Date(), new Date(latest.analyzed_at))
-              : null
-            return (
-              <div
-                key={player.id}
-                className="flex flex-col rounded-2xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"
-              >
-              <div className="mb-4 flex items-start justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/15 text-lg font-bold text-primary">
-                    {player.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-foreground">{player.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {player.age ? `Age ${player.age}` : 'Age not set'} · {player.email || 'No email'}
-                    </p>
-                  </div>
-                </div>
-                <Badge variant={skillBadgeVariant(player.skill_level)} className="capitalize shrink-0">
-                  {player.skill_level}
-                </Badge>
-              </div>
-              <div className="mb-4 rounded-xl border border-border bg-muted/20 px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold text-muted-foreground">Latest analysis</span>
-                  {latest?.overall_score ? (
-                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
-                      {latest.overall_score}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">No score</span>
-                  )}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {daysSince === null
-                    ? 'Never analyzed'
-                    : daysSince === 0
-                      ? 'Last analyzed today'
-                      : `Last analyzed ${daysSince} day${daysSince === 1 ? '' : 's'} ago`}
-                </p>
-                {latest?.top_issue && (
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    Focus: {latest.top_issue}
-                  </p>
-                )}
-              </div>
-              <div className="mt-auto flex gap-2">
-                <Link
-                  href={`/dashboard/players/${player.id}`}
-                  className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'flex flex-1 items-center justify-center gap-1.5')}
-                >
-                  <BookOpen size={14} /> Profile
-                </Link>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => {
-                    setInvitePlayerId(player.id)
-                    setInviteFullName('')
-                    setInviteEmail(player.email || '')
-                    setInvitePhone('')
-                    setInviteSent(false)
-                    setOpenInvite(true)
-                  }}
-                >
-                  <Mail size={14} />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
-                  onClick={() => handleDelete(player.id, player.name)}
-                >
-                  <Trash2 size={14} />
-                </Button>
-              </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      <Dialog open={openPlayer} onOpenChange={setOpenPlayer}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add player</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            {formFields.map(({ label, key, placeholder, type }) => (
-              <div key={key} className="space-y-2">
-                <Label htmlFor={key}>{label}</Label>
-                <Input
-                  id={key}
-                  type={type}
-                  placeholder={placeholder}
-                  value={form[key]}
-                  onChange={e => setForm({ ...form, [key]: e.target.value })}
-                  className="rounded-xl"
-                />
-              </div>
-            ))}
-            <div className="space-y-2">
-              <Label>Skill level</Label>
-              <Select value={form.skill_level ?? 'beginner'} onValueChange={v => setForm({ ...form, skill_level: v })}>
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="beginner">Beginner</SelectItem>
-                  <SelectItem value="intermediate">Intermediate</SelectItem>
-                  <SelectItem value="advanced">Advanced</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Sport</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { value: 'tennis', label: 'Tennis' },
-                  { value: 'golf', label: 'Golf' },
-                  { value: 'pickleball', label: 'Pickleball' },
-                  { value: 'basketball', label: 'Basketball' },
-                ].map(s => (
-                  <button
-                    key={s.value}
-                    type="button"
-                    onClick={() => setForm({ ...form, sport: s.value })}
-                    className={cn(
-                      'rounded-xl border px-3 py-2.5 text-xs font-medium transition-colors',
-                      form.sport === s.value
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-muted/40 text-muted-foreground hover:bg-muted'
-                    )}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Textarea
-                id="notes"
-                value={form.notes}
-                onChange={e => setForm({ ...form, notes: e.target.value })}
-                placeholder="Any initial notes…"
-                rows={3}
-                className="rounded-xl resize-none"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setOpenPlayer(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={saving || !form.name}>
-                {saving ? 'Saving…' : 'Add player'}
-              </Button>
-            </div>
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,.45)',
+      zIndex: 200,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 20,
+      fontFamily: 'Arial, sans-serif',
+    }}
+      onClick={e => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div style={{
+        background: 'white',
+        borderRadius: 16,
+        width: '100%',
+        maxWidth: 420,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          padding: '14px 18px',
+          borderBottom: `0.5px solid ${BORDER}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div style={{
+            fontSize: 15,
+            fontWeight: 500,
+            color: TEXT,
+          }}>
+            Edit player
           </div>
-        </DialogContent>
-      </Dialog>
+          <button
+            onClick={onClose}
+            style={{
+              background: WARM_BG,
+              border: `0.5px solid ${BORDER}`,
+              borderRadius: 7,
+              width: 28, height: 28,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              fontSize: 16,
+              color: TEXT_MUTED,
+            }}
+          >
+            ×
+          </button>
+        </div>
 
-      <Dialog open={openInvite} onOpenChange={setOpenInvite}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Invite to athlete portal</DialogTitle>
-          </DialogHeader>
-          {inviteSent ? (
-            <div className="space-y-4 pt-2">
-              <p className="text-center text-sm font-medium text-foreground">Link ready</p>
-              <p className="text-center text-sm text-muted-foreground">
-                Share this login link. It expires in 24 hours.
-              </p>
-              {magicLink && (
-                <div className="space-y-2">
-                  <div className="rounded-xl border border-border bg-muted/50 p-3 font-mono text-xs break-all text-foreground">
-                    {magicLink}
-                  </div>
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      navigator.clipboard.writeText(magicLink)
-                      alert('Copied!')
-                    }}
-                  >
-                    Copy link
-                  </Button>
-                </div>
-              )}
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  setOpenInvite(false)
-                  setMagicLink('')
+        <div style={{
+          padding: '16px 18px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+        }}>
+          <div>
+            <label style={labelStyle}>Name</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Email</label>
+            <input
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="player@email.com"
+              style={inputStyle}
+            />
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 10,
+          }}>
+            <div>
+              <label style={labelStyle}>Sport</label>
+              <select
+                value={sport}
+                onChange={e => setSport(e.target.value)}
+                style={{
+                  ...inputStyle,
+                  cursor: 'pointer',
                 }}
               >
-                Done
-              </Button>
+                <option value="tennis">Tennis</option>
+                <option value="golf">Golf</option>
+                <option value="baseball">Baseball</option>
+                <option value="basketball">Basketball</option>
+                <option value="pickleball">Pickleball</option>
+              </select>
             </div>
-          ) : (
-            <div className="space-y-4 pt-2">
-              <p className="text-sm text-muted-foreground">
-                Send this email a magic link so they can sign in and access this athlete&apos;s drills, videos, and booking — same account if they&apos;re the player or a guardian.
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="invite-name">Full name</Label>
-                <Input
-                  id="invite-name"
-                  value={inviteFullName}
-                  onChange={e => setInviteFullName(e.target.value)}
-                  placeholder="Parent or account holder"
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="invite-email">Email</Label>
-                <Input
-                  id="invite-email"
-                  type="email"
-                  value={inviteEmail}
-                  onChange={e => setInviteEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="invite-phone">Phone</Label>
-                <Input
-                  id="invite-phone"
-                  value={invitePhone}
-                  onChange={e => setInvitePhone(e.target.value)}
-                  placeholder="555-555-5555"
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setOpenInvite(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleInvite} disabled={saving || !inviteEmail || !inviteFullName.trim()} className="gap-2">
-                  <Send size={14} /> {saving ? 'Sending…' : 'Send invite'}
-                </Button>
-              </div>
+            <div>
+              <label style={labelStyle}>Level</label>
+              <select
+                value={skillLevel}
+                onChange={e => 
+                  setSkillLevel(e.target.value)
+                }
+                style={{
+                  ...inputStyle,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="advanced">Advanced</option>
+                <option value="elite">Elite</option>
+              </select>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </div>
+          <div>
+            <label style={labelStyle}>Age</label>
+            <input
+              value={age}
+              onChange={e => setAge(e.target.value)}
+              placeholder="e.g. 16"
+              type="number"
+              style={inputStyle}
+            />
+          </div>
+
+          <div style={{
+            display: 'flex',
+            gap: 8,
+            marginTop: 4,
+          }}>
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1,
+                padding: '11px',
+                borderRadius: 10,
+                background: 'white',
+                border: `0.5px solid ${BORDER}`,
+                color: TEXT_SEC,
+                fontSize: 13,
+                cursor: 'pointer',
+                fontFamily: 'Arial, sans-serif',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              style={{
+                flex: 2,
+                padding: '11px',
+                borderRadius: 10,
+                background: saving ? '#ccc' : TEAL,
+                border: 'none',
+                color: 'white',
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: saving
+                  ? 'default' : 'pointer',
+                fontFamily: 'Arial, sans-serif',
+              }}
+            >
+              {saving ? 'Saving...' : 'Save changes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ────────────────────────────────────
+export default function PlayersPage() {
+  const router = useRouter()
+  const supabase = createClient()
+
+  const [players, setPlayers] = useState<Player[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [sortMode, setSortMode] =
+    useState<SortMode>('attention')
+  const [sportFilter, setSportFilter] =
+    useState<SportFilter>('all')
+  const [editingPlayer, setEditingPlayer] =
+    useState<Player | null>(null)
+
+  useEffect(() => {
+    loadPlayers()
+  }, [])
+
+  async function loadPlayers() {
+    setLoading(true)
+
+    // Fetch players with their latest
+    // analysis session data
+    const { data: playerRows } = await supabase
+      .from('players')
+      .select('*')
+      .order('name', { ascending: true })
+
+    if (!playerRows) {
+      setLoading(false)
+      return
+    }
+
+    // For each player get their sessions
+    const enriched = await Promise.all(
+      playerRows.map(async p => {
+        const { data: sessions } = await supabase
+          .from('analysis_sessions')
+          .select(
+            'overall_score, analyzed_at, top_issue'
+          )
+          .eq('player_id', p.id)
+          .order('analyzed_at', { ascending: true })
+
+        const sortedSessions = sessions || []
+        const latest = sortedSessions[
+          sortedSessions.length - 1
+        ]
+        const prev = sortedSessions[
+          sortedSessions.length - 2
+        ]
+
+        const scoreHistory = sortedSessions
+          .map(s => s.overall_score)
+          .filter(Boolean)
+          .slice(-5)
+
+        const scoreDelta =
+          latest?.overall_score && 
+          prev?.overall_score
+            ? latest.overall_score - 
+              prev.overall_score
+            : null
+
+        // Get profile for invite status
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('player_id', p.id)
+          .single()
+
+        return {
+          ...p,
+          latest_score: 
+            latest?.overall_score || null,
+          previous_score: 
+            prev?.overall_score || null,
+          score_delta: scoreDelta,
+          last_analyzed: 
+            latest?.analyzed_at || null,
+          top_issue: latest?.top_issue || null,
+          session_count: sortedSessions.length,
+          score_history: scoreHistory,
+          profile_id: profile?.id || null,
+          is_invited: !!profile,
+        } as Player
+      })
+    )
+
+    setPlayers(enriched)
+    setLoading(false)
+  }
+
+  async function deletePlayer(player: Player) {
+    // Delete sessions, drills, profile, player
+    await supabase
+      .from('analysis_sessions')
+      .delete()
+      .eq('player_id', player.id)
+
+    await supabase
+      .from('drills')
+      .delete()
+      .eq('player_id', player.id)
+
+    if (player.profile_id) {
+      // Delete auth user via service role
+      // This requires a server action
+      await fetch('/api/admin/delete-player', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({ 
+          playerId: player.id,
+          profileId: player.profile_id,
+        }),
+      })
+    }
+
+    await supabase
+      .from('players')
+      .delete()
+      .eq('id', player.id)
+
+    loadPlayers()
+  }
+
+  function messagePlayer(player: Player) {
+    if (!player.email) {
+      alert(`No email on file for ${player.name}`)
+      return
+    }
+    window.open(`mailto:${player.email}`)
+  }
+
+  // ── Filtering + sorting ──────────────────────
+  const sports = useMemo(() => {
+    const s = new Set(players.map(p => p.sport))
+    return Array.from(s).filter(Boolean)
+  }, [players])
+
+  const filtered = useMemo(() => {
+    let list = players.filter(p => {
+      const matchSearch = !search ||
+        p.name.toLowerCase().includes(
+          search.toLowerCase()
+        ) ||
+        (p.email || '').toLowerCase().includes(
+          search.toLowerCase()
+        )
+      const matchSport = sportFilter === 'all' ||
+        p.sport === sportFilter
+      return matchSearch && matchSport
+    })
+
+    if (sortMode === 'attention') {
+      const urgencyOrder = {
+        regression: 0,
+        no_sessions: 1,
+        stale: 2,
+        ok: 3,
+      }
+      list = [...list].sort((a, b) => {
+        const ua = urgencyOrder[getUrgency(a)]
+        const ub = urgencyOrder[getUrgency(b)]
+        if (ua !== ub) return ua - ub
+        return a.name.localeCompare(b.name)
+      })
+    } else if (sortMode === 'alpha') {
+      list = [...list].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      )
+    } else if (sortMode === 'recent') {
+      list = [...list].sort((a, b) => {
+        if (!a.last_analyzed) return 1
+        if (!b.last_analyzed) return -1
+        return new Date(b.last_analyzed).getTime() -
+          new Date(a.last_analyzed).getTime()
+      })
+    }
+
+    return list
+  }, [players, search, sportFilter, sortMode])
+
+  // ── Section grouping for attention sort ──────
+  const sections = useMemo(() => {
+    if (sortMode !== 'attention') {
+      return [{ label: null, players: filtered }]
+    }
+    const attention = filtered.filter(p => {
+      const u = getUrgency(p)
+      return u === 'regression' || 
+             u === 'no_sessions' ||
+             u === 'stale'
+    })
+    const active = filtered.filter(p =>
+      getUrgency(p) === 'ok'
+    )
+    return [
+      attention.length > 0 
+        ? { label: 'Needs attention', players: attention }
+        : null,
+      active.length > 0
+        ? { label: 'Active', players: active }
+        : null,
+    ].filter(Boolean) as {
+      label: string | null
+      players: Player[]
+    }[]
+  }, [filtered, sortMode])
+
+  const needsAttentionCount = useMemo(() =>
+    players.filter(p => {
+      const u = getUrgency(p)
+      return u !== 'ok'
+    }).length,
+    [players]
+  )
+
+  if (loading) {
+    return (
+      <div style={{
+        maxWidth: 800,
+        margin: '0 auto',
+        padding: '40px 24px',
+        fontFamily: 'Arial, sans-serif',
+      }}>
+        {[1,2,3,4,5].map(i => (
+          <div key={i} style={{
+            height: 56,
+            borderRadius: 10,
+            background: WARM_BG,
+            marginBottom: 8,
+            opacity: 1 - i * 0.15,
+          }} />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      maxWidth: 800,
+      margin: '0 auto',
+      padding: '0 0 40px',
+      fontFamily: 'Arial, sans-serif',
+    }}>
+
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 18,
+        flexWrap: 'wrap',
+        gap: 10,
+      }}>
+        <div>
+          <h1 style={{
+            fontSize: 24,
+            fontWeight: 700,
+            color: TEXT,
+            letterSpacing: '-.5px',
+            marginBottom: 3,
+          }}>
+            Players
+          </h1>
+          <p style={{
+            fontSize: 12,
+            color: TEXT_MUTED,
+          }}>
+            {players.length} players
+            {needsAttentionCount > 0 && (
+              <span style={{
+                color: 'var(--color-text-danger)',
+                marginLeft: 6,
+              }}>
+                · {needsAttentionCount} need attention
+              </span>
+            )}
+          </p>
+        </div>
+        <button
+          onClick={() => 
+            router.push('/dashboard/players/new')
+          }
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '9px 16px',
+            borderRadius: 10,
+            background: TEAL,
+            border: 'none',
+            color: 'white',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer',
+            fontFamily: 'Arial, sans-serif',
+          }}
+        >
+          <svg width="14" height="14"
+            viewBox="0 0 24 24" fill="none"
+            stroke="white" strokeWidth="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add player
+        </button>
+      </div>
+
+      {/* Search + filters */}
+      <div style={{
+        background: 'white',
+        border: `0.5px solid ${BORDER}`,
+        borderRadius: '14px 14px 0 0',
+        borderBottom: 'none',
+        padding: '12px 18px',
+        display: 'flex',
+        gap: 10,
+        alignItems: 'center',
+        flexWrap: 'wrap',
+      }}>
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          minWidth: 200,
+        }}>
+          <svg width="15" height="15"
+            viewBox="0 0 24 24" fill="none"
+            stroke={TEXT_MUTED} strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or email..."
+            style={{
+              flex: 1,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              fontSize: 13,
+              color: TEXT,
+              fontFamily: 'Arial, sans-serif',
+            }}
+          />
+        </div>
+
+        {/* Sport filter */}
+        {sports.length > 1 && (
+          <select
+            value={sportFilter}
+            onChange={e => 
+              setSportFilter(e.target.value)
+            }
+            style={{
+              padding: '6px 10px',
+              borderRadius: 8,
+              border: `0.5px solid ${BORDER}`,
+              background: WARM_BG,
+              fontSize: 12,
+              color: TEXT_SEC,
+              fontFamily: 'Arial, sans-serif',
+              outline: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <option value="all">All sports</option>
+            {sports.map(s => (
+              <option key={s} value={s}>
+                {s.charAt(0).toUpperCase() + 
+                  s.slice(1)}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* Sort */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(
+            [
+              { key: 'attention', label: 'Attention' },
+              { key: 'alpha', label: 'A–Z' },
+              { key: 'recent', label: 'Recent' },
+            ] as { key: SortMode; label: string }[]
+          ).map(s => (
+            <button
+              key={s.key}
+              onClick={() => setSortMode(s.key)}
+              style={{
+                padding: '5px 10px',
+                borderRadius: 7,
+                background: sortMode === s.key
+                  ? TEXT : 'white',
+                border: `0.5px solid ${sortMode === s.key
+                  ? TEXT : BORDER}`,
+                color: sortMode === s.key
+                  ? 'white' : TEXT_SEC,
+                fontSize: 11,
+                cursor: 'pointer',
+                fontFamily: 'Arial, sans-serif',
+                transition: 'all 0.1s',
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Player list */}
+      <div style={{
+        background: 'white',
+        border: `0.5px solid ${BORDER}`,
+        borderRadius: '0 0 14px 14px',
+        overflow: 'hidden',
+      }}>
+        {sections.map((section, si) => (
+          <div key={si}>
+            {section.label && (
+              <div style={{
+                padding: '5px 20px 3px',
+                fontSize: 10,
+                fontWeight: 600,
+                color: section.label === 
+                  'Needs attention'
+                  ? 'var(--color-text-danger)'
+                  : TEXT_MUTED,
+                textTransform: 'uppercase',
+                letterSpacing: '.06em',
+                borderTop: si > 0
+                  ? `0.5px solid ${BORDER}`
+                  : 'none',
+                marginTop: si > 0 ? 6 : 0,
+              }}>
+                {section.label}
+              </div>
+            )}
+            {section.players.map(player => (
+              <PlayerRow
+                key={player.id}
+                player={player}
+                onClick={() =>
+                  router.push(
+                    `/dashboard/players/${player.id}`
+                  )
+                }
+                onEdit={() => 
+                  setEditingPlayer(player)
+                }
+                onMessage={() => 
+                  messagePlayer(player)
+                }
+                onDelete={() => 
+                  deletePlayer(player)
+                }
+              />
+            ))}
+          </div>
+        ))}
+
+        {filtered.length === 0 && (
+          <div style={{
+            padding: '40px',
+            textAlign: 'center',
+            color: TEXT_MUTED,
+            fontSize: 13,
+          }}>
+            {search
+              ? `No players matching "${search}"`
+              : 'No players yet. Add your first player.'}
+          </div>
+        )}
+      </div>
+
+      {/* Edit modal */}
+      {editingPlayer && (
+        <EditPlayerModal
+          player={editingPlayer}
+          onClose={() => setEditingPlayer(null)}
+          onSaved={() => {
+            setEditingPlayer(null)
+            loadPlayers()
+          }}
+        />
+      )}
     </div>
   )
 }

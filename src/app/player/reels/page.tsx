@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
 import { setPendingReelVideoFile } from '@/lib/pending-reel'
 import { parseStoragePath } from '@/lib/reel-storage'
+import ViaBlob from '@/components/ViaBlob'
 
 const TEAL = 'hsl(168,62%,36%)'
 const TEAL_DARK = 'hsl(168,62%,28%)'
@@ -17,18 +18,6 @@ const TEXT_MUTED = 'hsl(220,10%,65%)'
 const WARM_BG = 'hsl(40,20%,97%)'
 
 const CSS = `
-  @keyframes viaMorph {
-    0%   { border-radius: 62% 38% 46% 54% / 60% 44% 56% 40%; }
-    50%  { border-radius: 54% 46% 38% 62% / 56% 40% 60% 44%; }
-    100% { border-radius: 62% 38% 46% 54% / 60% 44% 56% 40%; }
-  }
-  @keyframes viaInner {
-    0%   { border-radius: 40% 60% 60% 40% / 40% 60% 40% 60%; }
-    50%  { border-radius: 60% 40% 40% 60% / 60% 40% 60% 40%; }
-    100% { border-radius: 40% 60% 60% 40% / 40% 60% 40% 60%; }
-  }
-  .via-blob { animation: viaMorph 4s ease-in-out infinite; }
-  .via-inner { animation: viaInner 3s ease-in-out infinite; }
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0; }
@@ -562,24 +551,7 @@ function SessionDetail({
                 border: '0.5px solid rgba(29,158,117,.12)',
               }}
             >
-              <div
-                className="via-blob"
-                style={{
-                  width: 18,
-                  height: 18,
-                  background: TEAL,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  marginTop: 1,
-                }}
-              >
-                <div
-                  className="via-inner"
-                  style={{ width: 6, height: 6, background: 'rgba(255,255,255,.28)' }}
-                />
-              </div>
+              <ViaBlob size={20} style={{ marginTop: 1 }} />
               <p style={{ fontSize: 12, color: TEXT, lineHeight: 1.65, margin: 0 }}>
                 {String(
                   session.full_result?.via_summary || session.full_result?.biggest_win,
@@ -934,23 +906,7 @@ export default function ReelsPage() {
             fontFamily: 'Arial, sans-serif',
           }}
         >
-          <div
-            className="via-blob"
-            style={{
-              width: 18,
-              height: 18,
-              background: TEAL,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <div
-              className="via-inner"
-              style={{ width: 6, height: 6, background: 'rgba(255,255,255,.28)' }}
-            />
-          </div>
+          <ViaBlob size={18} />
           <span style={{ fontSize: 12, fontWeight: 600, color: TEAL_DARK }}>
             Add reel with Via
           </span>
@@ -1013,23 +969,7 @@ export default function ReelsPage() {
             textAlign: 'center',
           }}
         >
-          <div
-            className="via-blob"
-            style={{
-              width: 36,
-              height: 36,
-              background: TEAL,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 12px',
-            }}
-          >
-            <div
-              className="via-inner"
-              style={{ width: 13, height: 13, background: 'rgba(255,255,255,.28)' }}
-            />
-          </div>
+          <ViaBlob size={36} style={{ margin: '0 auto 12px' }} />
           <div style={{ fontSize: 15, fontWeight: 700, color: TEXT, marginBottom: 6 }}>
             {filter === 'all' ? 'No reels yet' : `No ${filter} reels yet`}
           </div>
@@ -1136,27 +1076,7 @@ export default function ReelsPage() {
                 flexShrink: 0,
               }}
             >
-              <div
-                className="via-blob"
-                style={{
-                  width: 28,
-                  height: 28,
-                  background: '#1D9E75',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <div
-                  className="via-inner"
-                  style={{
-                    width: 10,
-                    height: 10,
-                    background: 'rgba(255,255,255,.28)',
-                  }}
-                />
-              </div>
+              <ViaBlob size={28} />
               <div style={{ flex: 1 }}>
                 <div
                   style={{
@@ -1211,29 +1131,10 @@ export default function ReelsPage() {
                   }}
                 >
                   {m.role === 'assistant' && (
-                    <div
-                      className="via-blob"
-                      style={{
-                        width: 20,
-                        height: 20,
-                        background: '#1D9E75',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        marginRight: 7,
-                        marginTop: 2,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 7,
-                          height: 7,
-                          background: 'rgba(255,255,255,.28)',
-                          borderRadius: '50%',
-                        }}
-                      />
-                    </div>
+                    <ViaBlob
+                      size={20}
+                      style={{ marginRight: 7, marginTop: 2 }}
+                    />
                   )}
                   <div
                     style={{

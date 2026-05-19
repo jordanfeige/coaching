@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { CalendarDays, Users, Dumbbell, Video, LogOut, Megaphone, UserRoundCog, TrendingUp } from 'lucide-react'
+import { CalendarDays, Users, Video, LogOut, Megaphone, TrendingUp } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { brand } from '@/lib/brand'
 import { isAdmin as hasAdminAccess } from '@/lib/admin'
@@ -14,8 +14,6 @@ const nav = [
   { href: '/dashboard/analytics', label: 'Pulse', icon: TrendingUp },
   { href: '/dashboard/schedule', label: 'Schedule', icon: CalendarDays },
   { href: '/dashboard/players', label: 'Players', icon: Users },
-  { href: '/dashboard/accounts', label: 'Accounts', icon: UserRoundCog },
-  { href: '/dashboard/drills', label: 'Drills', icon: Dumbbell },
   { href: '/dashboard/video', label: 'Reels', icon: Video },
   { href: '/dashboard/bulletin', label: 'Bulletin', icon: Megaphone },
 ]
@@ -55,7 +53,7 @@ export default function Sidebar() {
           <BrandMark size="md" href="/dashboard" />
         </div>
         <nav className="flex-1 space-y-0.5 p-3">
-          {nav.filter(item => item.href !== '/dashboard/accounts' || isAdmin).map(({ href, label, icon: Icon }) => {
+          {nav.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
             return (
@@ -131,7 +129,7 @@ export default function Sidebar() {
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t px-2 py-2 md:hidden" style={{ background: brand.card, borderColor: brand.border }}>
         {nav
-          .filter(n => n.href !== '/dashboard' && (n.href !== '/dashboard/accounts' || isAdmin))
+          .filter(n => n.href !== '/dashboard')
           .map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(href + '/')
             return (

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback } from 'react'
-import { Loader2, ArrowLeft } from 'lucide-react'
+import { Loader2, ArrowLeft, Upload } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { takePendingReelVideoFile } from '@/lib/pending-reel'
 import AnalysisResultStepper, {
@@ -84,6 +84,23 @@ function NewReelPageContent() {
   const [textDescription, setTextDescription] = useState('')
   const [autoText, setAutoText] = useState(false)
   const autoVideoStarted = useRef(false)
+  const hasPendingFile = useRef(false)
+
+  async function handleFileSelect(nextFile: File | null) {
+    setError('')
+    if (!nextFile) return
+    if (videoURL) URL.revokeObjectURL(videoURL)
+    setFile(nextFile)
+    setVideoURL(URL.createObjectURL(nextFile))
+    setPoseResult(null)
+    autoVideoStarted.current = false
+    try {
+      const duration = await getVideoDuration(nextFile)
+      if (Number.isFinite(duration)) setVideoDuration(duration)
+    } catch {
+      setVideoDuration(null)
+    }
+  }
 
   useEffect(() => {
     async function init() {
@@ -122,14 +139,8 @@ function NewReelPageContent() {
 
       const pendingFile = takePendingReelVideoFile()
       if (pendingFile && !isTextMode) {
-        setFile(pendingFile)
-        setVideoURL(URL.createObjectURL(pendingFile))
-        try {
-          const duration = await getVideoDuration(pendingFile)
-          if (Number.isFinite(duration)) setVideoDuration(duration)
-        } catch {
-          setVideoDuration(null)
-        }
+        hasPendingFile.current = true
+        await handleFileSelect(pendingFile)
       }
 
       setLoading(false)
@@ -230,6 +241,7 @@ function NewReelPageContent() {
 
   useEffect(() => {
     if (loading || isTextMode || !file || autoVideoStarted.current) return
+    if (!hasPendingFile.current) return
     autoVideoStarted.current = true
     void analyzeVideo()
   }, [loading, isTextMode, file, analyzeVideo])
@@ -436,19 +448,37 @@ function NewReelPageContent() {
               </span>
             </div>
           )}
-          {!analyzing && !file && (
-            <div
+          {!file && !analyzing && (
+            <label
               style={{
-                padding: 24,
-                textAlign: 'center',
-                background: WARM_BG,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 28,
                 borderRadius: 12,
-                fontSize: 13,
-                color: TEXT_MUTED,
+                border: `1.5px dashed ${TEAL}`,
+                background: WARM_BG,
+                cursor: 'pointer',
+                textAlign: 'center',
               }}
             >
-              No video found. Go back and upload from Reels.
-            </div>
+              <Upload size={28} style={{ color: TEAL, marginBottom: 10 }} />
+              <span style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>
+                Drop your video or tap to upload
+              </span>
+              <span style={{ fontSize: 12, color: TEXT_MUTED, marginTop: 6 }}>
+                Up to {MAX_VIDEO_DURATION_SECONDS}s · {MAX_VIDEO_FILE_MB} MB max
+              </span>
+              <input
+                type="file"
+                accept="video/*"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  void handleFileSelect(e.target.files?.[0] ?? null)
+                }}
+              />
+            </label>
           )}
           {file && !analyzing && (
             <button
@@ -467,7 +497,7 @@ function NewReelPageContent() {
                 fontFamily: 'Arial, sans-serif',
               }}
             >
-              Add to Reels
+              Analyze →
             </button>
           )}
         </div>

@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { differenceInDays, format } from 'date-fns'
 import { Send, X } from 'lucide-react'
 import ViaBlob from '@/components/ViaBlob'
+import ViaDrillSaveCard from '@/components/ViaDrillSaveCard'
+import type { ViaCreateDrill } from '@/lib/via-drill'
 
 const TEAL = 'hsl(168,62%,36%)'
 const TEAL_DARK = 'hsl(168,62%,28%)'
@@ -51,7 +53,7 @@ export default function PulseClient({
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [chatMessages, setChatMessages] = useState<
-    { role: 'user' | 'assistant'; content: string }[]
+    { role: 'user' | 'assistant'; content: string; createDrill?: ViaCreateDrill }[]
   >([])
   const [drawerOpen, setDrawerOpen] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -201,7 +203,7 @@ export default function PulseClient({
         action: 'Build →',
         onClick: () =>
           router.push(
-            `/dashboard/drills?focus=${encodeURIComponent(commonIssues[0].issue)}`,
+            `/dashboard/players?focus=${encodeURIComponent(commonIssues[0].issue)}`,
           ),
       })
     }
@@ -334,8 +336,8 @@ export default function PulseClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- brief on mount only
   }, [])
 
-  async function sendChat() {
-    const msg = chatInput.trim()
+  async function sendChat(prefill?: string) {
+    const msg = (prefill ?? chatInput).trim()
     if (!msg || chatLoading) return
     setChatInput('')
     setDrawerOpen(true)
@@ -354,10 +356,17 @@ export default function PulseClient({
           rosterContext,
         }),
       })
-      const data = await res.json()
+      const data = (await res.json()) as {
+        response?: string
+        createDrill?: ViaCreateDrill | null
+      }
       setChatMessages(prev => [
         ...prev,
-        { role: 'assistant', content: data.response || '' },
+        {
+          role: 'assistant',
+          content: data.response || '',
+          createDrill: data.createDrill || undefined,
+        },
       ])
     } catch {
       setChatMessages(prev => [
@@ -375,6 +384,22 @@ export default function PulseClient({
     if (!drawerOpen) return
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages, chatLoading, drawerOpen])
+
+  useEffect(() => {
+    function handleViaOpen(event: Event) {
+      const detail = (event as CustomEvent<{ prompt?: string }>).detail
+      setDrawerOpen(true)
+      if (detail?.prompt) {
+        setChatInput(detail.prompt)
+        queueMicrotask(() => {
+          void sendChat(detail.prompt)
+        })
+      }
+    }
+
+    window.addEventListener('open-via-chat', handleViaOpen)
+    return () => window.removeEventListener('open-via-chat', handleViaOpen)
+  }, [chatMessages, chatLoading, rosterContext])
 
   const sorted = [...playerSummaries].sort((a, b) => {
     const order = { attention: 0, levelup: 1, ontrack: 2, new: 3 }
@@ -1102,57 +1127,62 @@ export default function PulseClient({
                   key={i}
                   style={{
                     display: 'flex',
-                    justifyContent:
-                      m.role === 'user' ? 'flex-end' : 'flex-start',
+                    flexDirection: 'column',
+                    alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
+                    gap: 6,
                   }}
                 >
                   <div
                     style={{
-                      maxWidth: '88%',
-                      padding: '10px 12px',
-                      borderRadius:
-                        m.role === 'user'
-                          ? '12px 12px 4px 12px'
-                          : '12px 12px 12px 4px',
-                      background: m.role === 'user' ? TEAL : WARM_BG,
-                      color: m.role === 'user' ? 'white' : TEXT,
-                      fontSize: 13,
-                      lineHeight: 1.55,
-                      border:
-                        m.role === 'assistant'
-                          ? `0.5px solid ${BORDER}`
-                          : 'none',
+                      display: 'flex',
+                      justifyContent:
+                        m.role === 'user' ? 'flex-end' : 'flex-start',
+                      width: '100%',
                     }}
                   >
-                    {m.content}
+                    {m.role === 'assistant' && (
+                      <ViaBlob
+                        size={24}
+                        style={{ marginRight: 7, marginTop: 2, flexShrink: 0 }}
+                      />
+                    )}
+                    <div
+                      style={{
+                        maxWidth: '88%',
+                        padding: '10px 12px',
+                        borderRadius:
+                          m.role === 'user'
+                            ? '12px 12px 4px 12px'
+                            : '12px 12px 12px 4px',
+                        background: m.role === 'user' ? TEAL : WARM_BG,
+                        color: m.role === 'user' ? 'white' : TEXT,
+                        fontSize: 13,
+                        lineHeight: 1.55,
+                        border:
+                          m.role === 'assistant'
+                            ? `0.5px solid ${BORDER}`
+                            : 'none',
+                      }}
+                    >
+                      {m.content}
+                    </div>
                   </div>
+                  {m.createDrill && (
+                    <ViaDrillSaveCard
+                      drill={m.createDrill}
+                      onSaved={confirmation =>
+                        setChatMessages(prev => [
+                          ...prev,
+                          { role: 'assistant', content: confirmation },
+                        ])
+                      }
+                    />
+                  )}
                 </div>
               ))}
               {chatLoading && (
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 5,
-                    padding: '8px 12px',
-                    background: WARM_BG,
-                    borderRadius: 12,
-                    width: 'fit-content',
-                    border: `0.5px solid ${BORDER}`,
-                  }}
-                >
-                  {[0, 1, 2].map(i => (
-                    <div
-                      key={i}
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        background: TEAL,
-                        opacity: 0.5,
-                        animation: `pulseDot 1.2s ease-in-out ${i * 0.2}s infinite`,
-                      }}
-                    />
-                  ))}
+                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <ViaBlob size={24} thinking />
                 </div>
               )}
               <div ref={chatEndRef} />

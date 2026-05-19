@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import ViaBlob from '@/components/ViaBlob'
+import CoachVerifyPanel from '@/components/CoachVerifyPanel'
 import type { JointMeasurement } from '@/lib/poseAnalysis'
 
 const TEAL = '#1D9E75'
@@ -101,6 +102,18 @@ export function mapAnalysisStrengths(raw: unknown[] | undefined): StepperStrengt
   })
 }
 
+export type CoachReviewConfig = {
+  sessionId: string
+  playerId: string
+  playerName: string
+  lessonId?: string
+  source?: 'video' | 'text'
+  alreadyVerified?: boolean
+  alreadyPublished?: boolean
+  onVerified?: () => void
+  onPublished?: () => void
+}
+
 interface Props {
   score: number
   sport: string
@@ -113,6 +126,7 @@ interface Props {
   progressHref?: string
   onSaved?: () => void
   onReanalyze?: () => void
+  coachReview?: CoachReviewConfig
 }
 
 function ProgressDots({ total, current }: { total: number; current: number }) {
@@ -344,7 +358,7 @@ function ScoreCard({
               marginBottom: 12,
             }}
           >
-            <ViaBlob size={18} />
+            <ViaBlob size={22} />
             <span
               style={{
                 fontSize: 11,
@@ -854,6 +868,7 @@ function SaveCard({
   sport,
   issues,
   addedDrills,
+  sessionId,
   playerId,
   progressHref,
   onReanalyze,
@@ -873,6 +888,27 @@ function SaveCard({
   const supabase = useMemo(() => createClient(), [])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [rating, setRating] = useState<'helpful' | 'not_helpful' | null>(null)
+
+  async function submitRating(value: 'helpful' | 'not_helpful') {
+    setRating(value)
+    if (!sessionId) return
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+      await supabase.from('analysis_feedback').insert({
+        user_id: user.id,
+        session_id: sessionId,
+        feedback_type: 'analysis',
+        rating: value === 'helpful' ? 'positive' : 'negative',
+        sport,
+      })
+    } catch (e) {
+      console.error('Rating submit failed:', e)
+    }
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -1061,6 +1097,64 @@ function SaveCard({
           </div>
         </div>
 
+        <div
+          style={{
+            background: WARM_BG,
+            borderRadius: 10,
+            padding: '12px 14px',
+            marginBottom: 8,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: TEXT_SEC,
+              marginBottom: 8,
+              textAlign: 'center',
+            }}
+          >
+            Was this analysis helpful?
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => void submitRating('helpful')}
+              style={{
+                flex: 1,
+                padding: 9,
+                borderRadius: 9,
+                background: rating === 'helpful' ? '#E1F5EE' : 'white',
+                border: `0.5px solid ${rating === 'helpful' ? TEAL : BORDER}`,
+                color: rating === 'helpful' ? '#0F6E56' : TEXT_SEC,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'Arial, sans-serif',
+              }}
+            >
+              👍 Helpful
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitRating('not_helpful')}
+              style={{
+                flex: 1,
+                padding: 9,
+                borderRadius: 9,
+                background: rating === 'not_helpful' ? '#FEF2F2' : 'white',
+                border: `0.5px solid ${rating === 'not_helpful' ? '#FCA5A5' : BORDER}`,
+                color: rating === 'not_helpful' ? '#DC2626' : TEXT_SEC,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'Arial, sans-serif',
+              }}
+            >
+              👎 Not really
+            </button>
+          </div>
+        </div>
+
         {!saved ? (
           <button
             type="button"
@@ -1152,6 +1246,7 @@ export default function AnalysisResultStepper({
   progressHref = '/player/progress',
   onSaved,
   onReanalyze,
+  coachReview,
 }: Props) {
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
@@ -1258,18 +1353,55 @@ export default function AnalysisResultStepper({
           />
         )}
 
-        {step === sortedIssues.length + 2 && (
-          <SaveCard
-            score={score}
-            sport={sport}
-            issues={sortedIssues}
-            addedDrills={addedDrills}
-            sessionId={sessionId}
-            playerId={playerId}
-            progressHref={progressHref}
-            onReanalyze={onReanalyze}
-            onSaved={onSaved}
-          />
+        {step === sortedIssues.length + 2 && coachReview ? (
+          <div style={{ padding: '12px 12px 16px' }}>
+            <CoachVerifyPanel
+              sessionId={coachReview.sessionId}
+              lessonId={coachReview.lessonId}
+              playerId={coachReview.playerId}
+              playerName={coachReview.playerName}
+              score={score}
+              issues={sortedIssues}
+              source={coachReview.source ?? 'video'}
+              sport={sport}
+              alreadyVerified={coachReview.alreadyVerified}
+              alreadyPublished={coachReview.alreadyPublished}
+              onVerified={coachReview.onVerified}
+              onPublished={coachReview.onPublished}
+            />
+            <button
+              type="button"
+              onClick={onReanalyze}
+              style={{
+                width: '100%',
+                marginTop: 10,
+                padding: 12,
+                borderRadius: 12,
+                background: 'white',
+                border: `0.5px solid ${BORDER}`,
+                color: TEXT,
+                fontSize: 13,
+                cursor: 'pointer',
+                fontFamily: 'Arial, sans-serif',
+              }}
+            >
+              Analyze another clip
+            </button>
+          </div>
+        ) : (
+          step === sortedIssues.length + 2 && (
+            <SaveCard
+              score={score}
+              sport={sport}
+              issues={sortedIssues}
+              addedDrills={addedDrills}
+              sessionId={sessionId}
+              playerId={playerId}
+              progressHref={progressHref}
+              onReanalyze={onReanalyze}
+              onSaved={onSaved}
+            />
+          )
         )}
       </div>
 

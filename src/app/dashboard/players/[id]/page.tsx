@@ -1,9 +1,14 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, Sparkles, Video, BookOpen, Dumbbell, Clock, RefreshCw, X, CheckCircle, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Sparkles, Video, BookOpen, Dumbbell, Clock, RefreshCw, X, CheckCircle, TrendingUp, GraduationCap } from 'lucide-react'
+import RecruitingProfile from '@/components/RecruitingProfile'
+import AnalysisResultStepper, {
+  mapAnalysisIssues,
+  mapAnalysisStrengths,
+} from '@/components/AnalysisResultStepper'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -25,7 +30,8 @@ import VideoAnalysisDialog, {
 import { cn } from '@/lib/utils'
 import { isImageMediaPath } from '@/lib/video-frames'
 import { titleInitials } from '@/lib/video-thumbnails'
-import PlayerAnalyticsPanel from '@/components/player/PlayerAnalyticsPanel'
+import PlayerOverviewTab from '@/components/player/PlayerOverviewTab'
+import ViaBar from '@/components/ViaBar'
 
 /** Legacy rows may still store `baseball`; treat as pickleball for focuses / AI. */
 function normalizeSportKey(s?: string | null): string {
@@ -105,7 +111,9 @@ export default function PlayerDetailPage() {
   const [lessons, setLessons] = useState<any[]>([])
   const [videos, setVideos] = useState<any[]>([])
   const [playerSessions, setPlayerSessions] = useState<any[]>([])
-  const [tab, setTab] = useState<'journal' | 'drills' | 'history' | 'video' | 'analytics'>('analytics')
+  const [tab, setTab] = useState<
+    'overview' | 'journal' | 'drills' | 'history' | 'video' | 'recruiting'
+  >('overview')
   const [newEntry, setNewEntry] = useState('')
   const [saving, setSaving] = useState(false)
   const [completeModal, setCompleteModal] = useState<any>(null)
@@ -125,6 +133,11 @@ export default function PlayerDetailPage() {
   const [shotType, setShotType] = useState('')
   const [coachingVideos, setCoachingVideos] = useState<Record<string, any[]>>({})
   const [loadingCoachingVideo, setLoadingCoachingVideo] = useState<string | null>(null)
+  const [coachReelFlow, setCoachReelFlow] = useState<{
+    video: any
+    sessionId: string
+    analysis: Record<string, unknown>
+  } | null>(null)
 
   const supabase = createClient()
 
@@ -144,7 +157,12 @@ export default function PlayerDetailPage() {
         }))
       }
     }
-    if (requestedTab === 'analytics') setTab('analytics')
+    if (requestedTab === 'overview' || requestedTab === 'analytics') {
+      setTab('overview')
+    }
+    if (requestedTab === 'video' || requestedTab === 'reels') {
+      setTab('video')
+    }
   }, [])
 
   async function loadAll() {
@@ -291,14 +309,26 @@ export default function PlayerDetailPage() {
           shotType,
           playerHistory,
           cameraAngle: 'side-on',
+          storagePath: video.storage_path
+            ? `videos/${video.storage_path}`
+            : undefined,
+          lessonId: video.lesson_id || undefined,
         }),
       })
       const analysis = await response.json()
       if (!response.ok || analysis.error) {
         throw new Error(analysis.error || 'Reel failed')
       }
-      await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
-      setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
+      const sessionId =
+        typeof analysis.sessionId === 'string'
+          ? analysis.sessionId
+          : typeof analysis.session_id === 'string'
+            ? analysis.session_id
+            : null
+      if (!sessionId) {
+        throw new Error('Analysis saved but session id missing')
+      }
+      setCoachReelFlow({ video, sessionId, analysis })
     } catch (e: any) {
       alert(`Reel failed: ${e.message}`)
     } finally {
@@ -341,12 +371,60 @@ export default function PlayerDetailPage() {
     }))
   }
 
+  const sortedSessions = useMemo(() => playerSessions, [playerSessions])
+  const latestSession = useMemo(
+    () => sortedSessions[sortedSessions.length - 1] ?? null,
+    [sortedSessions],
+  )
+  const totalGain = useMemo(() => {
+    const first = sortedSessions[0]?.overall_score
+    const last = latestSession?.overall_score
+    if (first == null || last == null) return 0
+    return last - first
+  }, [sortedSessions, latestSession])
+  const activeIssues = useMemo(() => {
+    const issues: string[] = []
+    if (latestSession?.top_issue) issues.push(latestSession.top_issue)
+    const areas = latestSession?.full_result?.areas_to_improve as
+      | Array<{ area?: string }>
+      | undefined
+    if (areas?.length) {
+      for (const area of areas) {
+        if (area?.area) issues.push(area.area)
+      }
+    }
+    return [...new Set(issues)]
+  }, [latestSession])
+  const fixedIssues = useMemo(() => {
+    const latestIssue = latestSession?.top_issue
+    const past = sortedSessions
+      .slice(0, -1)
+      .map(s => s.top_issue)
+      .filter((issue): issue is string => Boolean(issue))
+    return [...new Set(past.filter(issue => issue !== latestIssue))]
+  }, [sortedSessions, latestSession])
+  const nextLesson = useMemo(() => {
+    const upcoming = lessons
+      .filter(
+        (lesson: { status?: string; starts_at?: string }) =>
+          lesson.status === 'scheduled' &&
+          lesson.starts_at &&
+          new Date(lesson.starts_at).getTime() >= Date.now(),
+      )
+      .sort(
+        (a: { starts_at: string }, b: { starts_at: string }) =>
+          new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
+      )
+    return upcoming[0] ?? null
+  }, [lessons])
+
   const tabs = [
-    { key: 'analytics', label: 'Pulse', icon: TrendingUp },
+    { key: 'overview', label: 'Overview', icon: TrendingUp },
     { key: 'journal', label: 'Journal', icon: BookOpen },
     { key: 'drills', label: 'Drills', icon: Dumbbell },
     { key: 'history', label: 'Lesson history', icon: Clock },
     { key: 'video', label: 'Videos', icon: Video },
+    { key: 'recruiting', label: 'Recruiting', icon: GraduationCap },
   ]
 
   if (!player) return <div className="p-8 text-sm text-muted-foreground">Loading…</div>
@@ -384,6 +462,8 @@ export default function PlayerDetailPage() {
         </div>
       </div>
 
+      <ViaBar role="coach" />
+
       {/* Tabs */}
       <div className="flex w-full gap-1 overflow-x-auto rounded-xl border border-border bg-muted/50 p-1 md:w-fit">
         {tabs.map(({ key, label, icon: Icon }) => (
@@ -404,12 +484,16 @@ export default function PlayerDetailPage() {
         ))}
       </div>
 
-      {/* Journal tab */}
-      {tab === 'analytics' && (
-        <PlayerAnalyticsPanel
-          player={player}
+      {tab === 'overview' && (
+        <PlayerOverviewTab
+          player={{ id: String(id), name: player.name }}
           sessions={playerSessions}
-          onGenerateDrillPlan={openDrillBuilder}
+          sortedSessions={sortedSessions}
+          latestSession={latestSession}
+          activeIssues={activeIssues}
+          fixedIssues={fixedIssues}
+          totalGain={totalGain}
+          nextLesson={nextLesson}
         />
       )}
 
@@ -915,6 +999,61 @@ export default function PlayerDetailPage() {
           )}
         </div>
       )}
+
+      {tab === 'recruiting' && (
+        <RecruitingProfile
+          playerId={String(id)}
+          playerName={player.name}
+          sport={normalizeSportKey(player.sport)}
+          isCoach
+          analysisSessions={playerSessions}
+        />
+      )}
+
+      <Dialog
+        open={!!coachReelFlow}
+        onOpenChange={open => {
+          if (!open) setCoachReelFlow(null)
+        }}
+      >
+        <DialogContent className="max-h-[92vh] max-w-md overflow-y-auto p-4 sm:max-w-md">
+          {coachReelFlow && (
+            <AnalysisResultStepper
+              score={
+                typeof coachReelFlow.analysis.overall_score === 'number'
+                  ? coachReelFlow.analysis.overall_score
+                  : typeof coachReelFlow.analysis.score === 'number'
+                    ? coachReelFlow.analysis.score
+                    : 0
+              }
+              sport={analysisSportKey(player?.sport)}
+              shotType={shotType || undefined}
+              issues={mapAnalysisIssues(
+                (coachReelFlow.analysis.areas_to_improve ??
+                  coachReelFlow.analysis.issues) as unknown[] | undefined,
+              )}
+              strengths={mapAnalysisStrengths(
+                coachReelFlow.analysis.strengths as unknown[] | undefined,
+              )}
+              sessionId={coachReelFlow.sessionId}
+              playerId={String(id)}
+              coachReview={{
+                sessionId: coachReelFlow.sessionId,
+                playerId: String(id),
+                playerName: player?.name || 'Player',
+                lessonId: coachReelFlow.video.lesson_id || undefined,
+                source: 'video',
+                onVerified: () => void loadAll(),
+                onPublished: () => {
+                  void loadAll()
+                  setCoachReelFlow(null)
+                },
+              }}
+              onReanalyze={() => setCoachReelFlow(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <VideoAnalysisDialog
         open={!!sheetVideo}

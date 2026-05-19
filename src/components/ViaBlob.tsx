@@ -1,15 +1,21 @@
 'use client'
 
+import type { CSSProperties } from 'react'
+
 interface Props {
   size?: number
   thinking?: boolean
   color?: string
+  className?: string
+  style?: CSSProperties
 }
 
 export default function ViaBlob({
   size = 36,
   thinking = false,
   color = 'hsl(168,62%,36%)',
+  className,
+  style,
 }: Props) {
   const outerAnim = thinking
     ? 'viaLava1 1.8s ease-in-out infinite, viaFloatBlob 3s ease-in-out infinite'
@@ -29,6 +35,7 @@ export default function ViaBlob({
 
   return (
     <div
+      className={className}
       style={{
         position: 'relative',
         width: size,
@@ -37,6 +44,7 @@ export default function ViaBlob({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        ...style,
       }}
     >
       <div

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BarChart3, Dumbbell, Home, LogOut, Megaphone, Menu, NotebookTabs, Video } from 'lucide-react'
+import { BarChart3, GraduationCap, Home, LogOut, Megaphone, Menu, NotebookTabs, Video } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { createClient } from '@/lib/supabase'
 import { brand } from '@/lib/brand'
@@ -18,21 +18,43 @@ type PlayerForChat = {
 interface Props {
   children: React.ReactNode
   player: PlayerForChat | null
+  showRecruitingNav?: boolean
 }
 
-const navItems = [
+type NavItem = {
+  href: string
+  label: string
+  icon: typeof Home
+  exact?: boolean
+}
+
+const baseNavItems: NavItem[] = [
   { href: '/player', label: 'Dashboard', icon: Home, exact: true },
   { href: '/player/reels', label: 'Reels', icon: Video },
   { href: '/player/progress', label: 'Progress', icon: BarChart3 },
-  { href: '/player/drills', label: 'My Drills', icon: Dumbbell },
   { href: '/player/lessons', label: 'Lessons', icon: NotebookTabs },
   { href: '/player/bulletin', label: 'Bulletin', icon: Megaphone },
 ]
 
-export default function PlayerLayoutClient({ children }: Props) {
+const recruitingNavItem: NavItem = {
+  href: '/player/recruiting',
+  label: 'Recruiting',
+  icon: GraduationCap,
+}
+
+export default function PlayerLayoutClient({ children, showRecruitingNav = false }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const navItems = showRecruitingNav
+    ? [
+        baseNavItems[0],
+        baseNavItems[1],
+        recruitingNavItem,
+        ...baseNavItems.slice(2),
+      ]
+    : baseNavItems
+  const mobileCols = navItems.length
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -94,8 +116,12 @@ export default function PlayerLayoutClient({ children }: Props) {
       </main>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-6 border-t px-1 py-2 md:hidden"
-        style={{ background: brand.card, borderColor: brand.border }}
+        className="fixed inset-x-0 bottom-0 z-50 grid border-t px-1 py-2 md:hidden"
+        style={{
+          gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))`,
+          background: brand.card,
+          borderColor: brand.border,
+        }}
       >
         {navItems.map(({ href, label, icon: Icon, exact }) => {
           const active = isActive(href, exact)

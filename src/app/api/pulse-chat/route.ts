@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
+import { parseCreateDrill } from '@/lib/via-drill'
 
 export const maxDuration = 30
 
@@ -94,6 +95,21 @@ Response: "I'll build a drill plan targeting Marcus's follow through issue."
 User: "Who needs attention?"
 Response: [answer in plain text, no action needed]
 
+DRILL CREATION:
+When a coach asks you to create a drill for a player, respond with your message AND include a JSON block at the end in this exact format:
+
+ACTION:CREATE_DRILL:{
+  "title": "drill name",
+  "description": "full instructions",
+  "sets": 3,
+  "reps": 15,
+  "cue": "coaching cue",
+  "player_id": "the player's id if mentioned",
+  "issue": "the technique issue this targets"
+}
+
+The client will parse this and show a save UI.
+
 TONE: Direct, knowledgeable colleague. Under 100 words unless
 asked for a detailed plan. Never use dashes for bullets.`
 
@@ -109,12 +125,16 @@ asked for a detailed plan. Never use dashes for bullets.`
     })
 
     const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const cleaned = raw
+    const withoutBracketActions = raw
       .replace(/\[ACTION:\{[^}]+\}\]/g, '')
       .replace(/\[ACTION:[^\]]+\]/g, '')
       .trim()
+    const { text, drill } = parseCreateDrill(withoutBracketActions)
 
-    return NextResponse.json({ response: cleaned })
+    return NextResponse.json({
+      response: text,
+      createDrill: drill,
+    })
   } catch (error) {
     console.error('Pulse chat failed:', error)
     return NextResponse.json({

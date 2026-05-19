@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { CalendarDays, Users, Video, Dumbbell, Clock, ArrowRight, CheckCircle2, Circle } from 'lucide-react'
+import { CalendarDays, Users, Video, Clock, ArrowRight, CheckCircle2, Circle, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
@@ -64,7 +64,7 @@ export default function DashboardPage() {
     {
       label: 'Try the AI drill builder',
       done: drillCount > 0,
-      href: '/dashboard/drills',
+      href: '/dashboard/players',
       cta: 'Build drills →',
     },
     {
@@ -149,7 +149,7 @@ export default function DashboardPage() {
         {[
           { label: 'Schedule', href: '/dashboard/schedule', icon: CalendarDays },
           { label: 'Players', href: '/dashboard/players', icon: Users },
-          { label: 'Drills', href: '/dashboard/drills', icon: Dumbbell },
+          { label: 'Pulse', href: '/dashboard/analytics', icon: TrendingUp },
           { label: 'Video', href: '/dashboard/video', icon: Video },
         ].map(({ label, href, icon: Icon }) => (
           <Link

@@ -5,41 +5,6 @@ import { useRouter } from 'next/navigation'
 import ViaBlob from '@/components/ViaBlob'
 
 const CSS = `
-  @keyframes lava1 {
-    0% { border-radius: 62% 38% 46% 54% / 60% 44% 56% 40%; }
-    25% { border-radius: 40% 60% 54% 46% / 48% 62% 38% 52%; }
-    50% { border-radius: 54% 46% 38% 62% / 56% 40% 60% 44%; }
-    75% { border-radius: 46% 54% 62% 38% / 44% 56% 42% 58%; }
-    100% { border-radius: 62% 38% 46% 54% / 60% 44% 56% 40%; }
-  }
-  @keyframes lava2 {
-    0% { border-radius: 38% 62% 54% 46% / 44% 56% 44% 56%; }
-    33% { border-radius: 56% 44% 40% 60% / 60% 40% 58% 42%; }
-    66% { border-radius: 44% 56% 62% 38% / 38% 62% 46% 54%; }
-    100% { border-radius: 38% 62% 54% 46% / 44% 56% 44% 56%; }
-  }
-  @keyframes lava3 {
-    0% { border-radius: 50% 50% 40% 60% / 55% 45% 55% 45%; }
-    50% { border-radius: 40% 60% 55% 45% / 45% 55% 45% 55%; }
-    100% { border-radius: 50% 50% 40% 60% / 55% 45% 55% 45%; }
-  }
-  @keyframes floatBlob {
-    0%,100% { transform: translateY(0); }
-    50% { transform: translateY(-12px); }
-  }
-  @keyframes orbDrift {
-    0% { transform: translate(0, 0); }
-    25% { transform: translate(10px, -14px); }
-    50% { transform: translate(-8px, 10px); }
-    75% { transform: translate(12px, 5px); }
-    100% { transform: translate(0, 0); }
-  }
-  @keyframes orbDrift2 {
-    0% { transform: translate(0, 0); }
-    33% { transform: translate(-12px, 8px); }
-    66% { transform: translate(8px, -10px); }
-    100% { transform: translate(0, 0); }
-  }
   @keyframes pulseRing {
     0%,100% { opacity: .12; transform: scale(1); }
     50% { opacity: .28; transform: scale(1.06); }
@@ -85,32 +50,6 @@ const TEXT = 'hsl(220,20%,10%)'
 const TEXT_SEC = 'hsl(220,10%,45%)'
 const BORDER = 'hsl(30,10%,88%)'
 
-function MiniViaIcon({ size = 28 }: { size?: number }) {
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        animation: 'lava1 4s ease-in-out infinite',
-        background: TEAL,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          width: size * 0.4,
-          height: size * 0.4,
-          animation: 'lava2 3s ease-in-out infinite',
-          background: 'rgba(255,255,255,0.28)',
-        }}
-      />
-    </div>
-  )
-}
-
 function ViaDemo() {
   const [step, setStep] = useState(1)
 
@@ -155,7 +94,7 @@ function ViaDemo() {
           borderBottom: '0.5px solid hsl(30,10%,93%)',
         }}
       >
-        <MiniViaIcon />
+        <ViaBlob size={28} />
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: TEAL }}>Via</div>
           <div style={{ fontSize: 10, color: 'hsl(220,10%,60%)' }}>AI Coaching Agent</div>
@@ -186,7 +125,7 @@ function ViaDemo() {
 
         {step === 2 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', animation: 'fadeUp 0.3s ease forwards' }}>
-            <MiniViaIcon size={18} />
+            <ViaBlob size={28} thinking />
             <div style={{ display: 'flex', gap: 3 }}>
               {[0, 1, 2].map(index => (
                 <div
@@ -207,7 +146,7 @@ function ViaDemo() {
 
         {step >= 3 && (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, animation: 'fadeUp 0.4s ease forwards' }}>
-            <MiniViaIcon size={20} />
+            <ViaBlob size={28} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: TEAL, marginBottom: 4 }}>Via</div>
               <div style={{ fontSize: 12, color: 'hsl(220,20%,20%)', lineHeight: 1.55, marginBottom: step >= 4 ? 8 : 0 }}>
@@ -364,7 +303,7 @@ function PulsePreview() {
       </div>
 
       <div style={{ borderLeft: `3px solid ${TEAL}`, padding: '10px 14px', background: 'rgba(29,158,117,0.08)', borderRadius: '0 8px 8px 0', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <MiniViaIcon size={20} />
+        <ViaBlob size={28} />
         <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', margin: 0, lineHeight: 1.55 }}>
           <span style={{ color: '#5DCAA5', fontWeight: 700 }}>Via says:</span> Olivia needs attention - her score dropped 4 points.
           Sarah and Aiden are ready to level up. Schedule a group session around follow through - 3 of 5 players share that issue.

@@ -5,6 +5,9 @@ import type { KeyboardEvent } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { ArrowRight, MessageSquare, Minimize2, Send, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
+import ViaBlob from '@/components/ViaBlob'
+import ViaDrillSaveCard from '@/components/ViaDrillSaveCard'
+import type { ViaCreateDrill } from '@/lib/via-drill'
 
 const TEAL = 'hsl(168,62%,36%)'
 const TEAL_LIGHT = 'hsl(168,62%,95%)'
@@ -16,6 +19,7 @@ type Message = {
   role: 'user' | 'assistant'
   content: string
   action?: CoachAction
+  createDrill?: ViaCreateDrill
 }
 
 type CoachAction = {
@@ -234,6 +238,21 @@ export default function GlobalCoachChat() {
     }
   }, [messages, open, minimized])
 
+  useEffect(() => {
+    function handleViaOpen(event: Event) {
+      const detail = (event as CustomEvent<{ prompt?: string }>).detail
+      setOpen(true)
+      setMinimized(false)
+      if (detail?.prompt) {
+        setInput(detail.prompt)
+        void sendMessage(detail.prompt)
+      }
+    }
+
+    window.addEventListener('open-via-chat', handleViaOpen)
+    return () => window.removeEventListener('open-via-chat', handleViaOpen)
+  }, [])
+
   function executeAction(action: CoachAction) {
     switch (action.type) {
       case 'schedule':
@@ -243,7 +262,7 @@ export default function GlobalCoachChat() {
         router.push(
           action.playerId
             ? `/dashboard/players/${action.playerId}?tab=drills&focus=${encodeURIComponent(action.focus || '')}`
-            : '/dashboard/drills',
+            : '/dashboard/players',
         )
         break
       case 'viewPlayer':
@@ -277,14 +296,20 @@ export default function GlobalCoachChat() {
           rosterContext,
         }),
       })
-      const data = (await response.json()) as { response?: string }
-      const { text: responseText, action } = parseAction(data.response || 'Something went wrong. Try again.')
+      const data = (await response.json()) as {
+        response?: string
+        createDrill?: ViaCreateDrill | null
+      }
+      const { text: responseText, action } = parseAction(
+        data.response || 'Something went wrong. Try again.',
+      )
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
           content: responseText,
           action: action || undefined,
+          createDrill: data.createDrill || undefined,
         },
       ])
       if (minimized) setHasUnread(true)
@@ -545,19 +570,42 @@ export default function GlobalCoachChat() {
                   >
                     <div
                       style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 7,
                         maxWidth: '86%',
-                        padding: '9px 12px',
-                        borderRadius: message.role === 'user' ? '10px 10px 3px 10px' : '10px 10px 10px 3px',
-                        background: message.role === 'user' ? TEAL : 'white',
-                        border: message.role === 'user' ? 'none' : `1px solid ${BORDER}`,
-                        fontSize: 12,
-                        color: message.role === 'user' ? 'white' : TEXT,
-                        lineHeight: 1.55,
-                        whiteSpace: 'pre-wrap',
                       }}
                     >
-                      {message.content}
+                      {message.role === 'assistant' && (
+                        <ViaBlob size={24} style={{ marginTop: 2, flexShrink: 0 }} />
+                      )}
+                      <div
+                        style={{
+                          padding: '9px 12px',
+                          borderRadius: message.role === 'user' ? '10px 10px 3px 10px' : '10px 10px 10px 3px',
+                          background: message.role === 'user' ? TEAL : 'white',
+                          border: message.role === 'user' ? 'none' : `1px solid ${BORDER}`,
+                          fontSize: 12,
+                          color: message.role === 'user' ? 'white' : TEXT,
+                          lineHeight: 1.55,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {message.content}
+                      </div>
                     </div>
+
+                    {message.createDrill && (
+                      <ViaDrillSaveCard
+                        drill={message.createDrill}
+                        onSaved={confirmation =>
+                          setMessages(prev => [
+                            ...prev,
+                            { role: 'assistant', content: confirmation },
+                          ])
+                        }
+                      />
+                    )}
 
                     {message.action && (
                       <button
@@ -587,30 +635,7 @@ export default function GlobalCoachChat() {
 
                 {loading && (
                   <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                    <div
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '10px 10px 10px 3px',
-                        background: 'white',
-                        border: `1px solid ${BORDER}`,
-                        display: 'flex',
-                        gap: 4,
-                        alignItems: 'center',
-                      }}
-                    >
-                      {[0, 1, 2].map(index => (
-                        <div
-                          key={index}
-                          style={{
-                            width: 5,
-                            height: 5,
-                            borderRadius: '50%',
-                            background: TEAL,
-                            animation: `bounce 1.2s ease-in-out ${index * 0.2}s infinite`,
-                          }}
-                        />
-                      ))}
-                    </div>
+                    <ViaBlob size={24} thinking />
                   </div>
                 )}
 

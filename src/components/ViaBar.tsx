@@ -5,6 +5,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { ArrowRight, ChevronDown, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import ViaBlob from './ViaBlob'
+import ViaDrillSaveCard from './ViaDrillSaveCard'
+import type { ViaCreateDrill } from '@/lib/via-drill'
 
 const TEAL = 'hsl(168,62%,36%)'
 const TEAL_LIGHT = 'hsl(168,62%,95%)'
@@ -50,6 +52,7 @@ type Message = {
   role: 'user' | 'assistant'
   content: string
   action?: ViaAction
+  createDrill?: ViaCreateDrill
   events?: EventListing[]
   isAction?: boolean
   isSuccess?: boolean
@@ -264,6 +267,22 @@ export default function ViaBar({ role, playerContext }: Props) {
     return () => window.clearTimeout(timer)
   }, [messages, expanded])
 
+  useEffect(() => {
+    if (role !== 'coach') return
+
+    function handleViaOpen(event: Event) {
+      const detail = (event as CustomEvent<{ prompt?: string; playerId?: string }>).detail
+      setExpanded(true)
+      if (detail?.prompt) {
+        setInput(detail.prompt)
+        void sendMessage(detail.prompt)
+      }
+    }
+
+    window.addEventListener('open-via-chat', handleViaOpen)
+    return () => window.removeEventListener('open-via-chat', handleViaOpen)
+  }, [role])
+
   async function executeSearchEvents(action: ViaAction) {
     const response = await fetch('/api/bulletin-search', {
       method: 'POST',
@@ -341,7 +360,7 @@ export default function ViaBar({ role, playerContext }: Props) {
         router.push(
           action.playerId
             ? `/dashboard/players/${action.playerId}?tab=drills&focus=${encodeURIComponent(action.focus || '')}`
-            : '/dashboard/drills',
+            : '/dashboard/players',
         )
         setExpanded(false)
         break
@@ -398,7 +417,10 @@ export default function ViaBar({ role, playerContext }: Props) {
           },
         }),
       })
-      const data = (await response.json()) as { response?: string }
+      const data = (await response.json()) as {
+        response?: string
+        createDrill?: ViaCreateDrill | null
+      }
       const { text: responseText, action } = parseAction(data.response || '')
 
       setMessages(prev => [
@@ -407,6 +429,7 @@ export default function ViaBar({ role, playerContext }: Props) {
           role: 'assistant',
           content: responseText,
           action: action || undefined,
+          createDrill: data.createDrill || undefined,
         },
       ])
 
@@ -642,6 +665,22 @@ export default function ViaBar({ role, playerContext }: Props) {
                   )}
                   {message.content}
                 </div>
+
+                {message.createDrill && role === 'coach' && (
+                  <ViaDrillSaveCard
+                    drill={message.createDrill}
+                    onSaved={confirmation =>
+                      setMessages(prev => [
+                        ...prev,
+                        {
+                          role: 'assistant',
+                          content: confirmation,
+                          isSuccess: true,
+                        },
+                      ])
+                    }
+                  />
+                )}
 
                 {message.events && message.events.length > 0 && (
                   <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
