@@ -6,6 +6,9 @@ import { createClient } from '@/lib/supabase'
 import ViaBlob from '@/components/ViaBlob'
 import CoachVerifyPanel from '@/components/CoachVerifyPanel'
 import type { JointMeasurement } from '@/lib/poseAnalysis'
+import { fonts, typography } from '@/lib/brand'
+import { GlassCard } from '@/components/GlassCard'
+import { glass } from '@/lib/glass'
 
 const TEAL = '#1D9E75'
 const BORDER = 'hsl(30,10%,88%)'
@@ -257,9 +260,8 @@ function NavButtons({
           style={{
             flex: 1,
             padding: 14,
+            ...glass.light.chip,
             borderRadius: 12,
-            background: 'white',
-            border: `0.5px solid ${BORDER}`,
             color: TEXT_SEC,
             fontSize: 14,
             cursor: 'pointer',
@@ -409,6 +411,7 @@ function ScoreCard({
           <p
             style={{
               fontSize: 14,
+              fontFamily: fonts.sans,
               color: 'rgba(255,255,255,.85)',
               lineHeight: 1.65,
               margin: '0 0 20px',
@@ -1310,13 +1313,8 @@ export default function AnalysisResultStepper({
             if (diff < 0 && step > 0) goBack()
           }
         }}
-        style={{
-          background: 'white',
-          borderRadius: 16,
-          border: `0.5px solid ${BORDER}`,
-          overflow: 'hidden',
-        }}
       >
+        <GlassCard mode="light" style={{ borderRadius: 16, padding: 0 }}>
         {step === 0 && (
           <ScoreCard
             score={score}
@@ -1403,6 +1401,7 @@ export default function AnalysisResultStepper({
             />
           )
         )}
+        </GlassCard>
       </div>
 
       <ProgressDots total={totalCards} current={step} />

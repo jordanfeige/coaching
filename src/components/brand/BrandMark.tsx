@@ -18,8 +18,16 @@ type BrandMarkProps = {
  */
 export function BrandMark({ variant = 'sidebar', size, audience, className, href }: BrandMarkProps) {
   const wordmark = (
-    <span className="font-heading font-bold tracking-tight text-foreground">
-      Play<span className="text-primary">via</span>
+    <span
+      style={{
+        fontFamily: 'var(--font-dm-serif), Georgia, serif',
+        fontSize: 28,
+        letterSpacing: '-.3px',
+        lineHeight: 1,
+      }}
+    >
+      <span style={{ fontStyle: 'normal' }}>Play</span>
+      <span style={{ color: '#1D9E75', fontStyle: 'italic' }}>via</span>
     </span>
   )
 
@@ -30,7 +38,7 @@ export function BrandMark({ variant = 'sidebar', size, audience, className, href
   const inner =
     variant === 'authHero' ? (
       <>
-        <p className="text-4xl leading-[1.05] md:text-5xl">{wordmark}</p>
+        <p className="leading-[1.05]">{wordmark}</p>
         <div className="mt-4 max-w-lg text-base md:text-lg">{tagline}</div>
         {audience ? (
           <p className="mt-5 text-xs font-semibold tracking-wide text-primary uppercase">{audience}</p>
@@ -38,31 +46,27 @@ export function BrandMark({ variant = 'sidebar', size, audience, className, href
       </>
     ) : variant === 'authPanel' ? (
       <>
-        <p className="text-3xl leading-none">{wordmark}</p>
+        <p className="leading-none">{wordmark}</p>
         <div className="mx-auto mt-3 max-w-xs text-xs leading-snug md:text-sm">{tagline}</div>
         {audience ? <p className="mt-3 text-xs font-medium text-muted-foreground">{audience}</p> : null}
       </>
     ) : variant === 'public' ? (
       <>
-        <p className="text-3xl leading-none md:text-4xl">{wordmark}</p>
+        <p className="leading-none">{wordmark}</p>
         <div className="mx-auto mt-3 max-w-sm text-sm md:text-base">{tagline}</div>
       </>
     ) : size === 'lg' ? (
       <>
-        <p className="text-4xl leading-none md:text-5xl">{wordmark}</p>
+        <p className="leading-none">{wordmark}</p>
         <div className="mx-auto mt-3 max-w-sm text-sm md:text-base">{tagline}</div>
       </>
     ) : size === 'sm' ? (
-      <>
-        <p className="text-xl leading-none">{wordmark}</p>
-      </>
+      <p className="leading-none">{wordmark}</p>
     ) : size === 'md' ? (
-      <>
-        <p className="text-2xl leading-none">{wordmark}</p>
-      </>
+      <p className="leading-none">{wordmark}</p>
     ) : (
       <>
-        <p className="text-[1.7rem] leading-[1.08] tracking-tight">{wordmark}</p>
+        <p className="leading-[1.08]">{wordmark}</p>
         <div className="mt-2.5 text-[11px] leading-snug sm:text-xs">{tagline}</div>
         {audience ? <p className="mt-2 text-xs font-semibold text-muted-foreground">{audience}</p> : null}
       </>
@@ -76,7 +80,7 @@ export function BrandMark({ variant = 'sidebar', size, audience, className, href
         href={href}
         className={cn(
           'block rounded-lg outline-none ring-offset-background transition-opacity hover:opacity-95',
-          'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+          'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         )}
       >
         {body}

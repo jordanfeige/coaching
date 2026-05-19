@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { BarChart3, GraduationCap, Home, LogOut, Megaphone, Menu, NotebookTabs, Video } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
+import PageBackground from '@/components/PageBackground'
 import { createClient } from '@/lib/supabase'
-import { brand } from '@/lib/brand'
+import { glass } from '@/lib/glass'
 import { cn } from '@/lib/utils'
 
 type PlayerForChat = {
@@ -42,17 +43,18 @@ const recruitingNavItem: NavItem = {
   icon: GraduationCap,
 }
 
+function playerNavStyle(active: boolean) {
+  return active
+    ? glass.nav.playerNavActive
+    : { ...glass.nav.playerNavInactive, background: 'transparent', border: 'none' }
+}
+
 export default function PlayerLayoutClient({ children, showRecruitingNav = false }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
   const navItems = showRecruitingNav
-    ? [
-        baseNavItems[0],
-        baseNavItems[1],
-        recruitingNavItem,
-        ...baseNavItems.slice(2),
-      ]
+    ? [baseNavItems[0], baseNavItems[1], recruitingNavItem, ...baseNavItems.slice(2)]
     : baseNavItems
   const mobileCols = navItems.length
 
@@ -66,23 +68,29 @@ export default function PlayerLayoutClient({ children, showRecruitingNav = false
   }
 
   return (
-    <div className="flex min-h-screen" style={{ background: brand.bg }}>
-      <aside className="hidden min-h-screen w-56 flex-col border-r md:flex" style={{ background: brand.card, borderColor: brand.border }}>
-        <div className="border-b p-5" style={{ borderColor: brand.border }}>
+    <div className="flex min-h-screen">
+      <aside
+        className="hidden min-h-screen w-56 flex-col md:flex"
+        style={{
+          ...glass.dark.card,
+          borderRadius: 0,
+          borderTop: 'none',
+          borderBottom: 'none',
+          borderLeft: 'none',
+        }}
+      >
+        <div className="border-b border-white/10 p-5" style={{ position: 'relative', zIndex: 1 }}>
           <BrandMark size="md" href="/player" />
         </div>
-        <nav className="flex-1 space-y-1 p-3">
+        <nav className="flex-1 space-y-1 p-3" style={{ position: 'relative', zIndex: 1 }}>
           {navItems.map(({ href, label, icon: Icon, exact }) => {
             const active = isActive(href, exact)
             return (
               <Link
                 key={href}
                 href={href}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors"
-                style={{
-                  background: active ? brand.tealLight : undefined,
-                  color: active ? brand.teal : brand.textSecondary,
-                }}
+                className="flex items-center gap-3 px-3 py-2.5 text-sm font-semibold transition-colors"
+                style={playerNavStyle(active)}
               >
                 <Icon className="size-4" />
                 {label}
@@ -90,12 +98,12 @@ export default function PlayerLayoutClient({ children, showRecruitingNav = false
             )
           })}
         </nav>
-        <div className="border-t p-3" style={{ borderColor: brand.border }}>
+        <div className="border-t border-white/10 p-3" style={{ position: 'relative', zIndex: 1 }}>
           <button
             type="button"
             onClick={handleSignOut}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors hover:bg-muted"
-            style={{ color: brand.textSecondary }}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors"
+            style={{ color: glass.dark.text.secondary }}
           >
             <LogOut className="size-4" />
             Sign out
@@ -103,44 +111,50 @@ export default function PlayerLayoutClient({ children, showRecruitingNav = false
         </div>
       </aside>
 
-      <div
-        className="fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between border-b px-4 md:hidden"
-        style={{ background: brand.card, borderColor: brand.border }}
-      >
-        <BrandMark size="sm" href="/player" />
-        <Menu className="size-5" style={{ color: brand.textSecondary }} />
-      </div>
+      <PageBackground mode="player" style={{ flex: 1, minHeight: '100vh' }}>
+        <div
+          className="fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between border-b border-white/10 px-4 md:hidden"
+          style={{
+            background: 'rgba(4,20,14,.72)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+          }}
+        >
+          <BrandMark size="sm" href="/player" />
+          <Menu className="size-5" style={{ color: glass.dark.text.secondary }} />
+        </div>
 
-      <main className="flex-1 overflow-auto pb-20 pt-14 md:pb-0 md:pt-0">
-        <div className="mx-auto max-w-4xl p-4 md:p-8">{children}</div>
-      </main>
+        <main className="flex-1 overflow-auto pb-20 pt-14 md:pb-0 md:pt-0">
+          <div className="mx-auto max-w-4xl p-4 md:p-8">{children}</div>
+        </main>
 
-      <nav
-        className="fixed inset-x-0 bottom-0 z-50 grid border-t px-1 py-2 md:hidden"
-        style={{
-          gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))`,
-          background: brand.card,
-          borderColor: brand.border,
-        }}
-      >
-        {navItems.map(({ href, label, icon: Icon, exact }) => {
-          const active = isActive(href, exact)
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn('flex flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-semibold transition-colors')}
-              style={{
-                background: active ? brand.tealLight : undefined,
-                color: active ? brand.teal : brand.textSecondary,
-              }}
-            >
-              <Icon className="size-4" />
-              <span className="truncate">{label}</span>
-            </Link>
-          )
-        })}
-      </nav>
+        <nav
+          className="fixed inset-x-0 bottom-0 z-50 grid px-1 py-2 md:hidden"
+          style={{
+            ...glass.nav.playerBottom,
+            gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))`,
+            position: 'fixed',
+          }}
+        >
+          <div style={glass.nav.playerNavSpecular} />
+          {navItems.map(({ href, label, icon: Icon, exact }) => {
+            const active = isActive(href, exact)
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  'relative z-[1] flex flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-semibold transition-colors',
+                )}
+                style={playerNavStyle(active)}
+              >
+                <Icon className="size-4" />
+                <span className="truncate">{label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+      </PageBackground>
     </div>
   )
 }

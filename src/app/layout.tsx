@@ -1,6 +1,22 @@
 import type { Metadata } from 'next'
+import { DM_Sans, DM_Serif_Display } from 'next/font/google'
 import './globals.css'
 import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration'
+
+const dmSans = DM_Sans({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  variable: '--font-dm-sans',
+  display: 'swap',
+})
+
+const dmSerifDisplay = DM_Serif_Display({
+  subsets: ['latin'],
+  weight: ['400'],
+  style: ['normal', 'italic'],
+  variable: '--font-dm-serif',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'Playvia — AI Coaching for Modern Athletes',
@@ -45,7 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-192.png" />
         <link rel="manifest" href="/manifest.json" />
       </head>
-      <body>
+      <body className={`${dmSans.variable} ${dmSerifDisplay.variable}`}>
         {children}
         <ServiceWorkerRegistration />
       </body>

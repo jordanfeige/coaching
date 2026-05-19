@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { CalendarDays, Users, Video, LogOut, Megaphone, TrendingUp } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
-import { brand } from '@/lib/brand'
+import { glass } from '@/lib/glass'
 import { isAdmin as hasAdminAccess } from '@/lib/admin'
 
 const nav = [
@@ -21,6 +21,12 @@ const nav = [
 const growthNav = [
   { href: '/dashboard/waitlist', label: 'Waitlist', icon: TrendingUp },
 ]
+
+function navLinkStyle(active: boolean) {
+  return active
+    ? glass.nav.coachNavActive
+    : { ...glass.nav.coachNavInactive, background: 'transparent', border: 'none' }
+}
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -36,7 +42,6 @@ export default function Sidebar() {
       } = await supabase.auth.getUser()
       setUserEmail(user?.email ?? null)
     }
-
     loadUser()
   }, [supabase])
 
@@ -47,9 +52,8 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="hidden min-h-screen w-56 flex-col border-r md:flex" style={{ background: brand.card, borderColor: brand.border }}>
-        <div className="border-b p-5" style={{ borderColor: brand.border }}>
+      <aside className="hidden min-h-screen w-56 flex-col md:flex" style={glass.nav.coachSidebar}>
+        <div className="border-b border-white/40 p-5">
           <BrandMark size="md" href="/dashboard" />
         </div>
         <nav className="flex-1 space-y-0.5 p-3">
@@ -61,19 +65,10 @@ export default function Sidebar() {
                 key={href}
                 href={href}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  active ? 'shadow-sm' : ''
+                  'flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-colors',
+                  active ? 'shadow-sm' : 'rounded-lg',
                 )}
-                style={{
-                  background: active ? brand.tealLight : undefined,
-                  color: active ? brand.teal : brand.textSecondary,
-                }}
-                onMouseEnter={event => {
-                  if (!active) event.currentTarget.style.background = 'hsl(40, 20%, 96%)'
-                }}
-                onMouseLeave={event => {
-                  if (!active) event.currentTarget.style.background = ''
-                }}
+                style={navLinkStyle(active)}
               >
                 <Icon size={17} />
                 {label}
@@ -82,7 +77,10 @@ export default function Sidebar() {
           })}
           {isAdmin && (
             <>
-              <div className="px-3 pt-5 pb-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+              <div
+                className="px-3 pt-5 pb-2 text-[11px] font-bold uppercase tracking-wide"
+                style={{ color: glass.light.text.muted }}
+              >
                 Growth
               </div>
               {growthNav.map(({ href, label, icon: Icon }) => {
@@ -92,19 +90,10 @@ export default function Sidebar() {
                     key={href}
                     href={href}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                      active ? 'shadow-sm' : ''
+                      'flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-colors',
+                      active ? 'shadow-sm' : 'rounded-lg',
                     )}
-                    style={{
-                      background: active ? brand.tealLight : undefined,
-                      color: active ? brand.teal : brand.textSecondary,
-                    }}
-                    onMouseEnter={event => {
-                      if (!active) event.currentTarget.style.background = 'hsl(40, 20%, 96%)'
-                    }}
-                    onMouseLeave={event => {
-                      if (!active) event.currentTarget.style.background = ''
-                    }}
+                    style={navLinkStyle(active)}
                   >
                     <Icon size={17} />
                     {label}
@@ -114,11 +103,12 @@ export default function Sidebar() {
             </>
           )}
         </nav>
-        <div className="border-t p-3" style={{ borderColor: brand.border }}>
+        <div className="border-t border-white/40 p-3">
           <button
+            type="button"
             onClick={handleSignOut}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
-            style={{ color: brand.textSecondary }}
+            style={{ color: glass.light.text.secondary }}
           >
             <LogOut size={17} />
             Sign out
@@ -126,20 +116,20 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t px-2 py-2 md:hidden" style={{ background: brand.card, borderColor: brand.border }}>
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around px-2 py-2 md:hidden"
+        style={glass.nav.coachSidebar}
+      >
         {nav
           .filter(n => n.href !== '/dashboard')
           .map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || pathname.startsWith(href + '/')
+            const active = pathname === href || pathname.startsWith(`${href}/`)
             return (
               <Link
                 key={href}
                 href={href}
-                className={cn(
-                  'flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 transition-colors',
-                )}
-                style={{ color: active ? brand.teal : brand.textSecondary }}
+                className="flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 transition-colors"
+                style={navLinkStyle(active)}
               >
                 <Icon size={20} />
                 <span className="text-xs font-medium">{label}</span>
@@ -147,8 +137,10 @@ export default function Sidebar() {
             )
           })}
         <button
+          type="button"
           onClick={handleSignOut}
-          className="flex flex-col items-center gap-0.5 px-3 py-1.5 text-muted-foreground"
+          className="flex flex-col items-center gap-0.5 px-3 py-1.5"
+          style={{ color: glass.light.text.muted }}
         >
           <LogOut size={20} />
           <span className="text-xs font-medium">Sign out</span>

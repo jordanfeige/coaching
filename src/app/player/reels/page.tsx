@@ -8,6 +8,7 @@ import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
 import { setPendingReelVideoFile } from '@/lib/pending-reel'
 import { parseStoragePath } from '@/lib/reel-storage'
 import ViaBlob from '@/components/ViaBlob'
+import { glass } from '@/lib/glass'
 
 const TEAL = 'hsl(168,62%,36%)'
 const TEAL_DARK = 'hsl(168,62%,28%)'
@@ -158,10 +159,8 @@ function SessionCard({
         if (e.key === 'Enter' || e.key === ' ') onClick()
       }}
       style={{
-        background: 'white',
-        border: `0.5px solid ${BORDER}`,
+        ...glass.dark.card,
         borderRadius: 14,
-        overflow: 'hidden',
         cursor: 'pointer',
         display: 'flex',
         transition: 'border-color 0.15s',

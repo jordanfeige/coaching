@@ -1,211 +1,369 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase'
-import { CalendarDays, Users, Video, Clock, ArrowRight, CheckCircle2, Circle, TrendingUp } from 'lucide-react'
-import Link from 'next/link'
-import { format } from 'date-fns'
-import { Badge } from '@/components/ui/badge'
 
-export default function DashboardPage() {
-  const [lessons, setLessons] = useState<any[]>([])
-  const [playerCount, setPlayerCount] = useState(0)
-  const [videoCount, setVideoCount] = useState(0)
-  const [drillCount, setDrillCount] = useState(0)
-  const [createdAt, setCreatedAt] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
+import UniversalVia from '@/components/UniversalVia'
+import { GlassCard } from '@/components/GlassCard'
+import { typography } from '@/lib/brand'
+import { glass } from '@/lib/glass'
+
+const TEAL = '#1D9E75'
+const TEXT = glass.light.text.primary
+const TEXT_MUTED = glass.light.text.muted
+const DIVIDER = '0.5px solid rgba(255,255,255,.45)'
+
+type DashboardLesson = {
+  id: string
+  starts_at: string
+  players?: { name?: string | null; sport?: string | null } | null
+}
+
+type UnverifiedSession = {
+  id: string
+  player_id: string
+  overall_score?: number | null
+  top_issue?: string | null
+  analyzed_at: string
+  players?: { name?: string | null } | null
+}
+
+const rowStyle = {
+  ...glass.light.row,
+  padding: '10px 12px',
+  display: 'flex' as const,
+  alignItems: 'center' as const,
+  gap: 10,
+  cursor: 'pointer' as const,
+}
+
+export default function DashboardHome() {
+  const router = useRouter()
   const supabase = createClient()
+  const [coachName, setCoachName] = useState('')
+  const [greeting, setGreeting] = useState('Good morning')
+  const [lessons, setLessons] = useState<DashboardLesson[]>([])
+  const [unverified, setUnverified] = useState<UnverifiedSession[]>([])
+  const [, setRecentSessions] = useState<unknown[]>([])
 
   useEffect(() => {
     async function load() {
-      const { data: l } = await supabase
-        .from('lessons')
-        .select('*, players(name)')
-        .gte('starts_at', new Date().toISOString())
-        .order('starts_at', { ascending: true })
-        .limit(5)
-      const { count: pc } = await supabase.from('players').select('*', { count: 'exact', head: true })
-      const { count: vc } = await supabase.from('videos').select('*', { count: 'exact', head: true })
-      const { count: dc } = await supabase.from('drills').select('*', { count: 'exact', head: true })
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data: profile } = await supabase.from('profiles').select('created_at').eq('id', user.id).maybeSingle()
-        setCreatedAt(profile?.created_at ?? null)
-      }
-      setLessons(l || [])
-      setPlayerCount(pc || 0)
-      setVideoCount(vc || 0)
-      setDrillCount(dc || 0)
-      setLoading(false)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, first_name')
+        .eq('id', user.id)
+        .single()
+
+      const name =
+        profile?.first_name ||
+        profile?.full_name?.split(' ')[0] ||
+        'Coach'
+      setCoachName(name)
+
+      const hour = new Date().getHours()
+      if (hour < 12) setGreeting('Good morning')
+      else if (hour < 17) setGreeting('Good afternoon')
+      else setGreeting('Good evening')
     }
     load()
-  }, [])
+  }, [supabase])
 
-  const stats = [
-    { label: 'Players', value: playerCount, icon: Users, href: '/dashboard/players' },
-    { label: 'Upcoming', value: lessons.length, icon: CalendarDays, href: '/dashboard/schedule' },
-    { label: 'Videos', value: videoCount, icon: Video, href: '/dashboard/video' },
-  ]
+  useEffect(() => {
+    async function loadDashboardData() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return
 
-  const hour = new Date().getHours()
-  const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
-  const checklistItems = [
-    {
-      label: 'Add your first player',
-      done: playerCount > 0,
-      href: '/dashboard/players',
-      cta: 'Add player →',
-    },
-    {
-      label: 'Schedule a lesson',
-      done: lessons.length > 0,
-      href: '/dashboard/schedule',
-      cta: 'Set availability →',
-    },
-    {
-      label: 'Try the AI drill builder',
-      done: drillCount > 0,
-      href: '/dashboard/players',
-      cta: 'Build drills →',
-    },
-    {
-      label: 'Add a player reel',
-      done: videoCount > 0,
-      href: '/dashboard/video',
-      cta: 'Upload video →',
-    },
-  ]
-  const completedItems = checklistItems.filter(item => item.done).length
-  const isNewCoach = playerCount === 0 || (createdAt ? Date.now() - new Date(createdAt).getTime() < 7 * 24 * 60 * 60 * 1000 : false)
-  const showChecklist = !loading && isNewCoach && completedItems < checklistItems.length
+      const weekStart = new Date()
+      const weekEnd = new Date()
+      weekEnd.setDate(weekEnd.getDate() + 7)
+
+      const [{ data: lessonsData }, { data: unverifiedData }, { data: recentSessionsData }] =
+        await Promise.all([
+          supabase
+            .from('lessons')
+            .select('*, players(name, sport)')
+            .gte('starts_at', weekStart.toISOString())
+            .lte('starts_at', weekEnd.toISOString())
+            .order('starts_at', { ascending: true })
+            .limit(8),
+          supabase
+            .from('analysis_sessions')
+            .select('*, players(name)')
+            .eq('coach_verified', false)
+            .order('analyzed_at', { ascending: false })
+            .limit(5),
+          supabase
+            .from('analysis_sessions')
+            .select('player_id, overall_score, analyzed_at, players(name, id)')
+            .order('analyzed_at', { ascending: false })
+            .limit(40),
+        ])
+
+      setLessons((lessonsData || []) as DashboardLesson[])
+      setUnverified((unverifiedData || []) as UnverifiedSession[])
+      setRecentSessions((recentSessionsData || []) as unknown[])
+    }
+    void loadDashboardData()
+  }, [supabase])
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
-      <div>
-        <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-          {greet}, Coach
+    <div
+      style={{
+        maxWidth: 800,
+        margin: '0 auto',
+        padding: '0 0 40px',
+      }}
+    >
+      <div style={{ marginBottom: 24 }}>
+        <h1
+          style={{
+            ...typography.greeting,
+            color: TEXT,
+            marginBottom: 4,
+          }}
+        >
+          {greeting}
+          {coachName ? `, ${coachName}` : ''}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Here&apos;s a snapshot of Playvia today.
-        </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        {stats.map(({ label, value, icon: Icon, href }) => (
-          <Link
-            key={label}
-            href={href}
-            className="group flex flex-col rounded-2xl border border-border bg-card p-5 shadow-sm transition-all hover:border-primary/25 hover:shadow-md"
+      <UniversalVia role="coach" />
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 14,
+          marginTop: 4,
+        }}
+      >
+        <GlassCard mode="light" style={{ padding: 0 }}>
+          <div
+            style={{
+              padding: '12px 16px',
+              borderBottom: DIVIDER,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
           >
-            <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Icon className="size-5" />
-            </div>
-            <p className="font-heading text-3xl font-bold tabular-nums text-card-foreground">
-              {loading ? '—' : value}
-            </p>
-            <p className="mt-1 text-xs font-medium text-muted-foreground">{label}</p>
-            <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100">
-              Open <ArrowRight className="size-3" />
-            </span>
-          </Link>
-        ))}
-      </div>
-
-      {showChecklist && (
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="font-heading text-lg font-bold text-foreground">Get started with Playvia</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{completedItems}/4 complete</p>
-            </div>
-            <div className="h-2 w-full rounded-full bg-muted sm:w-44">
-              <div
-                className="h-2 rounded-full bg-primary transition-all"
-                style={{ width: `${(completedItems / checklistItems.length) * 100}%` }}
-              />
-            </div>
+            <span style={{ fontSize: 13, fontWeight: 500, color: TEXT }}>This week</span>
+            <span style={{ fontSize: 11, color: TEXT_MUTED }}>{lessons.length} lessons</span>
           </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {checklistItems.map(item => {
-              const Icon = item.done ? CheckCircle2 : Circle
-              return (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 transition-colors hover:border-primary/30 hover:bg-primary/[0.04]"
-                >
-                  <span className="flex items-center gap-3 text-sm font-semibold text-foreground">
-                    <Icon className={`size-5 ${item.done ? 'text-primary' : 'text-muted-foreground/50'}`} />
-                    {item.label}
-                  </span>
-                  {!item.done && <span className="text-xs font-bold text-primary">{item.cta}</span>}
-                </Link>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: 'Schedule', href: '/dashboard/schedule', icon: CalendarDays },
-          { label: 'Players', href: '/dashboard/players', icon: Users },
-          { label: 'Pulse', href: '/dashboard/analytics', icon: TrendingUp },
-          { label: 'Video', href: '/dashboard/video', icon: Video },
-        ].map(({ label, href, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 shadow-sm transition-all hover:border-primary/30 hover:bg-muted/30"
-          >
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted text-primary">
-              <Icon className="size-5" />
-            </div>
-            <span className="font-medium text-card-foreground">{label}</span>
-          </Link>
-        ))}
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="font-heading text-sm font-semibold text-foreground">Upcoming lessons</h2>
-          <Link href="/dashboard/schedule" className="text-xs font-semibold text-primary hover:underline">
-            Full schedule
-          </Link>
-        </div>
-        <div>
-          {loading ? (
-            <div className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</div>
-          ) : lessons.length === 0 ? (
-            <div className="px-5 py-12 text-center text-sm text-muted-foreground">
-              No upcoming lessons.{' '}
-              <Link href="/dashboard/schedule" className="font-medium text-primary hover:underline">
-                Open schedule
-              </Link>
+          {lessons.length === 0 ? (
+            <div style={{ padding: '20px 16px', fontSize: 12, color: TEXT_MUTED, textAlign: 'center' }}>
+              No lessons scheduled this week
             </div>
           ) : (
-            lessons.map(lesson => (
-              <Link key={lesson.id} href={`/dashboard/lessons/${lesson.id}`}>
-                <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4 transition-colors last:border-b-0 hover:bg-muted/40">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
-                      {lesson.players?.name?.charAt(0).toUpperCase()}
+            <div style={{ padding: '8px 10px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {lessons.slice(0, 5).map(lesson => (
+                <div
+                  key={lesson.id}
+                  onClick={() => router.push(`/dashboard/lessons/${lesson.id}`)}
+                  style={rowStyle}
+                >
+                  <div
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 9,
+                      ...glass.light.scoreBadge,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 500, color: TEXT, lineHeight: 1 }}>
+                      {new Date(lesson.starts_at).getDate()}
                     </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-foreground">{lesson.players?.name}</p>
-                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="size-3 shrink-0" />
-                        {format(new Date(lesson.starts_at), 'EEE, MMM d • h:mm a')}
-                      </p>
+                    <div
+                      style={{
+                        fontSize: 9,
+                        color: TEXT_MUTED,
+                        textTransform: 'uppercase',
+                        letterSpacing: '.04em',
+                      }}
+                    >
+                      {new Date(lesson.starts_at).toLocaleString('en', { weekday: 'short' })}
                     </div>
                   </div>
-                  <Badge variant="secondary" className="shrink-0 capitalize">
-                    {lesson.status}
-                  </Badge>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: TEXT,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {lesson.players?.name || 'Player'}
+                    </div>
+                    <div style={{ fontSize: 11, color: TEXT_MUTED }}>
+                      {new Date(lesson.starts_at).toLocaleTimeString('en', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                      {lesson.players?.sport
+                        ? ` · ${lesson.players.sport.charAt(0).toUpperCase()}${lesson.players.sport.slice(1)}`
+                        : ''}
+                    </div>
+                  </div>
                 </div>
-              </Link>
-            ))
+              ))}
+            </div>
           )}
-        </div>
+          {lessons.length > 5 && (
+            <div
+              style={{
+                padding: '9px 16px',
+                borderTop: DIVIDER,
+                fontSize: 11,
+                color: TEAL,
+                textAlign: 'center',
+                cursor: 'pointer',
+              }}
+              onClick={() => router.push('/dashboard/schedule')}
+            >
+              +{lessons.length - 5} more this week →
+            </div>
+          )}
+        </GlassCard>
+
+        <GlassCard mode="light" style={{ padding: 0 }}>
+          <div
+            style={{
+              padding: '12px 16px',
+              borderBottom: DIVIDER,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 500, color: TEXT }}>Reels to verify</span>
+            {unverified.length > 0 && (
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  background: '#FAEEDA',
+                  border: '0.5px solid #EF9F27',
+                  fontSize: 10,
+                  color: '#633806',
+                  fontWeight: 500,
+                }}
+              >
+                {unverified.length} pending
+              </span>
+            )}
+          </div>
+          {unverified.length === 0 ? (
+            <div style={{ padding: '20px 16px', fontSize: 12, color: TEXT_MUTED, textAlign: 'center' }}>
+              All reels verified
+            </div>
+          ) : (
+            <div style={{ padding: '8px 10px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {unverified.slice(0, 5).map(session => (
+                <div
+                  key={session.id}
+                  onClick={() => router.push(`/dashboard/players/${session.player_id}`)}
+                  style={rowStyle}
+                >
+                  <div
+                    style={{
+                      width: 44,
+                      height: 36,
+                      borderRadius: 7,
+                      background: '#0d1a14',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      position: 'relative',
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="2">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: 3,
+                        left: 4,
+                        fontSize: 9,
+                        fontWeight: 500,
+                        color: 'rgba(255,255,255,.7)',
+                        ...glass.light.scoreBadge,
+                        padding: '0 3px',
+                        borderRadius: 3,
+                      }}
+                    >
+                      {session.overall_score}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: TEXT,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {session.players?.name || 'Player'}
+                    </div>
+                    <div style={{ fontSize: 11, color: TEXT_MUTED }}>
+                      {session.top_issue || 'No issue'} ·{' '}
+                      {new Date(session.analyzed_at).toLocaleDateString('en', {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      padding: '4px 9px',
+                      borderRadius: 7,
+                      ...glass.light.scoreBadge,
+                      fontSize: 10,
+                      color: TEXT_MUTED,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Verify
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {unverified.length > 5 && (
+            <div
+              style={{
+                padding: '9px 16px',
+                borderTop: DIVIDER,
+                fontSize: 11,
+                color: TEAL,
+                textAlign: 'center',
+                cursor: 'pointer',
+              }}
+              onClick={() => router.push('/dashboard/players')}
+            >
+              +{unverified.length - 5} more →
+            </div>
+          )}
+        </GlassCard>
       </div>
     </div>
   )

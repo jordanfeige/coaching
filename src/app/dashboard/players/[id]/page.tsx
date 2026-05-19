@@ -32,6 +32,7 @@ import { isImageMediaPath } from '@/lib/video-frames'
 import { titleInitials } from '@/lib/video-thumbnails'
 import PlayerOverviewTab from '@/components/player/PlayerOverviewTab'
 import ViaBar from '@/components/ViaBar'
+import { typography } from '@/lib/brand'
 
 /** Legacy rows may still store `baseball`; treat as pickleball for focuses / AI. */
 function normalizeSportKey(s?: string | null): string {
@@ -448,7 +449,7 @@ export default function PlayerDetailPage() {
             {player.name.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <h1 className="font-heading text-xl font-bold tracking-tight text-foreground">{player.name}</h1>
+            <h1 style={{ ...typography.playerName, color: 'hsl(var(--foreground))' }}>{player.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               {player.email && <span className="text-sm text-muted-foreground">{player.email}</span>}
               <Badge variant={skillBadgeVariant(player.skill_level)} className="capitalize">

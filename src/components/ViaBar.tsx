@@ -2,19 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { ArrowRight, ChevronDown, Send } from 'lucide-react'
+import { ArrowRight, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
-import ViaBlob from './ViaBlob'
 import ViaDrillSaveCard from './ViaDrillSaveCard'
+import {
+  ViaPanel,
+  ViaPanelBrief,
+  ViaPanelInput,
+  ViaPanelRow,
+  ViaPanelStyles,
+  ViaPanelTitleRow,
+} from './ViaPanel'
+import { VIA_BORDER, VIA_TEAL, VIA_TEXT, VIA_TEXT_MUTED, VIA_TEXT_SEC, VIA_WARM_BG } from '@/lib/via-ui'
 import type { ViaCreateDrill } from '@/lib/via-drill'
 
-const TEAL = 'hsl(168,62%,36%)'
+const TEAL = VIA_TEAL
 const TEAL_LIGHT = 'hsl(168,62%,95%)'
-const BORDER = 'hsl(30,10%,88%)'
-const TEXT = 'hsl(220,20%,15%)'
-const TEXT_SEC = 'hsl(220,10%,45%)'
-const TEXT_MUTED = 'hsl(220,10%,65%)'
-const WARM_BG = 'hsl(40,20%,97%)'
+const BORDER = VIA_BORDER
+const TEXT = VIA_TEXT
+const TEXT_SEC = VIA_TEXT_SEC
+const TEXT_MUTED = VIA_TEXT_MUTED
+const WARM_BG = VIA_WARM_BG
 
 type Role = 'coach' | 'player'
 
@@ -452,114 +460,66 @@ export default function ViaBar({ role, playerContext }: Props) {
 
   return (
     <div style={{ marginBottom: 20, fontFamily: 'Arial, sans-serif', position: 'relative', zIndex: expanded ? 40 : 1 }}>
-      <div
-        style={{
-          background: 'white',
-          border: `0.5px solid ${expanded ? 'hsl(168,62%,60%)' : BORDER}`,
-          borderRadius: 14,
-          padding: '10px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          cursor: 'pointer',
-          transition: 'border-color 0.2s',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-        }}
+      <ViaPanelStyles />
+      <ViaPanel
+        mode="via"
+        style={{ padding: '18px 20px', cursor: expanded ? 'default' : 'pointer' }}
         onClick={() => {
           if (!expanded) setExpanded(true)
         }}
       >
-        <ViaBlob size={34} thinking={loading} />
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: TEAL }}>Via</span>
-            <span style={{ fontSize: 11, color: TEXT_MUTED }}>AI {role === 'coach' ? 'Coaching' : 'Training'} Assistant</span>
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              color: TEXT_SEC,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              marginTop: 1,
-            }}
-          >
-            {loading ? 'Via is thinking...' : briefText}
-          </div>
-        </div>
-
-        {!expanded && (
-          <div onClick={event => event.stopPropagation()} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input
-              placeholder="Ask Via..."
-              value={input}
-              onChange={event => setInput(event.target.value)}
-              onKeyDown={event => {
-                if (event.key === 'Enter' && input.trim()) void sendMessage()
-              }}
-              onClick={event => {
-                event.stopPropagation()
-                setExpanded(true)
-              }}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: `0.5px solid ${BORDER}`,
-                fontSize: 12,
-                fontFamily: 'Arial, sans-serif',
-                outline: 'none',
-                color: TEXT,
-                background: WARM_BG,
-                width: 160,
-              }}
-            />
-            <button
-              type="button"
-              onClick={event => {
-                event.stopPropagation()
-                if (input.trim()) void sendMessage()
-              }}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                background: input.trim() ? TEAL : BORDER,
-                border: 'none',
-                cursor: input.trim() ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <Send size={12} color="white" />
-            </button>
-          </div>
-        )}
-
-        {expanded && (
-          <button
-            type="button"
-            onClick={event => {
-              event.stopPropagation()
-              setExpanded(false)
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: TEXT_MUTED,
-              display: 'flex',
-              alignItems: 'center',
-              padding: 4,
-            }}
-          >
-            <ChevronDown size={16} />
-          </button>
-        )}
-      </div>
+        <ViaPanelRow blobSize={36} thinking={loading} frameBlob>
+          <ViaPanelTitleRow
+            role={role}
+            mode="via"
+            trailing={
+              expanded ? (
+                <button
+                  type="button"
+                  onClick={event => {
+                    event.stopPropagation()
+                    setExpanded(false)
+                  }}
+                  style={{
+                    marginLeft: 'auto',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: TEXT_MUTED,
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: 4,
+                  }}
+                >
+                  <ChevronDown size={16} />
+                </button>
+              ) : null
+            }
+          />
+          {!expanded && (
+            <ViaPanelBrief loading={loading} mode="via">
+              {briefText}
+            </ViaPanelBrief>
+          )}
+          {!expanded && (
+            <div onClick={event => event.stopPropagation()}>
+              <ViaPanelInput
+                value={input}
+                onChange={setInput}
+                onSend={() => void sendMessage()}
+                disabled={loading}
+                mode={role === 'coach' ? 'light' : 'dark'}
+                placeholder={
+                  role === 'coach'
+                    ? 'Ask Via about your roster...'
+                    : 'Ask Via about your training...'
+                }
+                onFocus={() => setExpanded(true)}
+              />
+            </div>
+          )}
+        </ViaPanelRow>
+      </ViaPanel>
 
       {expanded && (
         <div
@@ -570,8 +530,8 @@ export default function ViaBar({ role, playerContext }: Props) {
             right: 0,
             zIndex: 50,
             background: 'white',
-            border: '0.5px solid hsl(168,62%,60%)',
-            borderRadius: 14,
+            border: '0.5px solid rgba(29,158,117,.18)',
+            borderRadius: 16,
             overflow: 'hidden',
             boxShadow: '0 14px 36px rgba(0,0,0,0.14)',
           }}
@@ -862,7 +822,7 @@ export default function ViaBar({ role, playerContext }: Props) {
                       height: 5,
                       borderRadius: '50%',
                       background: TEAL,
-                      animation: `viaBounce 1.2s ease-in-out ${index * 0.2}s infinite`,
+                      animation: `viaPanelBounce 1.2s ease-in-out ${index * 0.2}s infinite`,
                     }}
                   />
                 ))}
@@ -874,66 +834,22 @@ export default function ViaBar({ role, playerContext }: Props) {
 
           <div
             style={{
-              padding: '10px 14px',
-              borderTop: `0.5px solid ${BORDER}`,
-              background: 'white',
-              display: 'flex',
-              gap: 8,
-              alignItems: 'center',
+              padding: '12px 16px 14px',
+              borderTop: '0.5px solid rgba(29,158,117,.1)',
+              background: 'rgba(255,255,255,.6)',
             }}
           >
-            <input
-              ref={inputRef}
+            <ViaPanelInput
               value={input}
-              onChange={event => setInput(event.target.value)}
-              onKeyDown={event => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  void sendMessage()
-                }
-              }}
+              onChange={setInput}
+              onSend={() => void sendMessage()}
+              disabled={loading}
+              mode={role === 'coach' ? 'light' : 'dark'}
               placeholder="Ask Via anything..."
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                borderRadius: 10,
-                border: `0.5px solid ${BORDER}`,
-                fontSize: 13,
-                fontFamily: 'Arial, sans-serif',
-                outline: 'none',
-                color: TEXT,
-                background: WARM_BG,
-              }}
             />
-            <button
-              type="button"
-              onClick={() => void sendMessage()}
-              disabled={!input.trim() || loading}
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 10,
-                background: input.trim() && !loading ? TEAL : BORDER,
-                border: 'none',
-                cursor: input.trim() && !loading ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <Send size={14} color="white" />
-            </button>
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes viaBounce {
-          0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-          30% { transform: translateY(-5px); opacity: 1; }
-        }
-      `}</style>
     </div>
   )
 }

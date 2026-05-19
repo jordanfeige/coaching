@@ -20,3 +20,64 @@ export const brand = {
   amber: 'hsl(38, 92%, 50%)',
   amberLight: 'hsl(38, 92%, 95%)',
 } as const
+
+export const fonts = {
+  sans: "var(--font-dm-sans), 'DM Sans', system-ui, -apple-system, sans-serif",
+  serif: "var(--font-dm-serif), 'DM Serif Display', Georgia, serif",
+  serifItalic: "var(--font-dm-serif), 'DM Serif Display', Georgia, serif",
+  emailSerif: 'Georgia, serif',
+} as const
+
+export const typography = {
+  wordmark: {
+    fontFamily: fonts.serif,
+    letterSpacing: '-.3px',
+  },
+  greeting: {
+    fontFamily: fonts.serif,
+    fontSize: 26,
+    fontWeight: 400,
+    letterSpacing: '-.4px',
+    lineHeight: 1.2,
+  },
+  playerName: {
+    fontFamily: fonts.serif,
+    fontSize: 26,
+    fontWeight: 400,
+    letterSpacing: '-.3px',
+  },
+  viaName: {
+    fontFamily: fonts.serif,
+    fontStyle: 'italic' as const,
+    color: '#1D9E75',
+  },
+  sectionHeading: {
+    fontFamily: fonts.sans,
+    fontSize: 18,
+    fontWeight: 500,
+    letterSpacing: '-.3px',
+  },
+  body: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    fontWeight: 400,
+    lineHeight: 1.65,
+  },
+  label: {
+    fontFamily: fonts.sans,
+    fontSize: 10,
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '.08em',
+  },
+  nav: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    fontWeight: 400,
+  },
+  score: {
+    fontFamily: fonts.sans,
+    fontWeight: 500,
+    letterSpacing: '-1px',
+  },
+} as const

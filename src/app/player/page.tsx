@@ -5,8 +5,15 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import { differenceInDays, format } from 'date-fns'
-import { Send } from 'lucide-react'
 import ViaBlob from '@/components/ViaBlob'
+import { typography } from '@/lib/brand'
+import {
+  ViaPanel,
+  ViaPanelBrief,
+  ViaPanelInput,
+  ViaPanelStyles,
+  ViaPanelTitleRow,
+} from '@/components/ViaPanel'
 import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
 
 const CSS = `
@@ -393,7 +400,7 @@ export default function PlayerHome() {
           background: WARM_BG,
         }}
       >
-        <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>
+        <h1 style={{ ...typography.greeting, fontSize: 22, marginBottom: 8 }}>
           Welcome to Playvia
         </h1>
         <p style={{ fontSize: 14, color: TEXT_SEC, lineHeight: 1.6 }}>
@@ -412,22 +419,13 @@ export default function PlayerHome() {
         maxWidth: 720,
         margin: '0 auto',
         padding: '0 0 40px',
-        background: WARM_BG,
         minHeight: '100%',
       }}
     >
       <style>{CSS}</style>
 
-      <div
-        style={{
-          background:
-            'linear-gradient(135deg, #eaf7f2 0%, #eff3fe 55%, #f5f0fd 100%)',
-          borderRadius: 16,
-          border: '0.5px solid rgba(29,158,117,.18)',
-          overflow: 'hidden',
-          marginBottom: 14,
-        }}
-      >
+      <ViaPanelStyles />
+      <ViaPanel mode="playerVia" style={{ overflow: 'hidden', marginBottom: 14 }}>
         <div style={{ padding: '18px 20px 16px' }}>
           <div
             style={{
@@ -445,26 +443,8 @@ export default function PlayerHome() {
                 gap: 10,
               }}
             >
-              <ViaBlob size={30} thinking={chatLoading} />
-              <div>
-                <span style={{ fontSize: 13, fontWeight: 800, color: TEXT }}>
-                  Via
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    background: 'rgba(29,158,117,.12)',
-                    color: TEAL_DARK,
-                    padding: '2px 8px',
-                    borderRadius: 999,
-                    fontWeight: 600,
-                    marginLeft: 7,
-                    border: '0.5px solid rgba(29,158,117,.18)',
-                  }}
-                >
-                  AI Coaching Agent
-                </span>
-              </div>
+              <ViaBlob size={36} thinking={chatLoading} />
+              <ViaPanelTitleRow role="player" mode="playerVia" />
             </div>
 
             {currentScore !== null && (
@@ -497,45 +477,9 @@ export default function PlayerHome() {
             )}
           </div>
 
-          {briefLoading ? (
-            <div
-              style={{
-                display: 'flex',
-                gap: 5,
-                alignItems: 'center',
-                marginBottom: 12,
-              }}
-            >
-              {[0, 1, 2].map(i => (
-                <div
-                  key={i}
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: TEAL,
-                    opacity: 0.5,
-                    animation: `viaRing 1.2s ease-in-out ${i * 0.2}s infinite`,
-                  }}
-                />
-              ))}
-              <span style={{ fontSize: 12, color: TEXT_MUTED, marginLeft: 4 }}>
-                Via is writing your debrief...
-              </span>
-            </div>
-          ) : (
-            <p
-              style={{
-                fontSize: 15,
-                fontWeight: 500,
-                color: TEXT,
-                lineHeight: 1.65,
-                margin: '0 0 14px',
-              }}
-            >
-              {brief}
-            </p>
-          )}
+          <ViaPanelBrief loading={briefLoading} loadingLabel="Via is writing your debrief..." mode="playerVia">
+            {brief}
+          </ViaPanelBrief>
 
           {currentScore !== null && (
             <div>
@@ -595,57 +539,13 @@ export default function PlayerHome() {
             ↩ Reply to Via
           </div>
 
-          <div
-            style={{
-              display: 'flex',
-              gap: 7,
-              alignItems: 'center',
-              marginBottom: 8,
-            }}
-          >
-            <input
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  void sendChat()
-                }
-              }}
-              placeholder="Ask Via about your progress..."
-              style={{
-                flex: 1,
-                padding: '9px 13px',
-                borderRadius: 10,
-                border: '0.5px solid rgba(29,158,117,.22)',
-                background: 'white',
-                fontSize: 12,
-                color: TEXT,
-                fontFamily: 'Arial, sans-serif',
-                outline: 'none',
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => void sendChat()}
-              disabled={!chatInput.trim() || chatLoading}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 9,
-                background: chatInput.trim() ? TEAL : '#ccc',
-                border: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: chatInput.trim() ? 'pointer' : 'default',
-                flexShrink: 0,
-                transition: 'background 0.15s',
-              }}
-            >
-              <Send size={13} color="white" />
-            </button>
-          </div>
+          <ViaPanelInput
+            value={chatInput}
+            onChange={setChatInput}
+            onSend={() => void sendChat()}
+            disabled={chatLoading}
+            placeholder="Ask Via about your progress..."
+          />
 
           <div
             style={{
@@ -747,7 +647,7 @@ export default function PlayerHome() {
             </div>
           )}
         </div>
-      </div>
+      </ViaPanel>
 
       {(pose?.length || currentScore !== null) && (
         <div style={{ marginBottom: 14 }}>

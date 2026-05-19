@@ -6,6 +6,14 @@ import { differenceInDays, format } from 'date-fns'
 import { Send, X } from 'lucide-react'
 import ViaBlob from '@/components/ViaBlob'
 import ViaDrillSaveCard from '@/components/ViaDrillSaveCard'
+import {
+  ViaPanel,
+  ViaPanelBrief,
+  ViaPanelInput,
+  ViaPanelRow,
+  ViaPanelStyles,
+  ViaPanelTitleRow,
+} from '@/components/ViaPanel'
 import type { ViaCreateDrill } from '@/lib/via-drill'
 
 const TEAL = 'hsl(168,62%,36%)'
@@ -463,153 +471,21 @@ export default function PulseClient({
         )}
       </div>
 
-      <div
-        style={{
-          background:
-            'linear-gradient(135deg, #eaf7f2 0%, #eff3fe 55%, #f4effd 100%)',
-          borderRadius: 16,
-          border: '0.5px solid rgba(29,158,117,.18)',
-          padding: '18px 20px',
-          marginBottom: 18,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 16,
-          }}
-        >
-          <ViaBlob size={36} />
-
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 14,
-                  fontWeight: 800,
-                  color: TEXT,
-                }}
-              >
-                Via
-              </span>
-              <span
-                style={{
-                  fontSize: 10,
-                  background: 'rgba(29,158,117,.12)',
-                  color: TEAL_DARK,
-                  padding: '2px 8px',
-                  borderRadius: 999,
-                  fontWeight: 600,
-                  border: '0.5px solid rgba(29,158,117,.2)',
-                }}
-              >
-                AI Coaching Agent
-              </span>
-            </div>
-
-            {briefLoading ? (
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 4,
-                  alignItems: 'center',
-                  marginBottom: 12,
-                }}
-              >
-                {[0, 1, 2].map(i => (
-                  <div
-                    key={i}
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      background: TEAL,
-                      opacity: 0.5,
-                      animation: `pulseDot 1.2s ease-in-out ${i * 0.2}s infinite`,
-                    }}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p
-                style={{
-                  fontSize: 13,
-                  color: '#1a1a1a',
-                  lineHeight: 1.65,
-                  margin: '0 0 12px',
-                  maxWidth: 620,
-                }}
-              >
-                {brief}
-              </p>
-            )}
-
-            <div
-              style={{
-                display: 'flex',
-                gap: 7,
-                alignItems: 'center',
-                background: 'rgba(255,255,255,.75)',
-                border: '0.5px solid rgba(29,158,117,.22)',
-                borderRadius: 10,
-                padding: '8px 12px',
-                maxWidth: 480,
-              }}
-            >
-              <input
-                value={chatInput}
-                onChange={e => setChatInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void sendChat()
-                  }
-                }}
-                placeholder="Ask Via about your roster..."
-                style={{
-                  flex: 1,
-                  border: 'none',
-                  background: 'none',
-                  fontSize: 12,
-                  color: TEXT,
-                  fontFamily: 'Arial, sans-serif',
-                  outline: 'none',
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => void sendChat()}
-                disabled={!chatInput.trim() || chatLoading}
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 7,
-                  background: chatInput.trim() ? TEAL : '#ccc',
-                  border: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: chatInput.trim() ? 'pointer' : 'default',
-                  flexShrink: 0,
-                  transition: 'background 0.15s',
-                }}
-              >
-                <Send size={11} color="white" />
-              </button>
-            </div>
-
-
-          </div>
-        </div>
-      </div>
+      <ViaPanelStyles />
+      <ViaPanel style={{ padding: '18px 20px', marginBottom: 18 }}>
+        <ViaPanelRow blobSize={36}>
+          <ViaPanelTitleRow role="coach" />
+          <ViaPanelBrief loading={briefLoading}>{brief}</ViaPanelBrief>
+          <ViaPanelInput
+            value={chatInput}
+            onChange={setChatInput}
+            onSend={() => void sendChat()}
+            disabled={chatLoading}
+            placeholder="Ask Via about your roster..."
+            maxWidth={480}
+          />
+        </ViaPanelRow>
+      </ViaPanel>
 
       <div
         style={{

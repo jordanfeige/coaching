@@ -2,7 +2,7 @@
 
 import { format } from 'date-fns'
 import { useRouter } from 'next/navigation'
-import ViaBlob from '@/components/ViaBlob'
+import { GlassCard } from '@/components/GlassCard'
 
 const TEAL = '#1D9E75'
 const BORDER = 'hsl(30,10%,88%)'
@@ -43,19 +43,6 @@ interface Props {
   fixedIssues: string[]
   totalGain: number
   nextLesson: Lesson | null
-}
-
-const VIA_PROMPTS = (firstName: string) => [
-  `What should I focus on in ${firstName}'s next lesson?`,
-  `Summarize ${firstName}'s technique progress`,
-  `Which issues should we prioritize for ${firstName}?`,
-  `Draft a parent update about ${firstName}'s improvement`,
-]
-
-function openViaChat(prompt: string, playerId: string) {
-  window.dispatchEvent(
-    new CustomEvent('open-via-chat', { detail: { prompt, playerId } }),
-  )
 }
 
 function StatCard({
@@ -273,17 +260,7 @@ export default function PlayerOverviewTab({
           gap: 12,
         }}
       >
-        <div
-          style={{
-            background: 'white',
-            border: `0.5px solid ${BORDER}`,
-            borderRadius: 14,
-            padding: '14px 16px',
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 180,
-          }}
-        >
+        <GlassCard mode="light" style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', minHeight: 180 }}>
           <div
             style={{
               display: 'flex',
@@ -311,16 +288,9 @@ export default function PlayerOverviewTab({
             )}
           </div>
           <ScoreTrendChart sessions={sortedSessions} />
-        </div>
+        </GlassCard>
 
-        <div
-          style={{
-            background: 'white',
-            border: `0.5px solid ${BORDER}`,
-            borderRadius: 14,
-            padding: '14px 16px',
-          }}
-        >
+        <GlassCard mode="light" style={{ padding: '14px 16px' }}>
           <div
             style={{
               display: 'flex',
@@ -484,7 +454,7 @@ export default function PlayerOverviewTab({
               ))}
             </div>
           )}
-        </div>
+        </GlassCard>
       </div>
 
       {/* Next lesson + latest reel */}
@@ -737,81 +707,6 @@ export default function PlayerOverviewTab({
               No reels analyzed yet. Upload video on the Video tab.
             </p>
           )}
-        </div>
-      </div>
-
-      {/* Ask Via */}
-      <div
-        style={{
-          background:
-            'linear-gradient(135deg, #eaf7f2 0%, #eff3fe 55%, #f5f0fd 100%)',
-          borderRadius: 16,
-          border: '0.5px solid rgba(29,158,117,.18)',
-          padding: '16px 18px',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 10,
-            marginBottom: 12,
-          }}
-        >
-          <ViaBlob size={20} style={{ marginTop: 2, flexShrink: 0 }} />
-          <div>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                color: TEXT,
-                marginBottom: 4,
-              }}
-            >
-              Ask Via about {firstName}
-            </div>
-            <p
-              style={{
-                fontSize: 12,
-                color: TEXT_SEC,
-                margin: 0,
-                lineHeight: 1.55,
-              }}
-            >
-              Get coaching insights, lesson plans, and parent updates powered by
-              your player&apos;s reel history.
-            </p>
-          </div>
-        </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: 8,
-          }}
-        >
-          {VIA_PROMPTS(firstName).map(prompt => (
-            <button
-              key={prompt}
-              type="button"
-              onClick={() => openViaChat(prompt, player.id)}
-              style={{
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '0.5px solid rgba(29,158,117,.22)',
-                background: 'rgba(255,255,255,.8)',
-                color: TEXT,
-                fontSize: 11,
-                fontWeight: 500,
-                textAlign: 'left',
-                cursor: 'pointer',
-                fontFamily: 'Arial, sans-serif',
-                lineHeight: 1.4,
-              }}
-            >
-              {prompt}
-            </button>
-          ))}
         </div>
       </div>
     </div>

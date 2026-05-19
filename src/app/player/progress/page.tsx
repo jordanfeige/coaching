@@ -10,6 +10,8 @@ import {
   PLAYER_VISIBLE_SESSIONS_FILTER,
   SessionReviewBadge,
 } from '@/lib/analysis-sessions'
+import { GlassCard } from '@/components/GlassCard'
+import { glass } from '@/lib/glass'
 
 const TEAL = 'hsl(168,62%,36%)'
 const BORDER = 'hsl(30,10%,88%)'
@@ -607,18 +609,7 @@ function ProgressPageContent() {
           </div>
         )}
 
-        <div
-          style={{
-            background: 'white',
-            border: `0.5px solid ${BORDER}`,
-            borderRadius: 14,
-            padding: '14px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-          }}
-        >
+        <GlassCard mode="dark" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <div
               style={{
@@ -653,7 +644,7 @@ function ProgressPageContent() {
           >
             Reels →
           </button>
-        </div>
+        </GlassCard>
       </div>
     )
   }
@@ -666,7 +657,6 @@ function ProgressPageContent() {
         maxWidth: 720,
         margin: '0 auto',
         padding: '0 0 40px',
-        background: WARM_BG,
         minHeight: '100%',
       }}
     >

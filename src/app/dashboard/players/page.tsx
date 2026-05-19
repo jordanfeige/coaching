@@ -3,6 +3,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
+import { GlassCard } from '@/components/GlassCard'
+import { glass } from '@/lib/glass'
 
 const TEAL = '#1D9E75'
 const TEAL_DARK = '#085041'
@@ -152,7 +154,7 @@ function PlayerRow({
     : urgency === 'no_sessions' || 
       urgency === 'stale'
     ? 'var(--color-background-warning)'
-    : 'white'
+    : glass.light.row.background
 
   const scoreColor = urgency === 'regression'
     ? 'var(--color-text-danger)'
@@ -948,23 +950,22 @@ export default function PlayersPage() {
       </div>
 
       {/* Search + filters */}
-      <div style={{
-        background: 'white',
-        border: `0.5px solid ${BORDER}`,
-        borderRadius: '14px 14px 0 0',
-        borderBottom: 'none',
-        padding: '12px 18px',
-        display: 'flex',
-        gap: 10,
-        alignItems: 'center',
-        flexWrap: 'wrap',
-      }}>
+      <GlassCard mode="light" style={{ borderRadius: '20px 20px 0 0', padding: '12px 18px' }}>
+        <div style={{
+          display: 'flex',
+          gap: 10,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}>
         <div style={{
           flex: 1,
           display: 'flex',
           alignItems: 'center',
           gap: 8,
           minWidth: 200,
+          ...glass.light.input,
+          borderRadius: 999,
+          padding: '8px 14px',
         }}>
           <svg width="15" height="15"
             viewBox="0 0 24 24" fill="none"
@@ -1032,12 +1033,9 @@ export default function PlayersPage() {
               style={{
                 padding: '5px 10px',
                 borderRadius: 7,
-                background: sortMode === s.key
-                  ? TEXT : 'white',
-                border: `0.5px solid ${sortMode === s.key
-                  ? TEXT : BORDER}`,
-                color: sortMode === s.key
-                  ? 'white' : TEXT_SEC,
+                ...(sortMode === s.key
+                  ? { background: TEXT, color: 'white', border: `0.5px solid ${TEXT}` }
+                  : { ...glass.light.chip, color: TEXT_SEC }),
                 fontSize: 11,
                 cursor: 'pointer',
                 fontFamily: 'Arial, sans-serif',
@@ -1048,36 +1046,102 @@ export default function PlayersPage() {
             </button>
           ))}
         </div>
-      </div>
+        </div>
+      </GlassCard>
 
       {/* Player list */}
-      <div style={{
-        background: 'white',
-        border: `0.5px solid ${BORDER}`,
-        borderRadius: '0 0 14px 14px',
-        overflow: 'hidden',
-      }}>
+      <GlassCard mode="light" style={{ borderRadius: '0 0 20px 20px', padding: 0 }}>
         {sections.map((section, si) => (
           <div key={si}>
-            {section.label && (
-              <div style={{
-                padding: '5px 20px 3px',
-                fontSize: 10,
-                fontWeight: 600,
-                color: section.label === 
-                  'Needs attention'
-                  ? 'var(--color-text-danger)'
-                  : TEXT_MUTED,
-                textTransform: 'uppercase',
-                letterSpacing: '.06em',
-                borderTop: si > 0
-                  ? `0.5px solid ${BORDER}`
-                  : 'none',
-                marginTop: si > 0 ? 6 : 0,
-              }}>
-                {section.label}
-              </div>
-            )}
+            {section.label &&
+              (section.label === 'Needs attention' ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 20px 6px',
+                    background: 'var(--color-background-danger)',
+                    borderTop:
+                      si > 0
+                        ? '0.5px solid var(--color-border-danger)'
+                        : 'none',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: 'var(--color-text-danger)',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: 'var(--color-text-danger)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '.07em',
+                    }}
+                  >
+                    {section.label}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--color-text-danger)',
+                      opacity: 0.7,
+                    }}
+                  >
+                    · {section.players.length} player
+                    {section.players.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 20px 6px',
+                    background: 'rgba(255,255,255,.25)',
+                    borderTop: si > 0 ? '0.5px solid rgba(255,255,255,.35)' : 'none',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: '#1D9E75',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: 'var(--color-text-secondary)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '.07em',
+                    }}
+                  >
+                    {section.label}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--color-text-secondary)',
+                      opacity: 0.7,
+                    }}
+                  >
+                    · {section.players.length} player
+                    {section.players.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              ))}
             {section.players.map(player => (
               <PlayerRow
                 key={player.id}
@@ -1113,7 +1177,7 @@ export default function PlayersPage() {
               : 'No players yet. Add your first player.'}
           </div>
         )}
-      </div>
+      </GlassCard>
 
       {/* Edit modal */}
       {editingPlayer && (
