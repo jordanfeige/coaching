@@ -250,7 +250,7 @@ export default function PlayerAnalyticsPanel({
 
   const quickActions = [
     {
-      label: 'Analyze video',
+      label: 'Add reel',
       icon: '📹',
       primary: true,
       disabled: false,
@@ -289,12 +289,12 @@ export default function PlayerAnalyticsPanel({
   if (sortedSessions.length === 0) {
     return (
       <div className={cardClass('text-center')}>
-        <p className="text-sm text-muted-foreground">No analyses yet for {player.name}.</p>
+        <p className="text-sm text-muted-foreground">No reels yet for {player.name}.</p>
         <a
           href={`/dashboard/video?player=${player.id}`}
           className="mt-4 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
         >
-          Analyze video
+          Add reel
         </a>
       </div>
     )
@@ -394,7 +394,7 @@ export default function PlayerAnalyticsPanel({
         <div className={cardClass()}>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total sessions</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{sortedSessions.length}</p>
-          <p className="mt-1 text-sm text-muted-foreground">Tracked analyses</p>
+          <p className="mt-1 text-sm text-muted-foreground">Tracked reels</p>
         </div>
         <div className={cardClass()}>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">This month</p>

@@ -219,48 +219,98 @@ export default function PoseOverlay({
         <div
           style={{
             position: 'absolute',
-            top: 8,
-            left: 8,
+            top: 10,
+            left: 10,
             zIndex: 20,
-            background: 'rgba(0,0,0,0.8)',
-            borderRadius: 8,
-            padding: '8px 10px',
+            background: 'rgba(0,0,0,0.82)',
+            borderRadius: 10,
+            padding: '10px 12px',
             maxWidth: 220,
+            backdropFilter: 'blur(8px)',
+            border: '0.5px solid rgba(255,255,255,0.12)',
           }}
         >
           <p
             style={{
-              fontSize: 9,
-              fontWeight: 600,
-              color: 'rgba(255,255,255,0.6)',
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'rgba(255,255,255,0.5)',
               textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              margin: '0 0 5px',
+              letterSpacing: '0.07em',
+              margin: '0 0 7px',
               fontFamily: 'Arial, sans-serif',
             }}
           >
-            Joint measurements
+            Via measurements
           </p>
           {measurements.map((measurement, index) => (
-            <div key={`${measurement.joint}-${index}`} style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div
+              key={`${measurement.joint}-${index}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: 5,
+                padding: '4px 6px',
+                borderRadius: 6,
+                background:
+                  measurement.status === 'critical'
+                    ? 'rgba(220,38,38,0.15)'
+                    : measurement.status === 'warning'
+                      ? 'rgba(217,119,6,0.15)'
+                      : 'rgba(29,158,117,0.15)',
+              }}
+            >
               <div
                 style={{
-                  width: 6,
-                  height: 6,
+                  width: 7,
+                  height: 7,
                   borderRadius: '50%',
                   background:
-                    measurement.status === 'good' ? '#5DCAA5' : measurement.status === 'critical' ? '#F09595' : '#FAC775',
+                    measurement.status === 'critical'
+                      ? '#F09595'
+                      : measurement.status === 'warning'
+                        ? '#FAC775'
+                        : '#5DCAA5',
                   flexShrink: 0,
                 }}
               />
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.85)', fontFamily: 'Arial, sans-serif' }}>
-                {measurement.label}: <strong>{measurement.measured} deg</strong>
-                {measurement.deficit > 0 && (
-                  <span style={{ color: measurement.status === 'critical' ? '#F09595' : '#FAC775', marginLeft: 3 }}>
-                    ({measurement.deficit} deg off)
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: 'rgba(255,255,255,0.5)',
+                    fontFamily: 'Arial, sans-serif',
+                  }}
+                >
+                  {measurement.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: 'white',
+                    fontFamily: 'Arial, sans-serif',
+                  }}
+                >
+                  {measurement.measured}°
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 400,
+                      color:
+                        measurement.status !== 'good'
+                          ? measurement.status === 'critical'
+                            ? '#F09595'
+                            : '#FAC775'
+                          : '#5DCAA5',
+                      marginLeft: 4,
+                    }}
+                  >
+                    {measurement.status !== 'good' ? `(${measurement.deficit}° off)` : '✓'}
                   </span>
-                )}
-              </span>
+                </div>
+              </div>
             </div>
           ))}
         </div>

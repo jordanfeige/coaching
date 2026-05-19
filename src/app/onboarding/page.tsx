@@ -19,14 +19,14 @@ const roles: Array<{
     emoji: '🎾',
     title: "I'm a Coach",
     description: 'I teach players, manage lessons, and want AI tools to help my coaching business',
-    features: ['Player management', 'AI drill builder', 'Video analysis', 'Scheduling'],
+    features: ['Player management', 'AI drill builder', 'Via Reels', 'Scheduling'],
   },
   {
     id: 'player',
     emoji: '🏃',
     title: "I'm a Player",
     description: 'I want to improve my technique, track my progress, and get AI coaching feedback',
-    features: ['Technique analysis', 'Progress tracking', 'AI coaching', 'Drill plans'],
+    features: ['Via Reels', 'Progress tracking', 'AI coaching', 'Drill plans'],
   },
 ]
 

@@ -9,7 +9,7 @@ import { BrandMark } from '@/components/brand/BrandMark'
 
 const nav = [
   { href: '/player', label: 'Lessons', icon: CalendarDays },
-  { href: '/analyze', label: 'Analyze', icon: Video },
+  { href: '/player/reels', label: 'Reels', icon: Video },
   { href: '/analyze/progress', label: 'Progress', icon: LineChart },
 ]
 

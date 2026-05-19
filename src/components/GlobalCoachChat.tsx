@@ -112,7 +112,7 @@ function getActionLabel(action: CoachAction): string {
     case 'viewPlayer':
       return `👤 View ${action.playerName || 'player'}`
     case 'analyzeVideo':
-      return `📹 Analyze ${action.playerName || 'video'}`
+      return `📹 Add reel for ${action.playerName || 'video'}`
     case 'viewPulse':
       return '📊 Open Pulse'
     default:

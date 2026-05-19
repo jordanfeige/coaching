@@ -366,7 +366,7 @@ export default function ProgressPage() {
           </div>
           <div className={cardClass()}>
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total sessions</p>
-            <p className="mt-2 font-heading text-2xl font-bold text-foreground">{filteredSessions.length} analyses</p>
+            <p className="mt-2 font-heading text-2xl font-bold text-foreground">{filteredSessions.length} reels</p>
           </div>
           <div className={cardClass()}>
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Current streak</p>
@@ -377,7 +377,7 @@ export default function ProgressPage() {
         <section className={cardClass()}>
           <h2 className="font-heading text-xl font-bold text-foreground">Checkpoint Radar</h2>
           {radarData.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">Run another analysis to build checkpoint scores.</p>
+            <p className="mt-4 text-sm text-muted-foreground">Add another reel to build checkpoint scores.</p>
           ) : (
             <div className="mt-4 h-96">
               <ResponsiveContainer width="100%" height="100%">

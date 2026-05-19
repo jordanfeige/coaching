@@ -1,4 +1,4 @@
-const CACHE_NAME = 'playvia-1779156762203'
+const CACHE_NAME = 'playvia-1779205880803'
 const STATIC_ASSETS = ['/', '/analyze', '/login', '/manifest.json']
 
 self.addEventListener('install', (event) => {

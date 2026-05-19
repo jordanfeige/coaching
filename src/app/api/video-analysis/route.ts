@@ -9,6 +9,7 @@ import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { calculateScore, extractCheckpointScores } from '@/lib/scoring'
 import { sendAnalysisComplete } from '@/lib/email'
 import { ADMIN_EMAILS } from '@/lib/admin'
+import { fullStoragePath, parseStoragePath } from '@/lib/reel-storage'
 
 export const maxDuration = 120
 export const runtime = 'nodejs'
@@ -668,6 +669,7 @@ RETURN THIS EXACT JSON — NO MARKDOWN, NO PREAMBLE
       "what_i_see": "Specific observation with timestamp and measurement — e.g. 'At 0:03, your right elbow is approximately 18 degrees above your shoulder plane — optimal range is 5-8 degrees above'",
       "ideal": "Specific target with measurement — e.g. 'Elbow should be 5-8 degrees above shoulder plane at this point, keeping the swing on plane and maximizing power transfer'",
       "consequence": "Specific chain reaction — e.g. 'This elevated elbow forces the club over the top on the downswing, producing an out-to-in swing path that causes the pull-fade miss pattern most visible on 0:05'",
+      "biomechanical_impact": "One sentence explaining the downstream consequence of this issue on performance — same kinetic-chain insight as consequence, written for athlete-facing cards",
       "drill": "Specific named drill",
       "drill_sets_reps": "e.g. 3 sets of 10 repetitions, daily",
       "drill_instruction": "3-4 steps maximum. 1) Setup. 2) Key action. 3) What correct feels like. 4) Success check.",
@@ -737,6 +739,8 @@ export async function POST(req: NextRequest) {
     playerHistory = '',
     cameraAngle,
     poseData,
+    storagePath: storagePathInput,
+    videoDurationSeconds,
   } = body
 
   const { data: profile } = await supabase
@@ -859,7 +863,7 @@ export async function POST(req: NextRequest) {
         }
       } catch {
         return NextResponse.json(
-          { error: 'Analysis failed — the AI response was malformed. Please try again.' },
+          { error: 'Reel failed — the AI response was malformed. Please try again.' },
           { status: 500 }
         )
       }
@@ -896,10 +900,41 @@ export async function POST(req: NextRequest) {
     const shouldSave = data.confidence !== 'low' || overallScore > 15
 
     if (shouldSave) {
+      let persistedStoragePath: string | null = null
+      let videoId: string | null = null
+
+      if (typeof storagePathInput === 'string' && storagePathInput.trim()) {
+        const raw = storagePathInput.trim().replace(/^\/+/, '')
+        persistedStoragePath = raw.includes('/')
+          ? raw
+          : fullStoragePath('videos', raw)
+        const { path: objectPath } = parseStoragePath(persistedStoragePath)
+
+        if (playerId && objectPath) {
+          const { data: videoRow } = await supabase
+            .from('videos')
+            .insert({
+              player_id: playerId,
+              storage_path: objectPath,
+              title: `${normalizedSport || 'tennis'} reel · ${new Date().toLocaleDateString()}`,
+            })
+            .select('id')
+            .single()
+          if (videoRow?.id) videoId = videoRow.id
+        }
+      }
+
+      const durationSeconds =
+        typeof videoDurationSeconds === 'number' && Number.isFinite(videoDurationSeconds)
+          ? Math.round(videoDurationSeconds)
+          : null
+
       const { data: savedSession } = await supabase.from('analysis_sessions').insert({
         user_id: user.id,
         player_id: playerId || null,
         sport: normalizedSport || 'tennis',
+        source: 'video',
+        published_to_player: true,
         shot_type: shotType || null,
         overall_score: overallScore,
         rating: data.overall_rating,
@@ -911,6 +946,9 @@ export async function POST(req: NextRequest) {
         biggest_win: data.biggest_win || null,
         checkpoint_scores: checkpointScores,
         full_result: data,
+        storage_path: persistedStoragePath,
+        video_duration_seconds: durationSeconds,
+        video_id: videoId,
       }).select('id').single()
       insertedSession = savedSession
     } else {

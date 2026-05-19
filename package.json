@@ -8,7 +8,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed": "ts-node --transpile-only --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\"}' scripts/seed.ts"
+    "seed": "ts-node --transpile-only --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\"}' scripts/seed.ts",
+    "seed:players": "npx tsx scripts/seed-players.ts",
+    "seed:players:clean": "npx tsx scripts/seed-players-clean.ts",
+    "seed:player-lessons": "npx tsx scripts/seed-player-lessons.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",

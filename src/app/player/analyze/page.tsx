@@ -1,1 +1,5 @@
-export { default } from '@/app/analyze/page'
+import { redirect } from 'next/navigation'
+
+export default function PlayerAnalyzeRedirect() {
+  redirect('/player/reels')
+}

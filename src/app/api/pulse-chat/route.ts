@@ -108,9 +108,13 @@ asked for a detailed plan. Never use dashes for bullets.`
       })),
     })
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    const cleaned = raw
+      .replace(/\[ACTION:\{[^}]+\}\]/g, '')
+      .replace(/\[ACTION:[^\]]+\]/g, '')
+      .trim()
 
-    return NextResponse.json({ response: text })
+    return NextResponse.json({ response: cleaned })
   } catch (error) {
     console.error('Pulse chat failed:', error)
     return NextResponse.json({

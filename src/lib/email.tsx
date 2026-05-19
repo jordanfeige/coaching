@@ -172,7 +172,7 @@ export async function sendAnalysisComplete(props: {
   const { AnalysisCompleteEmail } = await import('@/emails/AnalysisCompleteEmail')
   return sendEmail({
     to: props.to,
-    subject: `Your ${props.sport} analysis is ready — score: ${props.overallScore}`,
+    subject: `Your ${props.sport} reel is ready — score: ${props.overallScore}`,
     template: <AnalysisCompleteEmail {...props} />,
     idempotencyKey: `analysis-complete/${props.to}/${props.sport}/${props.shotType}/${props.overallScore}`,
   })

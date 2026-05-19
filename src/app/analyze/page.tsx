@@ -10,7 +10,14 @@ import { brand } from '@/lib/brand'
 import FeedbackButtons from '@/components/FeedbackButtons'
 import PDFExportButton from '@/components/PDFExportButton'
 import AnalysisQualityBadges from '@/components/AnalysisQualityBadges'
-import PoseOverlay from '@/components/PoseOverlay'
+import PoseSplitView from '@/components/PoseSplitView'
+import AnalysisResultStepper, {
+  mapAnalysisIssues,
+  mapAnalysisStrengths,
+} from '@/components/AnalysisResultStepper'
+import TextSessionSection, {
+  type TextAnalysisResult,
+} from '@/components/TextSessionSection'
 import { measurementsToPromptText, type PoseAnalysisResult } from '@/lib/poseAnalysis'
 
 type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
@@ -45,10 +52,13 @@ type AnalysisResult = {
   priority_focus?: string
   confidence?: string
   overall_score?: number
+  score?: number
+  issues?: AnalysisIssue[]
   checkpoint_scores?: Record<string, number>
   previous_score?: number | null
   score_delta?: number | null
   session_id?: string | null
+  sessionId?: string | null
 }
 
 type AnalysisGate = {
@@ -87,9 +97,12 @@ const SHOT_TYPES: Record<Sport, string[]> = {
   pickleball: ['Serve', 'Return', 'Dink', 'Volley', 'Third shot drop', 'Drive'],
 }
 const LOADING_MESSAGES = [
-  'Watching your full motion...',
-  'Identifying technique patterns...',
-  'Building your coaching report...',
+  'Uploading your video...',
+  'Via is watching your technique...',
+  'Measuring joint angles...',
+  'Identifying issues...',
+  'Building your drill plan...',
+  'Almost done...',
 ]
 const MAX_VIDEO_FILE_MB = 300
 const MAX_VIDEO_DURATION_SECONDS = 60
@@ -225,7 +238,6 @@ export default function AnalyzePage() {
   const [videoURL, setVideoURL] = useState<string | null>(null)
   const [videoDuration, setVideoDuration] = useState<number | null>(null)
   const [poseResult, setPoseResult] = useState<PoseAnalysisResult | null>(null)
-  const [showOverlay, setShowOverlay] = useState(false)
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null)
   const [discarded, setDiscarded] = useState(false)
@@ -248,15 +260,14 @@ export default function AnalyzePage() {
   const [autoFetchedIssueArea, setAutoFetchedIssueArea] = useState('')
   const [analysisGate, setAnalysisGate] = useState<AnalysisGate | null>(null)
   const [noticeMessage, setNoticeMessage] = useState('')
+  const [mode, setMode] = useState<'video' | 'text'>('video')
+
+  const WARM_BG = 'hsl(40,20%,97%)'
+  const ANALYZE_BORDER = 'hsl(30,10%,88%)'
+  const ANALYZE_TEXT = 'hsl(220,20%,15%)'
+  const ANALYZE_TEXT_MUTED = 'hsl(220,10%,65%)'
 
   const shotTypes = useMemo(() => SHOT_TYPES[sport], [sport])
-  const groupedIssues = useMemo(() => {
-    const groups: Record<Severity, AnalysisIssue[]> = { critical: [], moderate: [], minor: [] }
-    for (const issue of analysis?.areas_to_improve || []) {
-      groups[issue.severity || 'moderate'].push(issue)
-    }
-    return groups
-  }, [analysis])
   const fileTooLarge = Boolean(file && file.size > MAX_VIDEO_FILE_MB * 1024 * 1024)
   const durationTooLong = Boolean(videoDuration && videoDuration > MAX_VIDEO_DURATION_SECONDS)
   const canAnalyze = Boolean(file && !fileTooLarge && !durationTooLong && !analyzing)
@@ -340,9 +351,23 @@ export default function AnalyzePage() {
   }, [showWelcome])
 
   useEffect(() => {
-    if (!analyzing) return
-    const timer = window.setInterval(() => setLoadingIndex(index => (index + 1) % LOADING_MESSAGES.length), 3000)
-    return () => window.clearInterval(timer)
+    if (!analyzing) {
+      setLoadingIndex(0)
+      return
+    }
+
+    let interval: number | undefined
+    const startDelay = window.setTimeout(() => {
+      interval = window.setInterval(
+        () => setLoadingIndex(index => (index + 1) % LOADING_MESSAGES.length),
+        2800
+      )
+    }, 100)
+
+    return () => {
+      window.clearTimeout(startDelay)
+      if (interval) window.clearInterval(interval)
+    }
   }, [analyzing])
 
   useEffect(() => {
@@ -422,7 +447,6 @@ export default function AnalyzePage() {
     setVideoURL(nextFile ? URL.createObjectURL(nextFile) : null)
     setVideoDuration(null)
     setPoseResult(null)
-    setShowOverlay(false)
     setError('')
     if (!nextFile) return
 
@@ -432,6 +456,24 @@ export default function AnalyzePage() {
     } catch {
       setVideoDuration(null)
     }
+  }
+
+  function handleTextAnalysisComplete(payload: TextAnalysisResult) {
+    if (payload.error) {
+      setError(payload.error)
+      return
+    }
+    setAnalysis(payload as AnalysisResult)
+    setSavedSessionId(
+      typeof payload.sessionId === 'string'
+        ? payload.sessionId
+        : typeof payload.session_id === 'string'
+          ? payload.session_id
+          : null,
+    )
+    setAutoFetchedIssueArea('')
+    setError('')
+    saveSharedAnalysis(payload as AnalysisResult).catch(() => {})
   }
 
   async function analyzeVideo() {
@@ -485,6 +527,8 @@ export default function AnalyzePage() {
         body: JSON.stringify({
           videoUrl: readPayload.signedUrl,
           videoMimeType: file.type || 'video/mp4',
+          storagePath: `videos/${uploadPath}`,
+          videoDurationSeconds: videoDuration ?? undefined,
           sport,
           shotType: shotType || undefined,
           cameraAngle: 'side-on',
@@ -539,13 +583,6 @@ export default function AnalyzePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
-      if (uploadPath) {
-        fetch('/api/analyze-upload-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'delete', path: uploadPath }),
-        }).catch(() => {})
-      }
       setAnalyzing(false)
     }
   }
@@ -750,12 +787,45 @@ export default function AnalyzePage() {
     )
   }
 
-  return (
-    !authChecked ? (
-      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-        Loading analyzer...
+  if (!authChecked) {
+    return (
+      <div
+        style={{
+          maxWidth: 560,
+          margin: '0 auto',
+          padding: '40px 20px',
+          fontFamily: 'Arial, sans-serif',
+        }}
+      >
+        <div
+          style={{
+            height: 200,
+            borderRadius: 16,
+            background: 'hsl(30,10%,93%)',
+            marginBottom: 16,
+            animation: 'pulse 1.5s ease-in-out infinite',
+          }}
+        />
+        <div
+          style={{
+            height: 48,
+            borderRadius: 12,
+            background: 'hsl(30,10%,93%)',
+            marginBottom: 10,
+            animation: 'pulse 1.5s ease-in-out infinite',
+          }}
+        />
+        <style>{`
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
+        `}</style>
       </div>
-    ) : (
+    )
+  }
+
+  return (
     <div className="min-h-screen bg-background text-foreground">
       {analysisGate && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4">
@@ -765,7 +835,7 @@ export default function AnalyzePage() {
                 <h2 className="font-heading text-xl font-bold text-foreground">
                   {analysisGate.type === 'signup'
                     ? 'Create a free account to analyze your videos'
-                    : "You've used your 3 free analyses"}
+                    : "You've used your 3 free reels"}
                 </h2>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                   {analysisGate.type === 'signup'
@@ -889,6 +959,56 @@ export default function AnalyzePage() {
                 </div>
               </div>
 
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  background: WARM_BG,
+                  borderRadius: 12,
+                  padding: 3,
+                  gap: 3,
+                  marginBottom: 20,
+                }}
+              >
+                {(['video', 'text'] as const).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    style={{
+                      padding: '11px 0',
+                      borderRadius: 9,
+                      background: mode === m ? 'white' : 'transparent',
+                      border:
+                        mode === m
+                          ? `0.5px solid ${ANALYZE_BORDER}`
+                          : 'none',
+                      color: mode === m ? ANALYZE_TEXT : ANALYZE_TEXT_MUTED,
+                      fontSize: 13,
+                      fontWeight: mode === m ? 600 : 400,
+                      cursor: 'pointer',
+                      fontFamily: 'Arial, sans-serif',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {m === 'video' ? '📹 Upload video' : '✍️ Describe session'}
+                  </button>
+                ))}
+              </div>
+
+              {mode === 'text' ? (
+                <TextSessionSection
+                  sport={sport}
+                  playerId={linkedPlayerId}
+                  onAnalysisComplete={handleTextAnalysisComplete}
+                  onError={setError}
+                />
+              ) : (
+              <>
               <div>
                 <div>
                   <p className="mb-3 text-sm font-semibold text-foreground">
@@ -941,45 +1061,14 @@ export default function AnalyzePage() {
                     {videoDuration ? <> · {durationLabel(videoDuration)}</> : null}
                   </div>
                   {videoURL && (
-                    <div>
-                      <div className="relative overflow-hidden rounded-2xl border bg-black" style={{ borderColor: brand.border }}>
-                        <video
-                          ref={videoRef}
-                          src={videoURL}
-                          controls
-                          playsInline
-                          className="block w-full bg-black"
-                          style={{ maxHeight: 400 }}
-                        />
-                        <PoseOverlay
-                          videoRef={videoRef}
-                          sport={sport}
-                          show={showOverlay}
-                          onMeasurementsReady={result => {
-                            setPoseResult(result)
-                            console.log('Pose measurements:', result.measurements)
-                          }}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowOverlay(!showOverlay)}
-                        style={{
-                          marginTop: 8,
-                          padding: '6px 14px',
-                          borderRadius: 8,
-                          border: '1px solid hsl(30,10%,88%)',
-                          background: showOverlay ? 'hsl(168,62%,95%)' : 'white',
-                          color: showOverlay ? 'hsl(168,62%,36%)' : 'hsl(220,10%,55%)',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          fontFamily: 'Arial, sans-serif',
-                        }}
-                      >
-                        {showOverlay ? 'Hide pose overlay' : 'Show pose overlay'}
-                      </button>
-                    </div>
+                    <PoseSplitView
+                      videoURL={videoURL}
+                      sport={sport}
+                      videoRef={videoRef}
+                      onMeasurementsReady={result => {
+                        setPoseResult(result)
+                      }}
+                    />
                   )}
                   <div
                     className={`rounded-2xl border p-4 text-sm ${
@@ -1002,136 +1091,135 @@ export default function AnalyzePage() {
                 </div>
               )}
 
-              {error && <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
+              {error && mode === 'video' && <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
 
-              <button
-                type="button"
-                disabled={!canAnalyze}
-                onClick={analyzeVideo}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-bold text-primary-foreground transition-opacity disabled:opacity-50"
-              >
-                {analyzing ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Analyzing your {sport} technique...
-                  </>
-                ) : (
-                  <>
-                    Analyze my technique <ArrowRight className="size-4" />
-                  </>
-                )}
-              </button>
-              {analyzing && <p className="text-center text-sm text-muted-foreground">{LOADING_MESSAGES[loadingIndex]}</p>}
+              </>
+              )}
+
+              {error && mode === 'text' && <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
+
+              {mode === 'video' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={!canAnalyze}
+                    onClick={analyzeVideo}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-bold text-primary-foreground transition-opacity disabled:opacity-50"
+                  >
+                    {analyzing ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Analyzing your {sport} technique...
+                      </>
+                    ) : (
+                      <>
+                        Add to your Reels <ArrowRight className="size-4" />
+                      </>
+                    )}
+                  </button>
+                  {analyzing && (
+                    <p className="text-center text-sm text-muted-foreground">
+                      {LOADING_MESSAGES[loadingIndex]}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           </section>
         ) : (
           <section className="space-y-5">
             {videoURL && (
-              <div className="overflow-hidden rounded-2xl border bg-black" style={{ borderColor: brand.border }}>
-                <div className="relative">
-                  <video
-                    ref={videoRef}
-                    src={videoURL}
-                    controls
-                    playsInline
-                    className="block w-full bg-black"
-                    style={{ maxHeight: 400 }}
-                  />
-                  <PoseOverlay
-                    videoRef={videoRef}
-                    sport={sport}
-                    show={showOverlay}
-                    onMeasurementsReady={result => {
-                      setPoseResult(result)
-                      console.log('Pose measurements:', result.measurements)
-                    }}
-                  />
-                </div>
-                <div className="flex items-center gap-2 border-t bg-white px-3.5 py-2.5" style={{ borderColor: brand.border }}>
-                  <span className="text-[11px]" style={{ color: brand.textSecondary }}>
-                    📹 Click any timestamp in the analysis below to jump to that moment
-                  </span>
-                </div>
+              <div>
+                <PoseSplitView
+                  videoURL={videoURL}
+                  sport={sport}
+                  videoRef={videoRef}
+                  onMeasurementsReady={result => {
+                    setPoseResult(result)
+                  }}
+                />
+                <p className="mt-2 text-[11px]" style={{ color: brand.textSecondary }}>
+                  Click any timestamp in the analysis below to jump to that moment
+                </p>
               </div>
             )}
 
-            {videoURL && (
-              <button
-                type="button"
-                onClick={() => setShowOverlay(!showOverlay)}
-                style={{
-                  marginTop: -8,
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  border: '1px solid hsl(30,10%,88%)',
-                  background: showOverlay ? 'hsl(168,62%,95%)' : 'white',
-                  color: showOverlay ? 'hsl(168,62%,36%)' : 'hsl(220,10%,55%)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: 'Arial, sans-serif',
-                  width: 'fit-content',
-                }}
-              >
-                {showOverlay ? 'Hide pose overlay' : 'Show pose overlay'}
-              </button>
-            )}
+            <AnalysisResultStepper
+              score={
+                typeof analysis.overall_score === 'number'
+                  ? analysis.overall_score
+                  : analysis.score ?? 0
+              }
+              sport={sport}
+              shotType={shotType || undefined}
+              issues={mapAnalysisIssues(
+                analysis.areas_to_improve ?? analysis.issues
+              )}
+              strengths={mapAnalysisStrengths(analysis.strengths)}
+              poseMeasurements={poseResult?.measurements}
+              sessionId={
+                savedSessionId ??
+                analysis.sessionId ??
+                analysis.session_id ??
+                undefined
+              }
+              playerId={linkedPlayerId ?? undefined}
+              progressHref={
+                linkedPlayerId || returnTo === '/player'
+                  ? '/player/progress'
+                  : '/analyze/progress'
+              }
+              onSaved={() => setShowSaveNotice(false)}
+              onReanalyze={() => {
+                setAnalysis(null)
+                setFile(null)
+                if (videoURL) URL.revokeObjectURL(videoURL)
+                setVideoURL(null)
+                setVideoDuration(null)
+                setPoseResult(null)
+                setCoachingVideos({})
+                setChatMessages([])
+                setChatInput('')
+                setChatError('')
+                setError('')
+                setCoachPanelOpen(false)
+                setShareUrl('')
+                setSavedSessionId(null)
+                setDiscarded(false)
+              }}
+            />
 
-            {videoURL && keyMoments.length > 0 && (
-              <div className="mb-4 flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white px-4 py-3" style={{ borderColor: brand.border }}>
-                <span className="shrink-0 text-[11px] font-semibold" style={{ color: brand.textSecondary }}>
-                  Key moments:
-                </span>
-                {keyMoments.map(({ ts, label, type }) => (
-                  <button
-                    key={ts}
-                    type="button"
-                    onClick={() => seekTo(ts)}
-                    className="flex shrink-0 flex-col items-center rounded-lg border px-2.5 py-1"
-                    style={{
-                      borderColor: type === 'issue' ? '#FCA5A5' : 'hsl(168,62%,70%)',
-                      background: type === 'issue' ? '#FEF2F2' : brand.tealLight,
-                      color: type === 'issue' ? '#DC2626' : brand.teal,
-                    }}
-                  >
-                    <span className="text-[11px] font-bold">▶ {ts}</span>
-                    <span className="mt-0.5 text-[10px] opacity-80">
-                      {label.length > 12 ? `${label.substring(0, 12)}...` : label}
+            <details className="rounded-2xl border border-border bg-card p-4">
+              <summary className="cursor-pointer font-heading text-sm font-semibold text-foreground">
+                Full report details ▾
+              </summary>
+              <div className="mt-4 space-y-4">
+                {videoURL && keyMoments.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto rounded-xl border bg-white px-4 py-3" style={{ borderColor: brand.border }}>
+                    <span className="shrink-0 text-[11px] font-semibold" style={{ color: brand.textSecondary }}>
+                      Key moments:
                     </span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {typeof analysis.overall_score === 'number' && (
-              <div className="rounded-3xl border border-primary/25 bg-card p-6 shadow-sm">
-                <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Technique Score</p>
-                <div className="mt-2 flex flex-wrap items-end gap-3">
-                  <span className="font-heading text-6xl font-black leading-none text-primary">
-                    {analysis.overall_score}
-                  </span>
-                  <span className="pb-2 text-sm font-semibold text-muted-foreground">/ 100</span>
-                  {typeof analysis.score_delta === 'number' && (
-                    <span
-                      className={`mb-2 rounded-full px-3 py-1 text-xs font-bold ${
-                        analysis.score_delta >= 0
-                          ? 'bg-primary/10 text-primary'
-                          : 'bg-destructive/10 text-destructive'
-                      }`}
-                    >
-                      {analysis.score_delta >= 0 ? '+' : ''}{analysis.score_delta} from last session {analysis.score_delta >= 0 ? '↑' : '↓'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-              <AnalysisQualityBadges
-                rating={analysis.overall_rating}
-                confidence={analysis.confidence}
-              />
-              <div className="my-4 flex items-center justify-between border-y border-border py-3">
+                    {keyMoments.map(({ ts, label, type }) => (
+                      <button
+                        key={ts}
+                        type="button"
+                        onClick={() => seekTo(ts)}
+                        className="flex shrink-0 flex-col items-center rounded-lg border px-2.5 py-1"
+                        style={{
+                          borderColor: type === 'issue' ? '#FCA5A5' : 'hsl(168,62%,70%)',
+                          background: type === 'issue' ? '#FEF2F2' : brand.tealLight,
+                          color: type === 'issue' ? '#DC2626' : brand.teal,
+                        }}
+                      >
+                        <span className="text-[11px] font-bold">▶ {ts}</span>
+                        <span className="mt-0.5 text-[10px] opacity-80">
+                          {label.length > 12 ? `${label.substring(0, 12)}...` : label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <AnalysisQualityBadges rating={analysis.overall_rating} confidence={analysis.confidence} />
                 <FeedbackButtons
                   sessionId={savedSessionId ?? undefined}
                   feedbackType="analysis"
@@ -1140,127 +1228,40 @@ export default function AnalyzePage() {
                   fullAnalysis={analysis}
                   size="md"
                 />
-              </div>
-              <div className="mt-5 rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h2 className="font-heading text-base font-semibold text-foreground">Ask Coach AI</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Ask a follow-up question while this report is fresh.
-                    </p>
+                <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h2 className="font-heading text-base font-semibold text-foreground">Ask Coach AI</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">Ask a follow-up question while this report is fresh.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCoachPanelOpen(open => !open)}
+                      className="w-fit rounded-xl border border-primary/25 bg-background px-3 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
+                    >
+                      {coachPanelOpen ? 'Hide Coach AI' : 'Ask Coach AI'}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setCoachPanelOpen(open => !open)}
-                    className="w-fit rounded-xl border border-primary/25 bg-background px-3 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
-                  >
-                    {coachPanelOpen ? 'Hide Coach AI' : 'Ask Coach AI'}
-                  </button>
+                  {coachAiPanel()}
                 </div>
-                {coachAiPanel()}
-              </div>
-              {analysis.observations && (
-                <details className="mt-5 rounded-2xl border border-border bg-muted/30 p-4">
-                  <summary className="cursor-pointer font-heading text-sm font-semibold text-foreground">
-                    See full frame-by-frame breakdown ▾
-                  </summary>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{analysis.observations}</p>
-                  {renderTimestampButtons(analysis.observations)}
-                </details>
-              )}
-              {analysis.technique_notes && (
-                <div className="mt-5 rounded-2xl border border-border bg-muted/40 p-4">
-                  <h3 className="font-heading text-sm font-semibold text-foreground">Technique notes</h3>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{analysis.technique_notes}</p>
-                  {renderTimestampButtons(analysis.technique_notes)}
-                </div>
-              )}
-            </div>
-
-            {analysis.biggest_win && (
-              <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5">
-                <p className="font-heading text-sm font-bold uppercase tracking-wide text-primary">Biggest win</p>
-                <p className="mt-2 text-sm leading-relaxed text-foreground/80">{analysis.biggest_win}</p>
-              </div>
-            )}
-
-            {!!analysis.strengths?.length && (
-              <div>
-                <h2 className="mb-3 font-heading text-xl font-semibold">Strengths</h2>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {analysis.strengths.map((strength, index) => (
-                    <div key={index} className="rounded-2xl border border-primary/20 bg-primary/10 p-4">
-                      <p className="font-semibold text-primary">{strength.area || 'Strength'}</p>
-                      {strength.what_i_see && <p className="mt-2 text-sm text-foreground/80">{strength.what_i_see}</p>}
-                      {strength.why_it_helps && <p className="mt-2 text-sm text-muted-foreground"><span className="font-semibold text-foreground">Why it helps: </span>{strength.why_it_helps}</p>}
-                      {renderTimestampButtons(strength.what_i_see)}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <h2 className="mb-3 font-heading text-xl font-semibold">Issues to fix</h2>
-              <div className="space-y-4">
-                {(['critical', 'moderate', 'minor'] as Severity[]).map(severity =>
-                  groupedIssues[severity].length ? (
-                    <div key={severity}>
-                      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{severity}</p>
-                      <div className="space-y-3">
-                        {groupedIssues[severity].map((issue, index) => {
-                          const area = issue.area || `Issue ${index + 1}`
-                          return (
-                            <div key={`${area}-${index}`} className="rounded-2xl border border-[#222] bg-white p-4 text-slate-900">
-                              <p className="font-heading font-semibold">{area}</p>
-                              <div className="mt-2 space-y-2 text-sm leading-relaxed text-slate-700">
-                                {issue.what_i_see && <p><span className="font-semibold text-slate-950">What I see: </span>{issue.what_i_see}</p>}
-                                {issue.ideal && <p><span className="font-semibold text-slate-950">Ideal: </span>{issue.ideal}</p>}
-                                {issue.consequence && <p><span className="font-semibold text-slate-950">Why it matters: </span>{issue.consequence}</p>}
-                                {issue.simple_cue && <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-slate-950">Cue: &quot;{issue.simple_cue}&quot;</span>}
-                              </div>
-                              {(issue.drill || issue.drill_instruction || issue.success_criteria) && (
-                                <div className="mt-3 border-t border-slate-200 pt-3">
-                                  {issue.drill && <p className="font-heading text-sm font-semibold text-emerald-700">Drill: {issue.drill}</p>}
-                                  {issue.drill_sets_reps && <p className="mt-1 text-xs font-semibold">{issue.drill_sets_reps}</p>}
-                                  {issue.drill_instruction && <p className="mt-1 text-sm text-slate-700">{issue.drill_instruction}</p>}
-                                  {issue.success_criteria && <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-sm"><span className="font-semibold">Success: </span>{issue.success_criteria}</p>}
-                                </div>
-                              )}
-                              {renderTimestampButtons(issue.what_i_see)}
-                              <div className="mt-3">
-                                {coachingVideos[area]?.length ? (
-                                  <YouTubeCards videos={coachingVideos[area].slice(0, topCriticalIssue?.area === area ? 1 : 3)} />
-                                ) : (
-                                  <button
-                                    type="button"
-                                    disabled={loadingCoachingVideo === area}
-                                    onClick={() => fetchCoachingVideos(area, issue.drill || '')}
-                                    className="rounded-xl px-3 py-1.5 text-xs font-medium transition-opacity disabled:opacity-60"
-                                    style={{ background: '#FF000015', color: '#FF4444', border: '1px solid #FF000030' }}
-                                  >
-                                    {loadingCoachingVideo === area ? 'Searching...' : '▶ Find more coaching videos'}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ) : null
+                {analysis.observations && (
+                  <div>
+                    <p className="font-heading text-sm font-semibold text-foreground">Frame-by-frame</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{analysis.observations}</p>
+                    {renderTimestampButtons(analysis.observations)}
+                  </div>
+                )}
+                {analysis.technique_notes && (
+                  <div>
+                    <p className="font-heading text-sm font-semibold text-foreground">Technique notes</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{analysis.technique_notes}</p>
+                    {renderTimestampButtons(analysis.technique_notes)}
+                  </div>
                 )}
               </div>
-            </div>
+            </details>
 
-            {analysis.priority_focus && (
-              <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-5">
-                <p className="font-heading text-sm font-bold uppercase tracking-wide text-info">Priority focus</p>
-                <p className="mt-2 text-sm leading-relaxed text-foreground/80">{analysis.priority_focus}</p>
-              </div>
-            )}
-
-            <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+                        <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="font-heading text-lg font-semibold text-foreground">Next steps</h2>
@@ -1310,7 +1311,6 @@ export default function AnalyzePage() {
                         setVideoURL(null)
                         setVideoDuration(null)
                         setPoseResult(null)
-                        setShowOverlay(false)
                         setCoachingVideos({})
                         setChatMessages([])
                         setChatInput('')
@@ -1323,7 +1323,7 @@ export default function AnalyzePage() {
                       }}
                       className="rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground"
                     >
-                      Analyze another
+                      Add another Reel
                     </button>
                   ) : (
                     <button
@@ -1388,6 +1388,5 @@ export default function AnalyzePage() {
         )}
       </main>
     </div>
-    )
   )
 }

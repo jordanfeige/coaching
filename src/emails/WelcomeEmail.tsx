@@ -37,17 +37,17 @@ export function WelcomeEmail({ name, role }: WelcomeEmailProps) {
       <Heading style={{ fontSize: 26, margin: '0 0 16px', color: emailStyles.text }}>Welcome, {name}</Heading>
       <Text style={{ fontSize: 15, lineHeight: 1.6, color: emailStyles.textSecondary }}>
         {player
-          ? 'Your account is set up. You have 3 free AI analyses to get started — upload a short video of your technique and get a detailed coaching report in under 60 seconds.'
+          ? 'Your account is set up. You have 3 free reels to get started — upload a short video of your technique and get a detailed coaching report in under 60 seconds.'
           : "Your coaching account is ready. Add your first player to get started — they'll receive an invite and can view their lessons, drills, and AI feedback in their player portal."}
       </Text>
-      <EmailButton href={player ? 'https://playvia.studio/player/analyze' : 'https://playvia.studio/dashboard'}>
-        {player ? 'Analyze your technique →' : 'Go to your dashboard →'}
+      <EmailButton href={player ? 'https://playvia.studio/player/reels' : 'https://playvia.studio/dashboard'}>
+        {player ? 'Add to your Reels →' : 'Go to your dashboard →'}
       </EmailButton>
       <FeatureCallouts
         items={
           player
             ? ['🎯 Technique score', '📊 Progress tracking', '🎬 Coaching videos']
-            : ['👥 Player roster', '🤖 AI drill builder', '📹 Video analysis']
+            : ['👥 Player roster', '🤖 AI drill builder', '📹 Via Reels']
         }
       />
     </EmailLayout>

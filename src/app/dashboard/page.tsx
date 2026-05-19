@@ -68,7 +68,7 @@ export default function DashboardPage() {
       cta: 'Build drills →',
     },
     {
-      label: 'Analyze a player video',
+      label: 'Add a player reel',
       done: videoCount > 0,
       href: '/dashboard/video',
       cta: 'Upload video →',

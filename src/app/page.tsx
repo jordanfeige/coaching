@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ViaBlob from '@/components/ViaBlob'
 
 const CSS = `
   @keyframes lava1 {
@@ -67,13 +68,6 @@ const CSS = `
     0%,100% { opacity: 1; }
     50% { opacity: 0; }
   }
-  .via-blob-outer { animation: lava1 5s ease-in-out infinite, floatBlob 7s ease-in-out infinite; }
-  .via-blob-inner { animation: lava2 4s ease-in-out infinite; }
-  .via-blob-core { animation: lava3 3s ease-in-out infinite; }
-  .via-sat-1 { animation: lava1 6s ease-in-out infinite, orbDrift 9s ease-in-out infinite; }
-  .via-sat-2 { animation: lava2 5s ease-in-out infinite, orbDrift2 11s ease-in-out infinite; }
-  .pulse-ring-1 { animation: pulseRing 3s ease-in-out infinite; }
-  .pulse-ring-2 { animation: pulseRing 2.5s ease-in-out 0.4s infinite; }
   .bar-elbow { animation: shimmerBar 1.2s ease-out 3.8s forwards; width: 0; --bar-w: 42%; }
   .bar-hip { animation: shimmerBar 1.2s ease-out 4.0s forwards; width: 0; --bar-w: 58%; }
   .bar-knee { animation: shimmerBar 1.2s ease-out 4.2s forwards; width: 0; --bar-w: 85%; }
@@ -90,120 +84,6 @@ const TEAL_LIGHT = '#E1F5EE'
 const TEXT = 'hsl(220,20%,10%)'
 const TEXT_SEC = 'hsl(220,10%,45%)'
 const BORDER = 'hsl(30,10%,88%)'
-
-function ViaBlob({ size = 130 }: { size?: number }) {
-  return (
-    <div
-      style={{
-        position: 'relative',
-        width: size,
-        height: size,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        className="pulse-ring-1"
-        style={{
-          position: 'absolute',
-          width: size * 1.45,
-          height: size * 1.45,
-          borderRadius: '50%',
-          border: '1px solid rgba(29,158,117,0.15)',
-        }}
-      />
-      <div
-        className="pulse-ring-2"
-        style={{
-          position: 'absolute',
-          width: size * 1.2,
-          height: size * 1.2,
-          borderRadius: '50%',
-          border: '1px solid rgba(29,158,117,0.2)',
-        }}
-      />
-      <div
-        className="via-sat-1"
-        style={{
-          position: 'absolute',
-          width: size * 0.3,
-          height: size * 0.3,
-          background: 'rgba(29,158,117,0.18)',
-          backdropFilter: 'blur(8px)',
-          border: '0.5px solid rgba(255,255,255,0.2)',
-          top: -4,
-          right: 4,
-        }}
-      />
-      <div
-        className="via-sat-2"
-        style={{
-          position: 'absolute',
-          width: size * 0.22,
-          height: size * 0.22,
-          background: 'rgba(29,158,117,0.12)',
-          backdropFilter: 'blur(6px)',
-          border: '0.5px solid rgba(255,255,255,0.15)',
-          bottom: 4,
-          left: -4,
-        }}
-      />
-      <div
-        className="via-blob-outer"
-        style={{
-          width: size,
-          height: size,
-          background: 'rgba(240,250,246,0.55)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          border: '0.5px solid rgba(255,255,255,0.6)',
-          boxShadow:
-            '0 8px 32px rgba(29,158,117,0.15), 0 2px 8px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.8), inset 0 -1px 0 rgba(29,158,117,0.1)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: '-20%',
-            left: '-10%',
-            width: '60%',
-            height: '60%',
-            background: 'radial-gradient(circle, rgba(255,255,255,0.6) 0%, transparent 70%)',
-            borderRadius: '50%',
-          }}
-        />
-        <div
-          className="via-blob-inner"
-          style={{
-            width: size * 0.52,
-            height: size * 0.52,
-            background: 'linear-gradient(135deg, #1D9E75 0%, #085041 100%)',
-            boxShadow: '0 0 24px rgba(29,158,117,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <div
-            className="via-blob-core"
-            style={{
-              width: size * 0.24,
-              height: size * 0.24,
-              background: 'rgba(255,255,255,0.28)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5)',
-            }}
-          />
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function MiniViaIcon({ size = 28 }: { size?: number }) {
   return (
@@ -232,18 +112,28 @@ function MiniViaIcon({ size = 28 }: { size?: number }) {
 }
 
 function ViaDemo() {
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(1)
 
   useEffect(() => {
-    const timers = [
-      window.setTimeout(() => setStep(1), 800),
-      window.setTimeout(() => setStep(2), 2200),
-      window.setTimeout(() => setStep(3), 3600),
-      window.setTimeout(() => setStep(4), 4800),
-      window.setTimeout(() => setStep(0), 8000),
-    ]
-    return () => timers.forEach(timer => window.clearTimeout(timer))
-  }, [step])
+    let timers: number[] = []
+
+    function runCycle() {
+      setStep(1)
+      timers = [
+        window.setTimeout(() => setStep(2), 1800),
+        window.setTimeout(() => setStep(3), 3100),
+        window.setTimeout(() => setStep(4), 4300),
+      ]
+    }
+
+    runCycle()
+    const interval = window.setInterval(runCycle, 7600)
+
+    return () => {
+      timers.forEach(timer => window.clearTimeout(timer))
+      window.clearInterval(interval)
+    }
+  }, [])
 
   return (
     <div
@@ -275,71 +165,73 @@ function ViaDemo() {
         </div>
       </div>
 
-      {step >= 1 && (
+      <div style={{ minHeight: 170 }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10, animation: 'fadeUp 0.3s ease forwards' }}>
           <div style={{ background: 'hsl(220,20%,96%)', borderRadius: '10px 10px 3px 10px', padding: '8px 12px', maxWidth: '85%' }}>
             <div
+              key={`user-${step === 1 ? 'typing' : 'done'}`}
               style={{
                 fontSize: 12,
                 color: 'hsl(220,20%,20%)',
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
-                animation: 'typing 1s steps(30) forwards',
+                width: step === 1 ? 0 : '100%',
+                animation: step === 1 ? 'typing 1s steps(30) forwards' : 'none',
               }}
             >
               Why is my swing losing power?
             </div>
           </div>
         </div>
-      )}
 
-      {step === 2 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', animation: 'fadeUp 0.3s ease forwards' }}>
-          <MiniViaIcon size={18} />
-          <div style={{ display: 'flex', gap: 3 }}>
-            {[0, 1, 2].map(index => (
-              <div
-                key={index}
-                style={{
-                  width: 5,
-                  height: 5,
-                  borderRadius: '50%',
-                  background: TEAL,
-                  opacity: 0.5,
-                  animation: `blink 1.2s ease-in-out ${index * 0.2}s infinite`,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {step >= 3 && (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, animation: 'fadeUp 0.4s ease forwards' }}>
-          <MiniViaIcon size={20} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: TEAL, marginBottom: 4 }}>Via</div>
-            <div style={{ fontSize: 12, color: 'hsl(220,20%,20%)', lineHeight: 1.55, marginBottom: step >= 4 ? 8 : 0 }}>
-              Your elbow measured at <span style={{ color: '#DC2626', fontWeight: 700 }}>52 deg</span> - ideal is
-              85-95 deg. That 33 deg deficit is cutting your power at contact.
+        {step === 2 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', animation: 'fadeUp 0.3s ease forwards' }}>
+            <MiniViaIcon size={18} />
+            <div style={{ display: 'flex', gap: 3 }}>
+              {[0, 1, 2].map(index => (
+                <div
+                  key={index}
+                  style={{
+                    width: 5,
+                    height: 5,
+                    borderRadius: '50%',
+                    background: TEAL,
+                    opacity: 0.5,
+                    animation: `blink 1.2s ease-in-out ${index * 0.2}s infinite`,
+                  }}
+                />
+              ))}
             </div>
-            {step >= 4 && (
-              <div
-                style={{
-                  background: TEAL_LIGHT,
-                  border: '0.5px solid hsl(168,62%,70%)',
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  animation: 'cardPop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards',
-                }}
-              >
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#0F6E56', marginBottom: 2 }}>Prescribed by Via</div>
-                <div style={{ fontSize: 11, color: 'hsl(220,20%,20%)' }}>Elbow elevation drill · 3 sets · 15 reps</div>
-              </div>
-            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {step >= 3 && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, animation: 'fadeUp 0.4s ease forwards' }}>
+            <MiniViaIcon size={20} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: TEAL, marginBottom: 4 }}>Via</div>
+              <div style={{ fontSize: 12, color: 'hsl(220,20%,20%)', lineHeight: 1.55, marginBottom: step >= 4 ? 8 : 0 }}>
+                Your elbow measured at <span style={{ color: '#DC2626', fontWeight: 700 }}>52 deg</span> - ideal is
+                85-95 deg. That 33 deg deficit is cutting your power at contact.
+              </div>
+              {step >= 4 && (
+                <div
+                  style={{
+                    background: TEAL_LIGHT,
+                    border: '0.5px solid hsl(168,62%,70%)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    animation: 'cardPop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards',
+                  }}
+                >
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#0F6E56', marginBottom: 2 }}>Prescribed by Via</div>
+                  <div style={{ fontSize: 11, color: 'hsl(220,20%,20%)' }}>Elbow elevation drill · 3 sets · 15 reps</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -362,7 +254,7 @@ function MeasurementCard() {
       }}
     >
       <div style={{ fontSize: 11, fontWeight: 700, color: TEAL, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        Joint analysis
+        Joint tracking
       </div>
 
       {measurements.map(measurement => (
@@ -553,8 +445,8 @@ export default function LandingPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => router.push('/analyze')} style={ctaStyle('hsl(220,20%,10%)', 'white')}>
-              Analyze my technique
+            <button type="button" onClick={() => router.push('/onboarding')} style={ctaStyle('hsl(220,20%,10%)', 'white')}>
+              Add to your Reels
             </button>
             <button type="button" onClick={() => router.push('/onboarding')} style={ctaStyle('white', 'hsl(220,20%,25%)', true)}>
               I&apos;m a coach →
@@ -562,7 +454,7 @@ export default function LandingPage() {
           </div>
 
           <p style={{ fontSize: 11, color: 'hsl(220,10%,65%)', margin: '12px 0 0' }}>
-            3 free analyses · No credit card · Tennis · Golf · Basketball · Pickleball · Baseball
+            3 free reels · No credit card · Tennis · Golf · Basketball · Pickleball · Baseball
           </p>
         </div>
 
@@ -665,12 +557,12 @@ export default function LandingPage() {
           Your path to better play starts with Via.
         </h2>
         <p style={{ fontSize: 14, color: 'hsl(220,10%,50%)', margin: '0 0 28px', lineHeight: 1.7 }}>
-          Upload your first video free. No credit card. Via will tell you exactly what to work on.
+          Create your free account first, then upload your first video. Via will tell you exactly what to work on.
         </p>
-        <button type="button" onClick={() => router.push('/analyze')} style={{ padding: '14px 36px', borderRadius: 14, border: 'none', background: TEAL, color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Arial, sans-serif', boxShadow: '0 4px 20px rgba(29,158,117,0.3)' }}>
-          Analyze my technique free
+        <button type="button" onClick={() => router.push('/onboarding')} style={{ padding: '14px 36px', borderRadius: 14, border: 'none', background: TEAL, color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'Arial, sans-serif', boxShadow: '0 4px 20px rgba(29,158,117,0.3)' }}>
+          Create free account
         </button>
-        <p style={{ fontSize: 11, color: 'hsl(220,10%,65%)', margin: '12px 0 0' }}>3 free analyses · No account required to try</p>
+        <p style={{ fontSize: 11, color: 'hsl(220,10%,65%)', margin: '12px 0 0' }}>3 free reels after signup · No credit card required</p>
       </section>
 
       <footer style={{ borderTop: `0.5px solid ${BORDER}`, padding: '20px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>

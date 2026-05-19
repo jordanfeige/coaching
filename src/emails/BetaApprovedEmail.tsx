@@ -20,7 +20,7 @@ export function BetaApprovedEmail({ name, role }: BetaApprovedEmailProps) {
       <Text style={{ fontSize: 15, lineHeight: 1.6, color: emailStyles.textSecondary }}>
         {isCoach
           ? `Welcome to the Playvia beta, ${name}. Your coaching dashboard is ready. Add your first player to get started.`
-          : `Welcome to the Playvia beta, ${name}. You're in. You have 3 free AI analyses to get started — upload a short video of your technique and get a detailed coaching report in under 60 seconds.`}
+          : `Welcome to the Playvia beta, ${name}. You're in. You have 3 free reels to get started — upload a short video of your technique and get a detailed coaching report in under 60 seconds.`}
       </Text>
       <EmailButton href={isCoach ? 'https://playvia.studio/dashboard' : 'https://playvia.studio/player'}>
         {isCoach ? 'Open your dashboard →' : 'Start analyzing →'}

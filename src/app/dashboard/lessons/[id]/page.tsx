@@ -22,6 +22,8 @@ import VideoAnalysisDialog, {
   analysisPreviewHeadline,
   issueSeverityCounts,
 } from '@/components/video/VideoAnalysisDialog'
+import CoachVerifyPanel from '@/components/CoachVerifyPanel'
+import { coachReviewIssuesFromSession } from '@/lib/analysis-sessions'
 import { cn } from '@/lib/utils'
 import { calendarEvent } from '@/lib/calendar'
 import { isImageMediaPath } from '@/lib/video-frames'
@@ -131,6 +133,7 @@ export default function LessonDetailPage() {
   const [shotType, setShotType] = useState('')
   const [coachingVideos, setCoachingVideos] = useState<Record<string, any[]>>({})
   const [loadingCoachingVideo, setLoadingCoachingVideo] = useState<string | null>(null)
+  const [lessonAnalyses, setLessonAnalyses] = useState<any[]>([])
   const timerRef = useRef<any>(null)
 
   const supabase = createClient()
@@ -166,6 +169,42 @@ export default function LessonDetailPage() {
     setEntries(e || [])
     setDrills(d || [])
     setVideos(v || [])
+
+    if (l?.id && l?.players?.id) {
+      const { data: tied } = await supabase
+        .from('analysis_sessions')
+        .select('*')
+        .eq('lesson_id', l.id)
+        .order('analyzed_at', { ascending: false })
+
+      let nearby: typeof tied = []
+      if (l.starts_at) {
+        const lessonDate = new Date(l.starts_at)
+        const from = new Date(lessonDate)
+        from.setHours(from.getHours() - 48)
+        const to = new Date(lessonDate)
+        to.setHours(to.getHours() + 48)
+
+        const { data: near } = await supabase
+          .from('analysis_sessions')
+          .select('*')
+          .eq('player_id', l.players.id)
+          .gte('analyzed_at', from.toISOString())
+          .lte('analyzed_at', to.toISOString())
+          .is('lesson_id', null)
+          .order('analyzed_at', { ascending: false })
+
+        nearby = near || []
+      }
+
+      const merged = new Map<string, Record<string, unknown>>()
+      for (const row of [...(tied || []), ...nearby]) {
+        if (row?.id) merged.set(row.id, row)
+      }
+      setLessonAnalyses([...merged.values()])
+    } else {
+      setLessonAnalyses([])
+    }
   }
 
   async function addEntry() {
@@ -426,12 +465,12 @@ export default function LessonDetailPage() {
       })
       const analysis = await response.json()
       if (!response.ok || analysis.error) {
-        throw new Error(analysis.error || 'Analysis failed')
+        throw new Error(analysis.error || 'Reel failed')
       }
       await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
       setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
     } catch (e: any) {
-      alert(`Analysis failed: ${e.message}`)
+      alert(`Reel failed: ${e.message}`)
     } finally {
       setAnalyzingVideo(null)
       setCompareMode(false)
@@ -595,6 +634,40 @@ export default function LessonDetailPage() {
           </div>
         </div>
       </div>
+
+      {lessonAnalyses.length > 0 && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="font-heading text-lg font-semibold text-foreground">
+              Session analysis review
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Verify Via&apos;s analysis from this lesson window before publishing to the player.
+            </p>
+          </div>
+          {lessonAnalyses.map(analysis => (
+            <CoachVerifyPanel
+              key={analysis.id}
+              sessionId={analysis.id}
+              lessonId={String(id)}
+              playerId={analysis.player_id || player?.id}
+              playerName={player?.name || 'Player'}
+              score={
+                analysis.coach_score_override ??
+                analysis.overall_score ??
+                0
+              }
+              issues={coachReviewIssuesFromSession(analysis.full_result)}
+              source={analysis.source === 'text' ? 'text' : 'video'}
+              sport={player?.sport || 'tennis'}
+              alreadyVerified={Boolean(analysis.coach_verified)}
+              alreadyPublished={Boolean(analysis.published_to_player)}
+              onVerified={() => void loadAll()}
+              onPublished={() => void loadAll()}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex w-full gap-1 overflow-x-auto rounded-xl border border-border bg-muted/50 p-1 md:w-fit">
@@ -1191,7 +1264,7 @@ export default function LessonDetailPage() {
                             className="w-full"
                             onClick={() => openAnalysisSheet(video)}
                           >
-                            View analysis
+                            View reel
                           </Button>
                         </div>
                       )}
@@ -1220,7 +1293,7 @@ export default function LessonDetailPage() {
                               onClick={() => analyzeVideo(video)}
                             >
                               <Sparkles size={12} />
-                              {isAnalyzing ? 'Analyzing (may take 30s)…' : analysis ? 'Re-analyze' : 'Analyze'}
+                              {isAnalyzing ? 'Adding to Reels (may take 30s)…' : analysis ? 'Re-run reel' : 'Add to Reels'}
                             </Button>
                             {allPlayerVideos.length > 1 && (
                               <Button

@@ -22,7 +22,7 @@ interface Props {
 
 const navItems = [
   { href: '/player', label: 'Dashboard', icon: Home, exact: true },
-  { href: '/player/analyze', label: 'Analyze', icon: Video },
+  { href: '/player/reels', label: 'Reels', icon: Video },
   { href: '/player/progress', label: 'Progress', icon: BarChart3 },
   { href: '/player/drills', label: 'My Drills', icon: Dumbbell },
   { href: '/player/lessons', label: 'Lessons', icon: NotebookTabs },

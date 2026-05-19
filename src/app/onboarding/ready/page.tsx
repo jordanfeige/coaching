@@ -53,7 +53,7 @@ export default function OnboardingReadyPage() {
                 'Add a player to your roster',
                 'Schedule your first lesson',
                 'Try the AI drill builder',
-                'Upload a player video for analysis',
+                'Upload a player video for your reels',
               ].map(item => (
                 <div key={item} className="py-1.5 text-sm" style={{ color: brand.textSecondary }}>
                   □ {item}
@@ -72,7 +72,7 @@ export default function OnboardingReadyPage() {
         ) : (
           <div className="mx-auto mt-8 max-w-xl">
             <p className="text-lg font-semibold" style={{ color: brand.textSecondary }}>
-              You have 3 free analyses included
+              You have 3 free reels included
             </p>
             <div
               className="mt-6 rounded-3xl p-6 text-left text-white shadow-sm"

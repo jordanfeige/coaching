@@ -361,7 +361,7 @@ export default function CoachAnalyticsDashboard({
       >
         {[
           {
-            label: 'Players analyzed',
+            label: 'Players with reels',
             value: visiblePlayerSummaries.length,
             icon: <Users size={18} />,
             color: TEAL,
@@ -655,7 +655,7 @@ export default function CoachAnalyticsDashboard({
                 Roster mix
               </h2>
               <p style={{ fontSize: 12, color: TEXT_SEC, margin: '0 0 16px' }}>
-                Analysis sessions by sport
+                Reels by sport
               </p>
               <ResponsiveContainer width="100%" height={220}>
                 <RadarChart data={sportBreakdown}>

@@ -1,36 +1,24 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { differenceInDays, format } from 'date-fns'
-import {
-  AlertCircle,
-  ArrowRight,
-  ChevronRight,
-  Clock,
-  TrendingDown,
-  TrendingUp,
-  Users,
-  Zap,
-} from 'lucide-react'
-import ViaBar from '@/components/ViaBar'
+import { Send, X } from 'lucide-react'
+import ViaBlob from '@/components/ViaBlob'
 
 const TEAL = 'hsl(168,62%,36%)'
-const TEAL_LIGHT = 'hsl(168,62%,95%)'
-const WARM_BG = 'hsl(40,20%,97%)'
-const CARD = 'white'
+const TEAL_DARK = 'hsl(168,62%,28%)'
 const BORDER = 'hsl(30,10%,88%)'
+const BORDER_LIGHT = 'hsl(30,10%,93%)'
 const TEXT = 'hsl(220,20%,15%)'
 const TEXT_SEC = 'hsl(220,10%,45%)'
 const TEXT_MUTED = 'hsl(220,10%,65%)'
+const WARM_BG = 'hsl(40,20%,97%)'
 const RED = 'hsl(0,70%,55%)'
-const RED_LIGHT = 'hsl(0,70%,95%)'
+const RED_BORDER = 'hsl(0,70%,78%)'
 const AMBER = 'hsl(38,92%,50%)'
-const AMBER_LIGHT = 'hsl(38,92%,95%)'
 const GREEN = 'hsl(145,60%,40%)'
-const GREEN_LIGHT = 'hsl(145,60%,95%)'
 const PURPLE = 'hsl(258,70%,55%)'
-const PURPLE_LIGHT = 'hsl(258,70%,95%)'
 
 const sportEmoji: Record<string, string> = {
   tennis: '🎾',
@@ -40,1095 +28,1138 @@ const sportEmoji: Record<string, string> = {
   pickleball: '🏓',
 }
 
-type Player = {
-  id: string
-  name: string | null
-  sport: string | null
-  skill_level?: string | null
-  age?: number | null
-  email?: string | null
-}
-
-type AnalysisIssue = {
-  area?: string
-}
-
-type AnalysisSession = {
-  id: string
-  player_id: string | null
-  analyzed_at: string | null
-  sport?: string | null
-  overall_score: number | null
-  critical_count?: number | null
-  full_result?: {
-    areas_to_improve?: AnalysisIssue[]
-  } | null
-  top_issue?: string | null
-  overall_rating?: string | null
-}
-
-type Lesson = {
-  id: string
-  player_id: string | null
-  starts_at: string | null
-  status: string | null
-}
-
-type PlayerStatus = 'attention' | 'levelup' | 'ontrack' | 'new'
-
-type PlayerSummary = Player & {
-  playerSessions: AnalysisSession[]
-  latest: AnalysisSession | undefined
-  previous: AnalysisSession | undefined
-  first: AnalysisSession | undefined
-  daysSince: number
-  delta: number | null
-  totalGain: number
-  consecutiveClean: number
-  allIssues: string[]
-  sparkline: number[]
-  status: PlayerStatus
-  sessionCount: number
-  latestScore: number | null
-  topIssue: string | null
-  rating: string | null
-  lastAnalyzed: string | null
-}
+const LOADING_DOT_CSS = `
+  @keyframes pulseDot {
+    0%, 100% { opacity: 0.35; transform: scale(1); }
+    50%       { opacity: 1; transform: scale(1.15); }
+  }
+`
 
 interface Props {
-  players: Player[]
-  sessions: AnalysisSession[]
-  lessons: Lesson[]
+  players: Array<Record<string, unknown>>
+  sessions: Array<Record<string, unknown>>
+  lessons: Array<Record<string, unknown>>
   coachEmail: string
 }
 
-function playerName(player: Pick<Player, 'name'>) {
-  return player.name || 'Unnamed player'
-}
-
-function Sparkline({
-  data,
-  color = TEAL,
-  width = 72,
-  height = 28,
-}: {
-  data: number[]
-  color?: string
-  width?: number
-  height?: number
-}) {
-  if (!data || data.length < 2) {
-    return (
-      <svg width={width} height={height} aria-hidden="true">
-        <line
-          x1="4"
-          y1={height / 2}
-          x2={width - 4}
-          y2={height / 2}
-          stroke={BORDER}
-          strokeWidth="1.5"
-          strokeDasharray="3 3"
-        />
-      </svg>
-    )
-  }
-
-  const min = Math.min(...data)
-  const max = Math.max(...data)
-  const range = max - min || 1
-  const pad = 4
-  const points = data
-    .map((value, index) => {
-      const x = pad + (index / (data.length - 1)) * (width - pad * 2)
-      const y = height - pad - ((value - min) / range) * (height - pad * 2)
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
-  const [lastX, lastY] = points.split(' ').at(-1)!.split(',')
-
-  return (
-    <svg width={width} height={height} style={{ overflow: 'visible' }} aria-hidden="true">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx={lastX} cy={lastY} r="3.5" fill={color} />
-    </svg>
-  )
-}
-
-function StatusBadge({ player }: { player: PlayerSummary }) {
-  const daysSince = player.daysSince
-
-  if (player.status === 'attention') {
-    if (player.delta !== null && player.delta <= -5) {
-      return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 3,
-            fontSize: 10,
-            fontWeight: 500,
-            color: 'hsl(0,70%,45%)',
-            padding: '2px 7px',
-            borderRadius: 20,
-            background: 'hsl(0,70%,95%)',
-            border: '0.5px solid hsl(0,70%,80%)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <AlertCircle size={10} />
-          {Math.abs(player.delta)} pt drop
-        </div>
-      )
-    }
-    if (daysSince >= 14) {
-      return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 3,
-            fontSize: 10,
-            fontWeight: 500,
-            color: 'hsl(38,92%,35%)',
-            padding: '2px 7px',
-            borderRadius: 20,
-            background: 'hsl(38,92%,95%)',
-            border: '0.5px solid hsl(38,92%,75%)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <Clock size={10} />
-          {daysSince}d inactive
-        </div>
-      )
-    }
-  }
-
-  if (player.status === 'levelup') {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 3,
-          fontSize: 10,
-          fontWeight: 500,
-          color: PURPLE,
-          padding: '2px 7px',
-          borderRadius: 20,
-          background: PURPLE_LIGHT,
-          border: '0.5px solid hsl(258,70%,78%)',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <Zap size={10} />
-        {player.consecutiveClean} clean sessions
-      </div>
-    )
-  }
-
-  if (player.status === 'ontrack' && player.delta !== null) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 3,
-          fontSize: 10,
-          fontWeight: 500,
-          color: 'hsl(145,60%,32%)',
-          padding: '2px 7px',
-          borderRadius: 20,
-          background: 'hsl(145,60%,95%)',
-          border: '0.5px solid hsl(145,60%,72%)',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <TrendingUp size={10} />
-        Improving
-      </div>
-    )
-  }
-
-  if (player.status === 'new' || player.sessionCount === 0) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 3,
-          fontSize: 10,
-          fontWeight: 500,
-          color: 'hsl(220,10%,55%)',
-          padding: '2px 7px',
-          borderRadius: 20,
-          background: 'hsl(40,20%,96%)',
-          border: '0.5px solid hsl(30,10%,88%)',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Upload first video
-      </div>
-    )
-  }
-
-  return null
-}
-
-export default function PulseClient({ players, sessions }: Props) {
-  const [selectedSport, setSelectedSport] = useState('all')
+export default function PulseClient({
+  players,
+  sessions,
+}: Props) {
+  const [brief, setBrief] = useState('')
+  const [briefLoading, setBriefLoading] = useState(true)
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatMessages, setChatMessages] = useState<
+    { role: 'user' | 'assistant'; content: string }[]
+  >([])
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
 
-  const unlinkedSessions = useMemo(
-    () => sessions.filter(session => !session.player_id),
-    [sessions],
-  )
-
-  const playerSummaries = useMemo<PlayerSummary[]>(() => {
+  const playerSummaries = useMemo(() => {
     return players.map(player => {
-      const playerSessions = sessions
-        .filter(session => session.player_id === player.id)
+      const ps = sessions
+        .filter(s => s.player_id === player.id)
         .sort(
           (a, b) =>
-            new Date(a.analyzed_at || 0).getTime() -
-            new Date(b.analyzed_at || 0).getTime(),
+            new Date(String(a.analyzed_at)).getTime() -
+            new Date(String(b.analyzed_at)).getTime(),
         )
-      const latest = playerSessions[playerSessions.length - 1]
-      const previous = playerSessions[playerSessions.length - 2]
-      const first = playerSessions[0]
-      const last3 = playerSessions.slice(-3)
-      const daysSince = latest?.analyzed_at
-        ? differenceInDays(new Date(), new Date(latest.analyzed_at))
+      const latest = ps[ps.length - 1]
+      const previous = ps[ps.length - 2]
+      const first = ps[0]
+      const last3 = ps.slice(-3)
+
+      const daysSince = latest
+        ? differenceInDays(new Date(), new Date(String(latest.analyzed_at)))
         : 999
-      const latestScore = typeof latest?.overall_score === 'number' ? latest.overall_score : null
-      const previousScore = typeof previous?.overall_score === 'number' ? previous.overall_score : null
-      const firstScore = typeof first?.overall_score === 'number' ? first.overall_score : null
-      const delta = latestScore !== null && previousScore !== null ? latestScore - previousScore : null
+
+      const latestScore =
+        typeof latest?.overall_score === 'number' ? latest.overall_score : null
+      const previousScore =
+        typeof previous?.overall_score === 'number'
+          ? previous.overall_score
+          : null
+
+      const delta =
+        latestScore !== null && previousScore !== null
+          ? latestScore - previousScore
+          : null
+
+      const firstScore =
+        typeof first?.overall_score === 'number' ? first.overall_score : null
       const totalGain =
         latestScore !== null && firstScore !== null && first?.id !== latest?.id
           ? latestScore - firstScore
           : 0
-      const cleanStreak = [...last3].reverse().findIndex(session => (session.critical_count || 0) > 0)
-      const allIssues: string[] = []
 
-      playerSessions.slice(-5).forEach(session => {
-        if (session.full_result?.areas_to_improve?.length) {
-          session.full_result.areas_to_improve.forEach(issue => {
-            if (issue.area) allIssues.push(issue.area)
+      const cleanStreak = [...last3].reverse().findIndex(s => {
+        const critical = s.critical_count
+        return typeof critical === 'number' && critical > 0
+      })
+      const consecutiveClean = cleanStreak === -1 ? last3.length : cleanStreak
+
+      const allIssues: string[] = []
+      ps.slice(-5).forEach(s => {
+        const fullResult = s.full_result as
+          | { areas_to_improve?: Array<{ area?: string }> }
+          | undefined
+        if (fullResult?.areas_to_improve) {
+          fullResult.areas_to_improve.forEach(i => {
+            if (i.area) allIssues.push(i.area)
           })
-        } else if (session.top_issue) {
-          allIssues.push(session.top_issue)
+        } else if (typeof s.top_issue === 'string' && s.top_issue) {
+          allIssues.push(s.top_issue)
         }
       })
 
-      const consecutiveClean = cleanStreak === -1 ? last3.length : cleanStreak
-      const sparkline = playerSessions
-        .slice(-6)
-        .map(session => session.overall_score)
-        .filter((score): score is number => typeof score === 'number')
-
-      let status: PlayerStatus = 'new'
-      if (playerSessions.length === 0) status = 'new'
-      else if ((delta !== null && delta <= -5) || daysSince >= 14) status = 'attention'
-      else if (consecutiveClean >= 3 && (latestScore || 0) >= 75) status = 'levelup'
+      let status: 'attention' | 'levelup' | 'ontrack' | 'new' = 'new'
+      if (ps.length === 0) status = 'new'
+      else if ((delta !== null && delta <= -5) || daysSince >= 14)
+        status = 'attention'
+      else if (consecutiveClean >= 3 && (latestScore || 0) >= 75)
+        status = 'levelup'
       else status = 'ontrack'
 
       return {
         ...player,
-        playerSessions,
+        id: String(player.id),
+        name: String(player.name || 'Player'),
+        sport: String(player.sport || 'tennis'),
+        ps,
         latest,
-        previous,
-        first,
         daysSince,
         delta,
         totalGain,
         consecutiveClean,
         allIssues,
-        sparkline,
         status,
-        sessionCount: playerSessions.length,
+        sessionCount: ps.length,
         latestScore,
-        topIssue: latest?.top_issue || null,
-        rating: latest?.overall_rating || null,
-        lastAnalyzed: latest?.analyzed_at || null,
+        topIssue:
+          typeof latest?.top_issue === 'string' ? latest.top_issue : null,
+        lastAnalyzed:
+          typeof latest?.analyzed_at === 'string' ? latest.analyzed_at : null,
       }
     })
   }, [players, sessions])
 
-  const filtered = useMemo(() => {
-    if (selectedSport === 'all') return playerSummaries
-    return playerSummaries.filter(player => player.sport === selectedSport)
-  }, [playerSummaries, selectedSport])
-
-  const rosterHealth = useMemo(() => {
-    const analyzed = playerSummaries.filter(player => player.sessionCount > 0)
-    if (analyzed.length === 0) return null
-    const avg = Math.round(
-      analyzed.reduce((sum, player) => sum + (player.latestScore || 0), 0) / analyzed.length,
-    )
-    const improving = analyzed.filter(player => player.delta !== null && player.delta > 0).length
-    const attention = analyzed.filter(player => player.status === 'attention').length
-    return { avg, improving, attention, total: analyzed.length }
-  }, [playerSummaries])
-
   const commonIssues = useMemo(() => {
     const counts: Record<string, { count: number; players: string[] }> = {}
-
-    playerSummaries.forEach(player => {
+    playerSummaries.forEach(p => {
       const seen = new Set<string>()
-      player.allIssues.forEach(issue => {
+      p.allIssues.forEach((issue: string) => {
         const key = issue.toLowerCase().trim()
-        if (!key || seen.has(key)) return
-        seen.add(key)
-        counts[issue] ||= { count: 0, players: [] }
-        counts[issue].count += 1
-        counts[issue].players.push(playerName(player))
+        if (!seen.has(key)) {
+          seen.add(key)
+          if (!counts[issue]) counts[issue] = { count: 0, players: [] }
+          counts[issue].count++
+          counts[issue].players.push(p.name)
+        }
       })
     })
-
     return Object.entries(counts)
       .sort((a, b) => b[1].count - a[1].count)
-      .slice(0, 5)
-      .map(([issue, data]) => ({ issue, ...data }))
-  }, [playerSummaries])
-
-  const mostImproved = useMemo(() => {
-    return [...playerSummaries]
-      .filter(player => player.totalGain > 0)
-      .sort((a, b) => b.totalGain - a.totalGain)
       .slice(0, 3)
+      .map(([issue, d]) => ({ issue, ...d }))
   }, [playerSummaries])
 
-  const actionChips = useMemo(() => {
-    const chips: {
-      label: string
+  const tasks = useMemo(() => {
+    const t: {
+      id: string
       color: string
-      bg: string
-      href: string
-      icon: string
+      title: string
+      why: string
+      action: string
+      href?: string
+      onClick?: () => void
     }[] = []
 
-    playerSummaries.forEach(player => {
-      if (player.status === 'attention' && player.daysSince >= 14) {
-        chips.push({
-          label: `${playerName(player)}: ${player.daysSince}d no analysis`,
-          color: AMBER,
-          bg: AMBER_LIGHT,
-          href: `/dashboard/players/${player.id}`,
-          icon: '⏰',
-        })
-      }
-      if (player.status === 'attention' && player.delta !== null && player.delta <= -5) {
-        chips.push({
-          label: `${playerName(player)} dropped ${Math.abs(player.delta)} pts`,
-          color: RED,
-          bg: RED_LIGHT,
-          href: `/dashboard/players/${player.id}`,
-          icon: '⚠️',
-        })
-      }
-      if (player.status === 'levelup') {
-        chips.push({
-          label: `${playerName(player)}: ${player.consecutiveClean} clean sessions`,
-          color: TEAL,
-          bg: TEAL_LIGHT,
-          href: `/dashboard/players/${player.id}`,
-          icon: '⚡',
-        })
-      }
+    const attention = playerSummaries.filter(p => p.status === 'attention')
+    attention.slice(0, 2).forEach(p => {
+      const reason =
+        p.delta !== null && p.delta <= -5
+          ? `Score dropped ${Math.abs(p.delta)}pts`
+          : `${p.daysSince} days no analysis`
+      t.push({
+        id: `attn-${p.id}`,
+        color: RED,
+        title: `Schedule ${p.name.split(' ')[0]}`,
+        why: `${reason} · ${p.topIssue || p.sport}`,
+        action: 'Schedule →',
+        href: '/dashboard/schedule',
+      })
     })
 
     if (commonIssues[0] && commonIssues[0].count >= 2) {
-      chips.push({
-        label: `${commonIssues[0].count} players: ${commonIssues[0].issue}`,
+      t.push({
+        id: 'group-drill',
         color: TEAL,
-        bg: TEAL_LIGHT,
-        href: '/dashboard/analytics',
-        icon: '🎯',
+        title: `Group ${commonIssues[0].issue} drill`,
+        why: `${commonIssues[0].players.slice(0, 3).join(', ')} · one session fixes all`,
+        action: 'Build →',
+        onClick: () =>
+          router.push(
+            `/dashboard/drills?focus=${encodeURIComponent(commonIssues[0].issue)}`,
+          ),
       })
     }
 
-    if (unlinkedSessions.length > 0) {
-      chips.push({
-        label: `${unlinkedSessions.length} unlinked analysis${unlinkedSessions.length !== 1 ? 'es' : ''}`,
-        color: TEAL,
-        bg: TEAL_LIGHT,
-        href: '/dashboard/video',
-        icon: '🔗',
+    const inactive = playerSummaries.filter(
+      p => p.daysSince >= 14 && p.status !== 'attention',
+    )
+    if (inactive.length > 0) {
+      t.push({
+        id: 'inactive',
+        color: AMBER,
+        title: `Remind ${inactive[0].name.split(' ')[0]}${inactive.length > 1 ? ` + ${inactive.length - 1} more` : ''}`,
+        why: `${inactive[0].daysSince} days no video upload`,
+        action: 'Send →',
+        href: `/dashboard/players/${inactive[0].id}`,
       })
     }
 
-    return chips
-  }, [commonIssues, playerSummaries, unlinkedSessions.length])
+    const levelup = playerSummaries.filter(p => p.status === 'levelup')
+    if (levelup.length > 0) {
+      const names = levelup
+        .slice(0, 2)
+        .map(p => p.name.split(' ')[0])
+        .join(' + ')
+      t.push({
+        id: 'levelup',
+        color: PURPLE,
+        title: `Level up ${names}`,
+        why: `${levelup[0].consecutiveClean} clean sessions — ready for harder work`,
+        action: 'Plan →',
+        onClick: () => router.push(`/dashboard/players/${levelup[0].id}`),
+      })
+    }
 
-  const sports = [...new Set(players.map(player => player.sport).filter((sport): sport is string => Boolean(sport)))]
+    return t
+  }, [playerSummaries, commonIssues, router])
+
+  const rosterContext = useMemo(
+    () => ({
+      totalPlayers: players.length,
+      analyzed: playerSummaries.filter(p => p.sessionCount > 0).length,
+      avgScore:
+        playerSummaries.length > 0
+          ? Math.round(
+              playerSummaries
+                .filter(p => p.latestScore)
+                .reduce((a, p) => a + (p.latestScore || 0), 0) /
+                Math.max(
+                  playerSummaries.filter(p => p.latestScore).length,
+                  1,
+                ),
+            )
+          : 0,
+      attention: playerSummaries
+        .filter(p => p.status === 'attention')
+        .map(p => ({
+          name: p.name,
+          score: p.latestScore,
+          delta: p.delta,
+          daysSince: p.daysSince,
+          topIssue: p.topIssue,
+        })),
+      levelup: playerSummaries
+        .filter(p => p.status === 'levelup')
+        .map(p => ({ name: p.name, score: p.latestScore })),
+      commonIssues,
+      players: playerSummaries.map(p => ({
+        name: p.name,
+        sport: p.sport,
+        status: p.status,
+        score: p.latestScore,
+        delta: p.delta,
+        topIssue: p.topIssue,
+        daysSince: p.daysSince,
+      })),
+    }),
+    [playerSummaries, commonIssues, players.length],
+  )
+
+  const scoredPlayers = playerSummaries
+    .filter(p => p.latestScore !== null)
+    .sort((a, b) => (a.latestScore || 0) - (b.latestScore || 0))
+
+  const minScore = scoredPlayers[0]?.latestScore || 0
+  const maxScore =
+    scoredPlayers[scoredPlayers.length - 1]?.latestScore || 100
+  const scoreRange = Math.max(maxScore - minScore, 1)
+
+  function scoreToPercent(score: number) {
+    return Math.round(((score - minScore) / scoreRange) * 90) + 5
+  }
+
+  const weeklyImproving = playerSummaries.filter(
+    p => p.delta !== null && p.delta > 0,
+  ).length
+  const weeklyAttention = playerSummaries.filter(
+    p => p.status === 'attention',
+  ).length
+  const avgDelta =
+    playerSummaries
+      .filter(p => p.delta !== null)
+      .reduce((a, p) => a + (p.delta || 0), 0) /
+    Math.max(playerSummaries.filter(p => p.delta !== null).length, 1)
+
+  useEffect(() => {
+    async function gen() {
+      if (playerSummaries.length === 0) {
+        setBrief('Add players and capture reels to get your coaching brief.')
+        setBriefLoading(false)
+        return
+      }
+      try {
+        const res = await fetch('/api/coaching-brief', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ context: rosterContext }),
+        })
+        const data = await res.json()
+        setBrief(data.brief || '')
+      } catch {
+        setBrief(
+          tasks.length > 0
+            ? `${tasks[0].title} is your top priority today.`
+            : 'Your roster is looking good today.',
+        )
+      }
+      setBriefLoading(false)
+    }
+    void gen()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- brief on mount only
+  }, [])
+
+  async function sendChat() {
+    const msg = chatInput.trim()
+    if (!msg || chatLoading) return
+    setChatInput('')
+    setDrawerOpen(true)
+    const newMessages = [
+      ...chatMessages,
+      { role: 'user' as const, content: msg },
+    ]
+    setChatMessages(newMessages)
+    setChatLoading(true)
+    try {
+      const res = await fetch('/api/pulse-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newMessages,
+          rosterContext,
+        }),
+      })
+      const data = await res.json()
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: data.response || '' },
+      ])
+    } catch {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Something went wrong. Try again.',
+        },
+      ])
+    }
+    setChatLoading(false)
+  }
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatLoading, drawerOpen])
+
+  const sorted = [...playerSummaries].sort((a, b) => {
+    const order = { attention: 0, levelup: 1, ontrack: 2, new: 3 }
+    return order[a.status] - order[b.status]
+  })
 
   return (
-    <div style={{ color: TEXT, fontFamily: 'Arial, sans-serif', maxWidth: 1000, background: WARM_BG }}>
-      <ViaBar role="coach" />
+    <div
+      style={{
+        color: TEXT,
+        fontFamily: 'Arial, sans-serif',
+        maxWidth: 1100,
+      }}
+    >
+      <style>{LOADING_DOT_CSS}</style>
 
       <div
         style={{
           display: 'flex',
-          alignItems: 'flex-start',
+          alignItems: 'baseline',
           justifyContent: 'space-between',
-          marginBottom: 20,
+          marginBottom: 16,
           flexWrap: 'wrap',
-          gap: 12,
+          gap: 8,
         }}
       >
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>Pulse</h1>
-          <p style={{ fontSize: 12, color: TEXT_SEC, marginTop: 4 }}>
-            {format(new Date(), 'EEEE, MMMM d')} · {players.length} players
-            {rosterHealth && (
-              <>
-                {' '}· Avg score <strong style={{ color: TEAL }}>{rosterHealth.avg}</strong>
-              </>
-            )}
-          </p>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          <h1
+            style={{
+              fontSize: 26,
+              fontWeight: 800,
+              margin: 0,
+              letterSpacing: '-0.5px',
+            }}
+          >
+            Pulse
+          </h1>
+          <span style={{ fontSize: 12, color: TEXT_MUTED }}>
+            {format(new Date(), 'EEE MMM d')} · {players.length} players
+          </span>
         </div>
-
-        {rosterHealth && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <div
-              style={{
-                padding: '6px 12px',
-                borderRadius: 10,
-                background: TEAL_LIGHT,
-                border: '1px solid hsl(168,62%,70%)',
-                fontSize: 12,
-                fontWeight: 600,
-                color: TEAL,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
-            >
-              <Users size={13} />
-              {rosterHealth.total} analyzed
-            </div>
-            {rosterHealth.improving > 0 && (
-              <div
+        {rosterContext.avgScore > 0 && (
+          <span style={{ fontSize: 13, color: TEXT_SEC }}>
+            Roster avg{' '}
+            <strong style={{ color: TEAL, fontSize: 16 }}>
+              {rosterContext.avgScore}
+            </strong>
+            {avgDelta !== 0 && (
+              <span
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: 10,
-                  background: GREEN_LIGHT,
-                  border: '1px solid hsl(145,60%,70%)',
                   fontSize: 12,
-                  fontWeight: 600,
-                  color: GREEN,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
+                  color: avgDelta > 0 ? GREEN : RED,
+                  marginLeft: 5,
                 }}
               >
-                <TrendingUp size={13} />
-                {rosterHealth.improving} improving this week
-              </div>
+                {avgDelta > 0 ? '↑' : '↓'}
+                {Math.abs(Math.round(avgDelta))} this week
+              </span>
             )}
-            {rosterHealth.attention > 0 && (
-              <div
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: 10,
-                  background: RED_LIGHT,
-                  border: '1px solid hsl(0,70%,75%)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: RED,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                }}
-              >
-                <AlertCircle size={13} />
-                {rosterHealth.attention} need check-in
-              </div>
-            )}
-          </div>
+          </span>
         )}
       </div>
 
-      {actionChips.length > 0 && (
+      <div
+        style={{
+          background:
+            'linear-gradient(135deg, #eaf7f2 0%, #eff3fe 55%, #f4effd 100%)',
+          borderRadius: 16,
+          border: '0.5px solid rgba(29,158,117,.18)',
+          padding: '18px 20px',
+          marginBottom: 18,
+        }}
+      >
         <div
           style={{
             display: 'flex',
-            gap: 8,
-            overflowX: 'auto',
-            paddingBottom: 4,
-            marginBottom: 20,
-            scrollbarWidth: 'none',
+            alignItems: 'flex-start',
+            gap: 16,
           }}
         >
-          {actionChips.map((chip, index) => (
-            <button
-              key={`${chip.label}-${index}`}
-              onClick={() => router.push(chip.href)}
+          <ViaBlob size={36} />
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
-                padding: '7px 12px',
-                borderRadius: 999,
-                border: `1px solid ${chip.color}`,
-                background: chip.bg,
-                color: chip.color,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif',
-                flexShrink: 0,
-                transition: 'all 0.15s',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                gap: 8,
+                marginBottom: 8,
               }}
-              type="button"
             >
-              <span>{chip.icon}</span>
-              {chip.label}
-              <ChevronRight size={12} />
-            </button>
-          ))}
-        </div>
-      )}
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: TEXT,
+                }}
+              >
+                Via
+              </span>
+              <span
+                style={{
+                  fontSize: 10,
+                  background: 'rgba(29,158,117,.12)',
+                  color: TEAL_DARK,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  fontWeight: 600,
+                  border: '0.5px solid rgba(29,158,117,.2)',
+                }}
+              >
+                AI Coaching Agent
+              </span>
+            </div>
 
-      {sports.length > 1 && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-          {['all', ...sports].map(sport => (
-            <button
-              key={sport}
-              onClick={() => setSelectedSport(sport)}
+            {briefLoading ? (
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 4,
+                  alignItems: 'center',
+                  marginBottom: 12,
+                }}
+              >
+                {[0, 1, 2].map(i => (
+                  <div
+                    key={i}
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: TEAL,
+                      opacity: 0.5,
+                      animation: `pulseDot 1.2s ease-in-out ${i * 0.2}s infinite`,
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p
+                style={{
+                  fontSize: 13,
+                  color: '#1a1a1a',
+                  lineHeight: 1.65,
+                  margin: '0 0 12px',
+                  maxWidth: 620,
+                }}
+              >
+                {brief}
+              </p>
+            )}
+
+            <div
               style={{
-                padding: '5px 12px',
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 600,
-                border: `1px solid ${selectedSport === sport ? TEAL : BORDER}`,
-                background: selectedSport === sport ? TEAL_LIGHT : CARD,
-                color: selectedSport === sport ? TEAL : TEXT_SEC,
-                cursor: 'pointer',
-                fontFamily: 'Arial, sans-serif',
+                display: 'flex',
+                gap: 7,
+                alignItems: 'center',
+                background: 'rgba(255,255,255,.75)',
+                border: '0.5px solid rgba(29,158,117,.22)',
+                borderRadius: 10,
+                padding: '8px 12px',
+                maxWidth: 480,
               }}
-              type="button"
             >
-              {sport === 'all' ? 'All sports' : `${sportEmoji[sport] || ''} ${sport}`}
-            </button>
-          ))}
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void sendChat()
+                  }
+                }}
+                placeholder="Ask Via about your roster..."
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  background: 'none',
+                  fontSize: 12,
+                  color: TEXT,
+                  fontFamily: 'Arial, sans-serif',
+                  outline: 'none',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void sendChat()}
+                disabled={!chatInput.trim() || chatLoading}
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 7,
+                  background: chatInput.trim() ? TEAL : '#ccc',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: chatInput.trim() ? 'pointer' : 'default',
+                  flexShrink: 0,
+                  transition: 'background 0.15s',
+                }}
+              >
+                <Send size={11} color="white" />
+              </button>
+            </div>
+
+
+          </div>
         </div>
-      )}
+      </div>
 
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-          gap: 12,
-          marginBottom: 24,
+          gridTemplateColumns: '1.15fr .85fr',
+          gap: 20,
+          alignItems: 'start',
         }}
       >
-        {filtered
-          .sort((a, b) => {
-            const order: Record<PlayerStatus, number> = { attention: 0, levelup: 1, ontrack: 2, new: 3 }
-            return order[a.status] - order[b.status]
-          })
-          .map(player => {
-            const trendColor =
-              player.delta === null
-                ? TEXT_MUTED
-                : player.delta > 0
-                  ? GREEN
-                  : player.delta < 0
-                    ? RED
-                    : TEXT_MUTED
-            return (
-              <div
-                key={player.id}
-                onClick={() => router.push(`/dashboard/players/${player.id}`)}
-                style={{
-                  background: 'white',
-                  border: `0.5px solid ${
-                    player.status === 'attention'
-                      ? 'hsl(0,70%,82%)'
-                      : 'hsl(30,10%,91%)'
-                  }`,
-                  borderRadius: 16,
-                  padding: 14,
-                  cursor: 'pointer',
-                  transition: 'box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease',
-                  boxShadow: player.status === 'attention'
-                    ? '0 2px 8px rgba(220,50,50,0.08), 0 1px 3px rgba(0,0,0,0.05)'
-                    : '0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
-                }}
-                onMouseEnter={event => {
-                  event.currentTarget.style.boxShadow = player.status === 'attention'
-                    ? '0 8px 24px rgba(220,50,50,0.12), 0 2px 8px rgba(0,0,0,0.06)'
-                    : '0 8px 24px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)'
-                  event.currentTarget.style.transform = 'translateY(-2px)'
-                  event.currentTarget.style.borderColor =
-                    player.status === 'attention'
-                      ? 'hsl(0,70%,72%)'
-                      : 'hsl(168,62%,60%)'
-                }}
-                onMouseLeave={event => {
-                  event.currentTarget.style.boxShadow = player.status === 'attention'
-                    ? '0 2px 8px rgba(220,50,50,0.08), 0 1px 3px rgba(0,0,0,0.05)'
-                    : '0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)'
-                  event.currentTarget.style.transform = 'translateY(0)'
-                  event.currentTarget.style.borderColor =
-                    player.status === 'attention'
-                      ? 'hsl(0,70%,82%)'
-                      : 'hsl(30,10%,91%)'
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    justifyContent: 'space-between',
-                    marginBottom: 12,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: TEXT_MUTED,
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+              marginBottom: 10,
+            }}
+          >
+            Do today
+          </div>
+
+          {tasks.length === 0 ? (
+            <div
+              style={{
+                background: 'white',
+                border: `0.5px solid ${BORDER}`,
+                borderRadius: 12,
+                padding: '20px 16px',
+                textAlign: 'center',
+                color: TEXT_MUTED,
+                fontSize: 13,
+              }}
+            >
+              No urgent tasks — your roster is in good shape!
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 7,
+              }}
+            >
+              {tasks.map(task => {
+                const isRed = task.color === RED
+                const isGreen = task.color === TEAL
+                return (
+                  <div
+                    key={task.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 11,
+                      padding: '12px 14px',
+                      borderRadius: 12,
+                      background: isRed ? '#fff8f8' : 'white',
+                      border: `0.5px solid ${isRed ? RED_BORDER : BORDER}`,
+                      boxShadow: '0 1px 4px rgba(0,0,0,.04)',
+                    }}
+                  >
                     <div
                       style={{
-                        width: 34,
-                        height: 34,
+                        width: 7,
+                        height: 7,
                         borderRadius: '50%',
-                        background: player.status === 'attention' ? RED_LIGHT : TEAL_LIGHT,
-                        color: player.status === 'attention' ? 'hsl(0,70%,45%)' : TEAL,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 13,
-                        fontWeight: 600,
+                        background: task.color,
                         flexShrink: 0,
                       }}
-                    >
-                      {playerName(player).charAt(0)}
-                    </div>
-                    <div>
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
                           fontSize: 13,
-                          fontWeight: 600,
+                          fontWeight: 700,
                           color: TEXT,
-                          lineHeight: 1.2,
+                          marginBottom: 2,
                         }}
                       >
-                        {playerName(player).split(' ')[0]}
+                        {task.title}
                       </div>
                       <div
                         style={{
                           fontSize: 11,
-                          color: 'hsl(220,10%,55%)',
-                          marginTop: 1,
+                          color: isRed ? RED : TEXT_MUTED,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
                         }}
                       >
-                        {player.sport ? `${sportEmoji[player.sport] || ''} ${player.sport}` : 'Sport not set'}
+                        {task.why}
                       </div>
                     </div>
-                  </div>
-
-                  <StatusBadge player={player} />
-                </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-end',
-                    justifyContent: 'space-between',
-                    marginBottom: 10,
-                  }}
-                >
-                  {player.latestScore !== null ? (
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 26,
-                          fontWeight: 700,
-                          color: player.delta !== null && player.delta < -4 ? RED : TEAL,
-                          lineHeight: 1,
-                        }}
-                      >
-                        {player.latestScore}
-                      </div>
-                      {player.delta !== null && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 600,
-                            color: trendColor,
-                            marginTop: 2,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 2,
-                          }}
-                        >
-                          {player.delta > 0 ? (
-                            <TrendingUp size={11} />
-                          ) : player.delta < 0 ? (
-                            <TrendingDown size={11} />
-                          ) : null}
-                          {player.delta > 0 ? '+' : ''}
-                          {player.delta} pts
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 13, color: TEXT_MUTED, fontStyle: 'italic' }}>
-                      No data yet
-                    </div>
-                  )}
-
-                  <Sparkline data={player.sparkline} color={trendColor} />
-                </div>
-
-                <div
-                  style={{
-                    borderTop: '0.5px solid hsl(30,10%,93%)',
-                    paddingTop: 8,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      flex: 1,
-                      minWidth: 0,
-                    }}
-                  >
-                    {player.topIssue && (
-                      <>
-                        <div
-                          style={{
-                            width: 5,
-                            height: 5,
-                            borderRadius: '50%',
-                            background: RED,
-                            flexShrink: 0,
-                          }}
-                        />
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: 'hsl(220,10%,55%)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {player.topIssue}
-                        </span>
-                      </>
-                    )}
-                    {!player.topIssue && player.sessionCount === 0 && (
-                      <span style={{ fontSize: 11, color: TEXT_MUTED }}>
-                        Upload first video
-                      </span>
-                    )}
-                  </div>
-                  {player.daysSince < 999 && (
-                    <span
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (task.onClick) task.onClick()
+                        else if (task.href) router.push(task.href)
+                      }}
                       style={{
-                        fontSize: 10,
-                        color: player.daysSince >= 14 ? 'hsl(38,92%,45%)' : TEXT_MUTED,
+                        padding: '5px 12px',
+                        borderRadius: 8,
+                        border: 'none',
+                        background: isRed ? RED : isGreen ? TEAL : 'white',
+                        color: isRed || isGreen ? 'white' : '#555',
+                        borderColor: BORDER,
+                        borderWidth: isRed || isGreen ? 0 : 0.5,
+                        borderStyle: 'solid',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        fontFamily: 'Arial, sans-serif',
+                        whiteSpace: 'nowrap',
                         flexShrink: 0,
-                        marginLeft: 6,
                       }}
                     >
-                      {player.daysSince === 0
-                        ? 'Today'
-                        : player.daysSince === 1
-                          ? '1d ago'
-                          : `${player.daysSince}d ago`}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-      </div>
-
-      {unlinkedSessions.length > 0 && (
-        <div
-          style={{
-            background: CARD,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 16,
-            padding: 16,
-            marginBottom: 24,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: TEAL }}>
-              {unlinkedSessions.length} unlinked analysis{unlinkedSessions.length !== 1 ? 'es' : ''}
+                      {task.action}
+                    </button>
+                  </div>
+                )
+              })}
             </div>
-            <div style={{ fontSize: 12, color: TEXT_SEC, marginTop: 2 }}>
-              These analyses are included in your brief and chat, but not in player cards yet.
-            </div>
-          </div>
-          <button
-            onClick={() => router.push('/dashboard/video')}
-            style={{
-              padding: '7px 12px',
-              borderRadius: 8,
-              background: TEAL,
-              color: 'white',
-              border: 'none',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'Arial, sans-serif',
-            }}
-            type="button"
-          >
-            View videos →
-          </button>
+          )}
         </div>
-      )}
 
-      {(commonIssues.length > 0 || mostImproved.length > 0) && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-            gap: 16,
-            marginBottom: 24,
-          }}
-        >
-          {commonIssues.length > 0 && (
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: TEXT_MUTED,
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+              marginBottom: 10,
+            }}
+          >
+            Roster
+          </div>
+
+          {scoredPlayers.length > 1 && (
             <div
               style={{
-                background: CARD,
-                border: `1px solid ${BORDER}`,
-                borderRadius: 16,
-                padding: 20,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+                background: WARM_BG,
+                borderRadius: 10,
+                padding: '9px 12px',
+                marginBottom: 8,
+                border: `0.5px solid ${BORDER}`,
               }}
             >
               <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: 16,
-                  gap: 12,
+                  position: 'relative',
+                  height: 6,
+                  background: BORDER,
+                  borderRadius: 3,
+                  marginBottom: 6,
                 }}
               >
-                <div>
-                  <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: TEXT }}>
-                    Common issues
-                  </h3>
-                  <p style={{ fontSize: 11, color: TEXT_MUTED, margin: '2px 0 0' }}>
-                    Shared across your roster
-                  </p>
-                </div>
-                <button
-                  onClick={() => router.push(`/dashboard/drills?focus=${encodeURIComponent(commonIssues[0].issue)}`)}
-                  style={{
-                    fontSize: 11,
-                    padding: '6px 10px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    background: TEAL,
-                    color: 'white',
-                    border: 'none',
-                    fontWeight: 600,
-                    fontFamily: 'Arial, sans-serif',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                  }}
-                  type="button"
-                >
-                  Build session
-                  <ArrowRight size={11} />
-                </button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {commonIssues.map(({ issue, count, players: issuePlayers }, index) => (
-                  <div key={issue}>
+                {scoredPlayers.map(p => {
+                  const pct = scoreToPercent(p.latestScore || 0)
+                  const dotColor =
+                    p.status === 'attention'
+                      ? RED
+                      : p.status === 'levelup'
+                        ? PURPLE
+                        : TEAL
+                  return (
                     <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: 4,
+                      key={p.id}
+                      title={`${p.name}: ${p.latestScore}`}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter')
+                          router.push(`/dashboard/players/${p.id}`)
                       }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 12,
-                          color: TEXT,
-                          fontWeight: index === 0 ? 600 : 400,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 5,
-                        }}
-                      >
-                        {index === 0 && (
-                          <span
-                            style={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: '50%',
-                              background: RED,
-                              display: 'inline-block',
-                            }}
-                          />
-                        )}
-                        {issue}
-                      </span>
-                      <span style={{ fontSize: 11, color: TEXT_MUTED, fontWeight: 600 }}>
-                        {count}/{players.length}
-                      </span>
-                    </div>
-                    <div style={{ height: 5, borderRadius: 3, background: BORDER, overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          height: 5,
-                          borderRadius: 3,
-                          background: index === 0 ? RED : index === 1 ? AMBER : TEAL,
-                          width: `${players.length ? (count / players.length) * 100 : 0}%`,
-                          transition: 'width 0.6s ease',
-                        }}
-                      />
-                    </div>
-                    <div style={{ fontSize: 10, color: TEXT_MUTED, marginTop: 2 }}>
-                      {issuePlayers.slice(0, 2).join(', ')}
-                      {issuePlayers.length > 2 ? ` +${issuePlayers.length - 2}` : ''}
-                    </div>
-                  </div>
-                ))}
+                      style={{
+                        position: 'absolute',
+                        top: -3,
+                        left: `${pct}%`,
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        background: dotColor,
+                        border: '2px solid white',
+                        transform: 'translateX(-50%)',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() =>
+                        router.push(`/dashboard/players/${p.id}`)
+                      }
+                    />
+                  )
+                })}
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span style={{ fontSize: 9, color: RED }}>{minScore}</span>
+                <span style={{ fontSize: 9, color: TEAL, fontWeight: 700 }}>
+                  avg {rosterContext.avgScore}
+                </span>
+                <span style={{ fontSize: 9, color: TEAL }}>{maxScore}</span>
               </div>
             </div>
           )}
 
-          {mostImproved.length > 0 && (
-            <div
-              style={{
-                background: CARD,
-                border: `1px solid ${BORDER}`,
-                borderRadius: 16,
-                padding: 20,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
-              }}
-            >
-              <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: TEXT }}>
-                Most improved
-              </h3>
-              <p style={{ fontSize: 11, color: TEXT_MUTED, margin: '0 0 16px' }}>All time score gains</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {mostImproved.map((player, index) => (
+          <div
+            style={{
+              background: 'white',
+              borderRadius: 12,
+              border: `0.5px solid ${BORDER}`,
+              overflow: 'hidden',
+              marginBottom: 8,
+            }}
+          >
+            {sorted.slice(0, 6).map((p, i) => {
+              const scoreColor =
+                p.status === 'attention'
+                  ? RED
+                  : p.status === 'levelup'
+                    ? PURPLE
+                    : TEAL
+              const dotColor =
+                p.status === 'attention'
+                  ? RED
+                  : p.status === 'levelup'
+                    ? PURPLE
+                    : p.status === 'ontrack'
+                      ? TEAL
+                      : '#ccc'
+
+              return (
+                <div
+                  key={p.id}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter')
+                      router.push(`/dashboard/players/${p.id}`)
+                  }}
+                  onClick={() => router.push(`/dashboard/players/${p.id}`)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 9,
+                    padding: '9px 13px',
+                    borderBottom:
+                      i < Math.min(sorted.length, 6) - 1
+                        ? `0.5px solid ${BORDER_LIGHT}`
+                        : 'none',
+                    cursor: 'pointer',
+                    transition: 'background 0.12s',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = WARM_BG
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'transparent'
+                  }}
+                >
                   <div
-                    key={player.id}
-                    onClick={() => router.push(`/dashboard/players/${player.id}`)}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      background: index === 0 ? AMBER_LIGHT : WARM_BG,
-                      border: `1px solid ${index === 0 ? AMBER : BORDER}`,
-                      cursor: 'pointer',
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: dotColor,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: TEXT,
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    <div
+                    {p.name.split(' ')[0]}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: TEXT_MUTED,
+                      flex: 1.6,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {p.topIssue ||
+                      (p.sessionCount === 0
+                        ? 'Not analyzed'
+                        : `${sportEmoji[p.sport] || ''} ${p.sport}`)}
+                  </span>
+                  {p.latestScore ? (
+                    <>
+                      <span
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 800,
+                          color: scoreColor,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {p.latestScore}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color:
+                            p.delta && p.delta > 0
+                              ? GREEN
+                              : p.delta && p.delta < 0
+                                ? RED
+                                : TEXT_MUTED,
+                          width: 24,
+                          textAlign: 'right',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {p.delta !== null && p.delta !== 0
+                          ? `${p.delta > 0 ? '↑' : '↓'}${Math.abs(p.delta)}`
+                          : '—'}
+                      </span>
+                    </>
+                  ) : (
+                    <span
                       style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: '50%',
-                        background: index === 0 ? AMBER : TEAL_LIGHT,
-                        color: index === 0 ? 'white' : TEAL,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: index === 0 ? 14 : 12,
-                        fontWeight: 700,
+                        fontSize: 12,
+                        color: TEXT_MUTED,
                         flexShrink: 0,
                       }}
                     >
-                      {index === 0 ? '🏆' : playerName(player).charAt(0)}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: TEXT }}>
-                        {playerName(player)}
-                      </div>
-                      <div style={{ fontSize: 11, color: TEXT_SEC }}>
-                        {player.first?.overall_score} → {player.latestScore}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: index === 0 ? AMBER : GREEN }}>
-                      +{player.totalGain}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+                      —
+                    </span>
+                  )}
+                </div>
+              )
+            })}
 
-      {players.length === 0 && (
-        <div
-          style={{
-            background: CARD,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 16,
-            padding: 48,
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ fontSize: 40, marginBottom: 12 }}>👥</div>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: TEXT, margin: '0 0 8px' }}>
-            No players yet
-          </h3>
-          <p style={{ fontSize: 13, color: TEXT_SEC, margin: '0 0 20px' }}>
-            Add players to your roster to see Pulse insights
-          </p>
-          <button
-            onClick={() => router.push('/dashboard/players')}
+            {sorted.length > 6 && (
+              <div
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') router.push('/dashboard/players')
+                }}
+                onClick={() => router.push('/dashboard/players')}
+                style={{
+                  padding: '8px 13px',
+                  fontSize: 11,
+                  color: TEXT_MUTED,
+                  opacity: 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  cursor: 'pointer',
+                }}
+              >
+                <div
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: '#ccc',
+                    flexShrink: 0,
+                  }}
+                />
+                +{sorted.length - 6} more · tap to see all
+              </div>
+            )}
+          </div>
+
+          <div
             style={{
-              padding: '10px 20px',
-              borderRadius: 10,
-              background: TEAL,
-              color: 'white',
-              border: 'none',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: 6,
+            }}
+          >
+            {[
+              {
+                value:
+                  avgDelta > 0
+                    ? `+${Math.round(avgDelta)}`
+                    : Math.round(avgDelta).toString(),
+                label: 'avg pts',
+                color:
+                  avgDelta > 0 ? GREEN : avgDelta < 0 ? RED : TEXT_MUTED,
+              },
+              {
+                value: weeklyImproving.toString(),
+                label: 'improving',
+                color: GREEN,
+              },
+              {
+                value: weeklyAttention.toString(),
+                label: 'need help',
+                color: weeklyAttention > 0 ? RED : TEXT_MUTED,
+              },
+            ].map(stat => (
+              <div
+                key={stat.label}
+                style={{
+                  background: 'white',
+                  borderRadius: 9,
+                  border: `0.5px solid ${BORDER}`,
+                  padding: '8px 0',
+                  textAlign: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 800,
+                    color: stat.color,
+                  }}
+                >
+                  {stat.value}
+                </div>
+                <div style={{ fontSize: 9, color: TEXT_MUTED }}>
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {drawerOpen && (
+        <>
+          <div
+            role="presentation"
+            onClick={() => setDrawerOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.2)',
+              zIndex: 9998,
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              right: 0,
+              width: 360,
+              height: '100vh',
+              background: 'white',
+              boxShadow: '-4px 0 24px rgba(0,0,0,0.12)',
+              zIndex: 9999,
+              display: 'flex',
+              flexDirection: 'column',
               fontFamily: 'Arial, sans-serif',
             }}
-            type="button"
           >
-            Add your first player →
-          </button>
-        </div>
-      )}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 16px',
+                borderBottom: `0.5px solid ${BORDER}`,
+                flexShrink: 0,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: TEXT }}>
+                  Chat with Via
+                </div>
+                <div style={{ fontSize: 11, color: TEXT_SEC }}>
+                  Roster assistant
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(false)}
+                aria-label="Close chat"
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  border: `0.5px solid ${BORDER}`,
+                  background: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={16} color={TEXT_SEC} />
+              </button>
+            </div>
 
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 0.4; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              {chatMessages.map((m, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    justifyContent:
+                      m.role === 'user' ? 'flex-end' : 'flex-start',
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: '88%',
+                      padding: '10px 12px',
+                      borderRadius:
+                        m.role === 'user'
+                          ? '12px 12px 4px 12px'
+                          : '12px 12px 12px 4px',
+                      background: m.role === 'user' ? TEAL : WARM_BG,
+                      color: m.role === 'user' ? 'white' : TEXT,
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                      border:
+                        m.role === 'assistant'
+                          ? `0.5px solid ${BORDER}`
+                          : 'none',
+                    }}
+                  >
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 5,
+                    padding: '8px 12px',
+                    background: WARM_BG,
+                    borderRadius: 12,
+                    width: 'fit-content',
+                    border: `0.5px solid ${BORDER}`,
+                  }}
+                >
+                  {[0, 1, 2].map(i => (
+                    <div
+                      key={i}
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: TEAL,
+                        opacity: 0.5,
+                        animation: `pulseDot 1.2s ease-in-out ${i * 0.2}s infinite`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

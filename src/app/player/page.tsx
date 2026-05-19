@@ -1,606 +1,1122 @@
 'use client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
+
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
-import { Badge } from '@/components/ui/badge'
-import { buttonVariants } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { ArrowRight, BookOpen, CalendarDays, Clock, Dumbbell, Sparkles, UserPlus, Video } from 'lucide-react'
-import { format } from 'date-fns'
-import { calendarEvent } from '@/lib/calendar'
-import ViaBar from '@/components/ViaBar'
+import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
+import { differenceInDays, format } from 'date-fns'
+import { Send } from 'lucide-react'
+import ViaBlob from '@/components/ViaBlob'
+import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
 
-type AnalysisResult = {
-  observations?: string
-  technique_notes?: string
-  strengths?: Array<{ area?: string; what_i_see?: string; why_it_helps?: string }>
-  areas_to_improve?: Array<{ area?: string; severity?: string; simple_cue?: string }>
-  overall_rating?: string
-  biggest_win?: string
-  priority_focus?: string
-  confidence?: string
+const CSS = `
+  @keyframes pulseDot {
+    0%, 100% { opacity: 0.35; transform: scale(1); }
+    50%       { opacity: 1; transform: scale(1.15); }
+  }
+  @media (max-width: 480px) {
+    .metrics-grid { grid-template-columns: repeat(2, 1fr) !important; }
+    .bottom-grid { grid-template-columns: 1fr !important; }
+  }
+`
+
+const TEAL = 'hsl(168,62%,36%)'
+const TEAL_DARK = 'hsl(168,62%,28%)'
+const BORDER = 'hsl(30,10%,88%)'
+const TEXT = 'hsl(220,20%,15%)'
+const TEXT_SEC = 'hsl(220,10%,45%)'
+const TEXT_MUTED = 'hsl(220,10%,65%)'
+const WARM_BG = 'hsl(40,20%,97%)'
+const RED = '#DC2626'
+const AMBER = '#D97706'
+const PURPLE = '#7C3AED'
+const GREEN = '#16A34A'
+
+const sportEmoji: Record<string, string> = {
+  tennis: '🎾',
+  golf: '⛳',
+  baseball: '⚾',
+  basketball: '🏀',
+  pickleball: '🏓',
 }
 
-type AnalysisHistoryRow = {
-  id: string
-  sport: string | null
-  shot_type: string | null
-  camera_angle: string | null
-  result: AnalysisResult | null
-  created_at: string
+type PoseMeasurement = {
+  label?: string
+  measured?: number
+  status?: 'good' | 'warning' | 'critical'
+  deficit?: number
 }
 
-type LessonRow = {
-  id: string
-  availability_id?: string | null
-  booking_group_id?: string | null
-  starts_at: string
-  duration_mins: number
-  status: string
-  published_at?: string | null
-  player_viewed_at?: string | null
-  players?: { id?: string | null; name?: string | null; sport?: string | null } | null
-}
-
-type JournalEntryRow = {
-  id: string
-  lesson_id: string | null
-  content: string
-}
-
-type DrillRow = {
-  id: string
-  lesson_id: string | null
-  title: string
-  description?: string | null
-}
-
-type VideoRow = {
-  id: string
-  lesson_id: string | null
-  title: string
-  ai_analysis?: unknown
-}
-
-function lessonStatusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (status === 'completed') return 'secondary'
-  if (status === 'cancelled') return 'destructive'
-  return 'outline'
-}
-
-export default function PlayerDashboardPage() {
-  const [players, setPlayers] = useState<LinkedPlayer[]>([])
-  const [nextLesson, setNextLesson] = useState<LessonRow | null>(null)
-  const [lessonHistory, setLessonHistory] = useState<LessonRow[]>([])
-  const [lessonDrills, setLessonDrills] = useState<DrillRow[]>([])
-  const [lessonEntries, setLessonEntries] = useState<JournalEntryRow[]>([])
-  const [lessonVideos, setLessonVideos] = useState<VideoRow[]>([])
-  const [analysisHistory, setAnalysisHistory] = useState<AnalysisHistoryRow[]>([])
-  const [historyWarning, setHistoryWarning] = useState('')
-  const [accountName, setAccountName] = useState('')
-  const [loading, setLoading] = useState(true)
+export default function PlayerHome() {
+  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
-  const viaPlayer = players[0]
 
-  const cancelLessonRecord = useCallback(async (lessonId: string) => {
-    const { data: lesson } = await supabase
-      .from('lessons')
-      .select('id, booking_group_id, availability_id')
-      .eq('id', lessonId)
-      .maybeSingle()
-    if (!lesson) return
-    if (lesson.booking_group_id) {
-      await supabase.from('lessons').update({ status: 'cancelled' }).eq('booking_group_id', lesson.booking_group_id)
-    } else {
-      await supabase.from('lessons').update({ status: 'cancelled' }).eq('id', lesson.id)
-    }
-    if (lesson.availability_id) {
-      await supabase.from('availability').update({ is_booked: false }).eq('id', lesson.availability_id)
-    }
-  }, [supabase])
+  const [player, setPlayer] = useState<{
+    id: string
+    name: string | null
+    sport: string | null
+    skill_level?: string | null
+  } | null>(null)
+  const [sessions, setSessions] = useState<Array<Record<string, unknown>>>([])
+  const [drills, setDrills] = useState<Array<Record<string, unknown>>>([])
+  const [lessons, setLessons] = useState<Array<Record<string, unknown>>>([])
+  const [loading, setLoading] = useState(true)
 
-  const loadData = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      setLoading(false)
-      return
-    }
+  const [brief, setBrief] = useState('')
+  const [briefLoading, setBriefLoading] = useState(true)
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatMessages, setChatMessages] = useState<
+    { role: 'user' | 'assistant'; content: string }[]
+  >([])
+  const [showChat, setShowChat] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
 
-    setAccountName(
-      typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name.trim()
-        ? user.user_metadata.full_name
-        : user.email || ''
-    )
+  useEffect(() => {
+    async function load() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        router.push('/login')
+        return
+      }
 
-    const [linked, historyResponse] = await Promise.all([
-      getLinkedPlayersForUser(supabase, user.id),
-      fetch('/api/analyze-history').catch(() => null),
-    ])
+      const playerData = await getLinkedPlayerRowForUser(supabase, user.id)
+      if (!playerData?.id) {
+        setLoading(false)
+        return
+      }
 
-    if (historyResponse?.ok) {
-      const payload = await historyResponse.json()
-      setAnalysisHistory(Array.isArray(payload.analyses) ? payload.analyses : [])
-      setHistoryWarning(typeof payload.warning === 'string' ? payload.warning : '')
-    }
+      setPlayer({
+        id: playerData.id,
+        name: playerData.name,
+        sport: playerData.sport,
+        skill_level: playerData.skill_level,
+      })
 
-    if (!linked.length) {
-      setLoading(false)
-      return
-    }
+      const playerId = playerData.id
 
-    setPlayers(linked)
-    const playerIds = linked.map(p => p.id)
+      const { data: sessionRows } = await supabase
+        .from('analysis_sessions')
+        .select('*')
+        .eq('player_id', playerId)
+        .or(PLAYER_VISIBLE_SESSIONS_FILTER)
+        .order('analyzed_at', { ascending: true })
 
-    const [{ data: lessons }, { data: allLessons }] = await Promise.all([
-      supabase
+      setSessions(sessionRows || [])
+
+      const { data: drillRows } = await supabase
+        .from('drills')
+        .select('*')
+        .eq('player_id', playerId)
+        .order('created_at', { ascending: false })
+        .limit(3)
+
+      setDrills(drillRows || [])
+
+      const { data: lessonRows } = await supabase
         .from('lessons')
-        .select('*, players(id, name, sport)')
-        .in('player_id', playerIds)
+        .select('*')
+        .eq('player_id', playerId)
         .eq('status', 'scheduled')
         .gte('starts_at', new Date().toISOString())
         .order('starts_at', { ascending: true })
-        .limit(1),
-      supabase
-        .from('lessons')
-        .select('*, players(id, name, sport)')
-        .in('player_id', playerIds)
-        .order('starts_at', { ascending: false }),
-    ])
+        .limit(2)
 
-    const publishedLessonIds = (allLessons || [])
-      .filter(lesson => Boolean(lesson.published_at))
-      .map(lesson => lesson.id)
-
-    const [{ data: entries }, { data: drills }, { data: videos }] = publishedLessonIds.length
-      ? await Promise.all([
-          supabase
-            .from('journal_entries')
-            .select('*')
-            .in('lesson_id', publishedLessonIds)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('drills')
-            .select('*')
-            .in('lesson_id', publishedLessonIds)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('videos')
-            .select('*')
-            .in('lesson_id', publishedLessonIds)
-            .order('recorded_at', { ascending: false }),
-        ])
-      : [{ data: [] }, { data: [] }, { data: [] }]
-
-    const visibleLessons = (allLessons || []).filter(lesson =>
-      ['scheduled', 'completed'].includes(lesson.status)
-    )
-
-    setNextLesson(lessons?.[0] ?? null)
-    setLessonHistory(visibleLessons)
-    setLessonEntries(entries || [])
-    setLessonDrills(drills || [])
-    setLessonVideos(videos || [])
-    setLoading(false)
-    const cancelId = new URLSearchParams(window.location.search).get('cancel')
-    if (cancelId && allLessons?.some(l => l.id === cancelId)) {
-      window.history.replaceState(null, '', '/player')
-      if (window.confirm('Cancel this lesson?')) {
-        await cancelLessonRecord(cancelId)
-        setLessonHistory(current => current.filter(lesson => lesson.id !== cancelId))
-        setNextLesson(current => current?.id === cancelId ? null : current)
-      }
+      setLessons(lessonRows || [])
+      setLoading(false)
     }
-  }, [cancelLessonRecord, supabase])
+    void load()
+  }, [router, supabase])
 
-  const cancelLessonById = useCallback(async (lessonId: string) => {
-    await cancelLessonRecord(lessonId)
-    await loadData()
-  }, [cancelLessonRecord, loadData])
+  const sortedSessions = useMemo(
+    () =>
+      [...sessions].sort(
+        (a, b) =>
+          new Date(String(a.analyzed_at)).getTime() -
+          new Date(String(b.analyzed_at)).getTime(),
+      ),
+    [sessions],
+  )
 
-  const markLessonViewed = useCallback(async (lessonId: string) => {
-    const lesson = lessonHistory.find(item => item.id === lessonId)
-    if (!lesson || lesson.player_viewed_at) return
+  const latest = sortedSessions[sortedSessions.length - 1]
+  const previous = sortedSessions[sortedSessions.length - 2]
+  const first = sortedSessions[0]
 
-    const viewedAt = new Date().toISOString()
-    await supabase.from('lessons').update({ player_viewed_at: viewedAt }).eq('id', lessonId)
-    setLessonHistory(current =>
-      current.map(item => item.id === lessonId ? { ...item, player_viewed_at: viewedAt } : item)
-    )
-  }, [lessonHistory, supabase])
+  const currentScore =
+    typeof latest?.overall_score === 'number' ? latest.overall_score : null
+  const delta =
+    currentScore !== null &&
+    previous &&
+    typeof previous.overall_score === 'number'
+      ? currentScore - previous.overall_score
+      : null
+  const totalGain =
+    latest &&
+    first &&
+    first.id !== latest.id &&
+    typeof latest.overall_score === 'number' &&
+    typeof first.overall_score === 'number'
+      ? latest.overall_score - first.overall_score
+      : 0
+
+  const poseRaw = latest?.pose_measurements
+  const pose: PoseMeasurement[] | null = Array.isArray(poseRaw)
+    ? (poseRaw as PoseMeasurement[])
+    : poseRaw &&
+        typeof poseRaw === 'object' &&
+        Array.isArray((poseRaw as { measurements?: PoseMeasurement[] }).measurements)
+      ? (poseRaw as { measurements: PoseMeasurement[] }).measurements
+      : null
+
+  const firstName = player?.name?.split(' ')[0] || 'there'
+
+  const nextLesson = lessons[0]
+  const nextLessonDate =
+    nextLesson && typeof nextLesson.starts_at === 'string'
+      ? new Date(nextLesson.starts_at)
+      : null
+
+  const upcomingDrill = drills[0]
+
+  const last3 = sortedSessions.slice(-3)
+  const cleanStreak = [...last3].reverse().findIndex(s => {
+    const critical = s.critical_count
+    return typeof critical === 'number' && critical > 0
+  })
+  const consecutiveClean = cleanStreak === -1 ? last3.length : cleanStreak
+
+  const quickPrompts = [
+    'What improved most?',
+    'What should I focus on next?',
+    currentScore
+      ? `How does ${currentScore} compare to others?`
+      : 'When will I improve?',
+  ]
 
   useEffect(() => {
-    queueMicrotask(() => {
-      void loadData()
-    })
-  }, [loadData])
+    if (loading || !player) return
 
-  const linkedFirstName = players[0]?.name?.trim().split(/\s+/)[0]
-  const accountFirstName = accountName.trim().split(/\s+/)[0]
-  const firstName = linkedFirstName || accountFirstName || 'there'
-  const nextLessonCalendar = nextLesson
-    ? calendarEvent({
-        title: `Playvia lesson: ${players.map(p => p.name).join(', ') || 'Lesson'}`,
-        startsAt: nextLesson.starts_at,
-        durationMins: nextLesson.duration_mins,
-        description: 'Playvia lesson',
-        actionLinks:
-          typeof window !== 'undefined'
-            ? [
-                { label: 'Cancel lesson', url: `${window.location.origin}/player?cancel=${nextLesson.id}` },
-                { label: 'Reschedule lesson', url: `${window.location.origin}/book?reschedule=${nextLesson.id}` },
-              ]
-            : undefined,
-      })
-    : null
+    async function genBrief() {
+      if (!player) return
+      const latestSession = sortedSessions[sortedSessions.length - 1]
+      const prevSession = sortedSessions[sortedSessions.length - 2]
+      const firstSession = sortedSessions[0]
 
-  function lessonContent(lessonId: string) {
-    return {
-      entries: lessonEntries.filter(entry => entry.lesson_id === lessonId),
-      drills: lessonDrills.filter(drill => drill.lesson_id === lessonId),
-      videos: lessonVideos.filter(video => video.lesson_id === lessonId),
+      const scoreDelta =
+        latestSession &&
+        prevSession &&
+        typeof latestSession.overall_score === 'number' &&
+        typeof prevSession.overall_score === 'number'
+          ? latestSession.overall_score - prevSession.overall_score
+          : null
+
+      try {
+        const playerContext = {
+          name: firstName,
+          sport: player.sport || 'tennis',
+          latestScore:
+            typeof latestSession?.overall_score === 'number'
+              ? latestSession.overall_score
+              : null,
+          previousScore:
+            typeof prevSession?.overall_score === 'number'
+              ? prevSession.overall_score
+              : null,
+          delta: scoreDelta,
+          totalGain:
+            latestSession &&
+            firstSession &&
+            latestSession.id !== firstSession.id &&
+            typeof latestSession.overall_score === 'number' &&
+            typeof firstSession.overall_score === 'number'
+              ? latestSession.overall_score - firstSession.overall_score
+              : 0,
+          topIssue:
+            typeof latestSession?.top_issue === 'string'
+              ? latestSession.top_issue
+              : null,
+          sessionCount: sortedSessions.length,
+          strengths:
+            (latestSession?.full_result as { strengths?: unknown[] })
+              ?.strengths || [],
+          issues:
+            (latestSession?.full_result as { areas_to_improve?: unknown[] })
+              ?.areas_to_improve || [],
+          poseMeasurements: latestSession?.pose_measurements ?? null,
+          daysSinceLast: latestSession
+            ? differenceInDays(
+                new Date(),
+                new Date(String(latestSession.analyzed_at)),
+              )
+            : null,
+          hasUpcomingLesson: lessons.length > 0,
+          recentDrill:
+            typeof drills[0]?.title === 'string' ? drills[0].title : null,
+        }
+
+        const res = await fetch('/api/player-summary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerContext }),
+        })
+        const data = await res.json()
+        setBrief(data.summary || '')
+      } catch {
+        if (latestSession) {
+          setBrief(
+            scoreDelta && scoreDelta > 0
+              ? `${firstName}, your score went up ${scoreDelta} points this week. ${typeof latestSession.top_issue === 'string' && latestSession.top_issue ? `Keep working on ${latestSession.top_issue}.` : 'Keep the momentum going.'}`
+              : `${firstName}, let's keep building. ${typeof latestSession.top_issue === 'string' && latestSession.top_issue ? `Focus on ${latestSession.top_issue} this week.` : 'Stay consistent and the score will follow.'}`,
+          )
+        } else {
+          setBrief(
+            "Welcome! Upload your first video and I'll give you a full technique breakdown.",
+          )
+        }
+      }
+      setBriefLoading(false)
     }
+
+    void genBrief()
+  }, [loading, player, sortedSessions, firstName])
+
+  const sendChat = useCallback(
+    async (overrideMsg?: string) => {
+      const msg = (overrideMsg ?? chatInput).trim()
+      if (!msg || chatLoading) return
+      setChatInput('')
+      setShowChat(true)
+
+      const latestSession = sortedSessions[sortedSessions.length - 1]
+      const prevSession = sortedSessions[sortedSessions.length - 2]
+
+      const newMessages = [
+        ...chatMessages,
+        { role: 'user' as const, content: msg },
+      ]
+      setChatMessages(newMessages)
+      setChatLoading(true)
+
+      try {
+        const res = await fetch('/api/player-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: newMessages,
+            playerContext: {
+              name: firstName,
+              sport: player?.sport,
+              latestScore: latestSession?.overall_score,
+              delta:
+                latestSession &&
+                prevSession &&
+                typeof latestSession.overall_score === 'number' &&
+                typeof prevSession.overall_score === 'number'
+                  ? latestSession.overall_score - prevSession.overall_score
+                  : null,
+              topIssue: latestSession?.top_issue,
+              poseMeasurements: latestSession?.pose_measurements,
+              strengths:
+                (latestSession?.full_result as { strengths?: unknown[] })
+                  ?.strengths || [],
+              issues:
+                (latestSession?.full_result as { areas_to_improve?: unknown[] })
+                  ?.areas_to_improve || [],
+            },
+          }),
+        })
+        const data = await res.json()
+        setChatMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: data.response || data.message || '',
+          },
+        ])
+      } catch {
+        setChatMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: 'Something went wrong. Try again.',
+          },
+        ])
+      }
+
+      setChatLoading(false)
+    },
+    [
+      chatInput,
+      chatLoading,
+      chatMessages,
+      firstName,
+      player?.sport,
+      sortedSessions,
+    ],
+  )
+
+  useEffect(() => {
+    if (!showChat) return
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatLoading, showChat])
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '60vh',
+          fontFamily: 'Arial, sans-serif',
+          color: TEXT_MUTED,
+          fontSize: 14,
+          background: WARM_BG,
+        }}
+      >
+        Loading your progress...
+      </div>
+    )
+  }
+
+  if (!player) {
+    return (
+      <div
+        style={{
+          fontFamily: 'Arial, sans-serif',
+          color: TEXT,
+          maxWidth: 720,
+          margin: '0 auto',
+          padding: '40px 0',
+          background: WARM_BG,
+        }}
+      >
+        <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>
+          Welcome to Playvia
+        </h1>
+        <p style={{ fontSize: 14, color: TEXT_SEC, lineHeight: 1.6 }}>
+          Your coach hasn't linked a player profile to this account yet. Ask
+          them to send you an invite, then come back here to see your progress.
+        </p>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-8">
-        {viaPlayer && (
-          <ViaBar
-            role="player"
-            playerContext={{
-              id: viaPlayer.id,
-              name: viaPlayer.name,
-              sport: viaPlayer.sport || 'tennis',
-              skillLevel: viaPlayer.skill_level,
+    <div
+      style={{
+        fontFamily: 'Arial, sans-serif',
+        color: TEXT,
+        maxWidth: 720,
+        margin: '0 auto',
+        padding: '0 0 40px',
+        background: WARM_BG,
+        minHeight: '100%',
+      }}
+    >
+      <style>{CSS}</style>
+
+      <div
+        style={{
+          background:
+            'linear-gradient(135deg, #eaf7f2 0%, #eff3fe 55%, #f5f0fd 100%)',
+          borderRadius: 16,
+          border: '0.5px solid rgba(29,158,117,.18)',
+          overflow: 'hidden',
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ padding: '18px 20px 16px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              marginBottom: 12,
+              gap: 12,
             }}
-          />
-        )}
-
-        <div>
-          <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-            Hi, {firstName}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {!loading && players.length === 0
-              ? 'Analyze your technique, keep reports in one place, and book directly with Jordan when you are ready for live coaching.'
-              : 'Your lessons in one place. Lesson recaps, drills, coach feedback, and media appear after your coach publishes them.'}
-          </p>
-        </div>
-
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : players.length === 0 ? (
-          <>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border border-primary/20 bg-primary/[0.06] p-5 shadow-sm md:col-span-2">
-                <div className="flex items-start gap-3">
-                  <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-card shadow-sm ring-1 ring-border">
-                    <Sparkles className="size-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold tracking-wide text-primary uppercase">Free analyzer</p>
-                    <h2 className="mt-1 font-heading text-xl font-bold text-foreground">Get your next technique report</h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                      Upload a tennis, golf, baseball, or basketball clip for instant AI feedback. Your saved reports will appear here after each analysis.
-                    </p>
-                    <Link
-                      href="/analyze?returnTo=/player"
-                      className={cn(buttonVariants({ variant: 'default' }), 'mt-4 rounded-xl px-4 py-2 text-sm font-semibold')}
-                    >
-                      Analyze a video <ArrowRight className="ml-1 size-4" />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-                <div className="flex size-11 items-center justify-center rounded-xl bg-primary/[0.08]">
-                  <CalendarDays className="size-5 text-primary" />
-                </div>
-                <h2 className="mt-4 font-heading text-lg font-bold text-foreground">Book with Jordan</h2>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  For now, live booking is available directly with Jordan only.
-                </p>
-                <Link
-                  href="/book"
-                  className={cn(buttonVariants({ variant: 'outline' }), 'mt-4 w-full rounded-xl text-sm font-semibold')}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <ViaBlob size={30} thinking={chatLoading} />
+              <div>
+                <span style={{ fontSize: 13, fontWeight: 800, color: TEXT }}>
+                  Via
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    background: 'rgba(29,158,117,.12)',
+                    color: TEAL_DARK,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    fontWeight: 600,
+                    marginLeft: 7,
+                    border: '0.5px solid rgba(29,158,117,.18)',
+                  }}
                 >
-                  View available times
-                </Link>
+                  AI Coaching Agent
+                </span>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
-                  <UserPlus className="size-5 text-primary" />
+            {currentScore !== null && (
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div
+                  style={{
+                    fontSize: 36,
+                    fontWeight: 900,
+                    color: TEAL,
+                    lineHeight: 1,
+                    letterSpacing: '-1.5px',
+                  }}
+                >
+                  {currentScore}
                 </div>
-                <div>
-                  <h2 className="font-heading text-sm font-semibold text-foreground">Connect to a coach</h2>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    Already working with a coach? Ask them to invite this email or link your account from their roster. Once linked, this dashboard will upgrade to include lessons, assigned drills, coach notes, and lesson media.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-              <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
-                <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
-                  <Video className="size-4 text-primary" strokeWidth={2} />
-                  Saved analysis reports
-                </h2>
-                <Badge variant="secondary">{analysisHistory.length}</Badge>
-              </div>
-              <div className="divide-y divide-border">
-                {historyWarning ? (
-                  <p className="px-5 py-6 text-sm text-muted-foreground">{historyWarning}</p>
-                ) : analysisHistory.length === 0 ? (
-                  <div className="px-5 py-8 text-center">
-                    <p className="text-sm font-medium text-foreground">No saved reports yet.</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Run an analysis while signed in and it will be saved here.</p>
+                {delta !== null && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: delta > 0 ? GREEN : delta < 0 ? RED : TEXT_MUTED,
+                      marginTop: 1,
+                    }}
+                  >
+                    {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
+                    {delta !== 0 ? ` ${Math.abs(delta)} this week` : ' no change'}
                   </div>
-                ) : (
-                  analysisHistory.map(report => {
-                    const result = report.result ?? {}
-                    const issues = Array.isArray(result.areas_to_improve) ? result.areas_to_improve : []
-                    const headline = result.priority_focus || result.biggest_win || result.observations || result.technique_notes || 'Technique report saved'
-                    return (
-                      <div key={report.id} className="px-5 py-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap gap-2">
-                              {report.sport && <Badge variant="outline" className="capitalize">{report.sport}</Badge>}
-                              {report.shot_type && <Badge variant="secondary" className="capitalize">{report.shot_type}</Badge>}
-                              {result.overall_rating && <Badge variant="secondary">{result.overall_rating}</Badge>}
-                            </div>
-                            <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-foreground">{headline}</p>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              {format(new Date(report.created_at), 'MMM d, yyyy')} · {issues.length} focus area{issues.length === 1 ? '' : 's'}
-                            </p>
-                          </div>
-                          <Link href="/analyze" className="shrink-0 text-xs font-semibold text-primary">
-                            New analysis
-                          </Link>
-                        </div>
-                      </div>
-                    )
-                  })
                 )}
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="rounded-2xl border border-primary/20 bg-primary/[0.06] p-5 shadow-sm">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-3">
-                  <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-card shadow-sm ring-1 ring-border">
-                    <Video className="size-5 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="font-heading text-lg font-bold text-foreground">Upload a practice video</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Get AI coaching feedback between lessons.
-                    </p>
-                  </div>
-                </div>
-                <Link
-                  href="/analyze?returnTo=/player"
-                  className={cn(buttonVariants({ variant: 'default' }), 'rounded-xl text-sm font-semibold')}
-                >
-                  Upload video →
-                </Link>
-              </div>
-            </div>
-            {nextLesson ? (
-              <div className="rounded-2xl border border-primary/25 bg-primary/[0.06] p-5 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex gap-3">
-                    <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-card shadow-sm ring-1 ring-border">
-                      <CalendarDays className="size-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold tracking-wide text-primary uppercase">Next lesson</p>
-                      <p className="mt-1 font-medium text-foreground">
-                        {format(new Date(nextLesson.starts_at), 'EEEE, MMM d')}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {format(new Date(nextLesson.starts_at), 'h:mm a')} · {nextLesson.duration_mins} min
-                      </p>
-                      {nextLessonCalendar && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <a
-                            href={nextLessonCalendar.googleUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
-                          >
-                            Google Calendar
-                          </a>
-                          <a
-                            href={nextLessonCalendar.icsHref}
-                            download="playvia-lesson.ics"
-                            className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground"
-                          >
-                            Device calendar
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-border bg-card p-5 text-center shadow-sm">
-                <p className="font-heading text-lg font-bold text-foreground">Your coach will schedule your first lesson soon</p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  You can also book directly if you are ready to grab a time.
-                </p>
-                <Link
-                  href="/book"
-                  className={cn(buttonVariants({ variant: 'default' }), 'mt-4 rounded-xl text-sm font-semibold')}
-                >
-                  Book a lesson →
-                </Link>
               </div>
             )}
+          </div>
 
-            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-              <div className="border-b border-border px-5 py-4">
-                <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
-                  <Clock className="size-4 text-primary" strokeWidth={2} />
-                  Lesson history
-                </h2>
+          {briefLoading ? (
+            <div
+              style={{
+                display: 'flex',
+                gap: 5,
+                alignItems: 'center',
+                marginBottom: 12,
+              }}
+            >
+              {[0, 1, 2].map(i => (
+                <div
+                  key={i}
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: TEAL,
+                    opacity: 0.5,
+                    animation: `viaRing 1.2s ease-in-out ${i * 0.2}s infinite`,
+                  }}
+                />
+              ))}
+              <span style={{ fontSize: 12, color: TEXT_MUTED, marginLeft: 4 }}>
+                Via is writing your debrief...
+              </span>
+            </div>
+          ) : (
+            <p
+              style={{
+                fontSize: 15,
+                fontWeight: 500,
+                color: TEXT,
+                lineHeight: 1.65,
+                margin: '0 0 14px',
+              }}
+            >
+              {brief}
+            </p>
+          )}
+
+          {currentScore !== null && (
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginBottom: 5,
+                }}
+              >
+                <span style={{ fontSize: 10, color: TEXT_MUTED }}>
+                  Progress
+                  {totalGain > 0 ? ` · +${totalGain} pts all time` : ''}
+                </span>
+                <span style={{ fontSize: 10, color: TEAL, fontWeight: 600 }}>
+                  {currentScore} / 100
+                </span>
               </div>
-              <div className="divide-y divide-border">
-                {lessonHistory.length === 0 ? (
-                  <p className="px-5 py-8 text-center text-sm text-muted-foreground">No lessons yet.</p>
-                ) : (
-                  lessonHistory.slice(0, 10).map(lesson => {
-                    const content = lessonContent(lesson.id)
-                    const isPublished = Boolean(lesson.published_at)
-                    const origin = typeof window !== 'undefined' ? window.location.origin : ''
-                    const event = calendarEvent({
-                      title: `Playvia lesson: ${lesson.players?.name || 'Lesson'}`,
-                      startsAt: lesson.starts_at,
-                      durationMins: lesson.duration_mins,
-                      description: 'Playvia lesson',
-                      actionLinks: origin
-                        ? [
-                            { label: 'Cancel lesson', url: `${origin}/player?cancel=${lesson.id}` },
-                            { label: 'Reschedule lesson', url: `${origin}/book?reschedule=${lesson.id}` },
-                          ]
-                        : undefined,
-                    })
-                    const canChange = lesson.status === 'scheduled'
-                    return (
-                      <div key={lesson.id} className="px-5 py-4" onClick={() => markLessonViewed(lesson.id)}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-foreground">{format(new Date(lesson.starts_at), 'EEEE, MMM d')}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {lesson.players?.name ? `${lesson.players.name} · ` : ''}
-                              {format(new Date(lesson.starts_at), 'h:mm a')} · {lesson.duration_mins} min
-                            </p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <a href={event.googleUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-primary">
-                                Google
-                              </a>
-                              <a href={event.icsHref} download="playvia-lesson.ics" className="text-xs font-medium text-primary">
-                                Device
-                              </a>
-                              {canChange && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={event => {
-                                      event.stopPropagation()
-                                      cancelLessonById(lesson.id)
-                                    }}
-                                    className="text-xs font-medium text-destructive"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <Link
-                                    href={`/book?reschedule=${lesson.id}`}
-                                    onClick={event => event.stopPropagation()}
-                                    className="text-xs font-medium text-primary"
-                                  >
-                                    Reschedule
-                                  </Link>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end gap-1">
-                            <Badge variant={lessonStatusVariant(lesson.status)} className="capitalize">
-                              {lesson.status}
-                            </Badge>
-                            {['scheduled', 'completed'].includes(lesson.status) && (
-                              <Badge variant={isPublished ? 'default' : 'secondary'}>
-                                {isPublished ? 'Recap ready' : 'Preparing recap'}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="mt-4 rounded-xl border border-border bg-muted/25 p-4">
-                          {!isPublished ? (
-                            <p className="text-sm text-muted-foreground">
-                              Your coach is preparing drills, feedback, and media for this lesson. You can still manage the lesson details above.
-                            </p>
-                          ) : (
-                            <div className="space-y-4">
-                              {content.entries.length > 0 && (
-                                <div>
-                                  <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                    <BookOpen className="size-3.5 text-primary" /> Coach feedback
-                                  </p>
-                                  <div className="space-y-2">
-                                    {content.entries.map(entry => (
-                                      <p key={entry.id} className="text-sm leading-relaxed text-foreground">
-                                        {entry.content}
-                                      </p>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {content.drills.length > 0 && (
-                                <div>
-                                  <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                    <Dumbbell className="size-3.5 text-primary" /> Assigned drills
-                                  </p>
-                                  <div className="grid gap-2">
-                                    {content.drills.map(drill => (
-                                      <div key={drill.id} className="rounded-lg border border-border bg-card px-3 py-2">
-                                        <p className="text-sm font-medium text-foreground">{drill.title}</p>
-                                        {drill.description && (
-                                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{drill.description}</p>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {content.videos.length > 0 && (
-                                <div>
-                                  <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                    <Video className="size-3.5 text-primary" /> Lesson media
-                                  </p>
-                                  <div className="grid gap-2">
-                                    {content.videos.map(video => (
-                                      <div key={video.id} className="rounded-lg border border-border bg-card px-3 py-2">
-                                        <p className="text-sm font-medium text-foreground">{video.title}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          {video.ai_analysis ? 'AI analysis included' : 'Media from this lesson'}
-                                        </p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {content.entries.length === 0 && content.drills.length === 0 && content.videos.length === 0 && (
-                                <p className="text-sm text-muted-foreground">
-                                  This lesson recap has been published. Your coach has not added drills, feedback, or media yet.
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
+              <div
+                style={{
+                  height: 6,
+                  background: 'rgba(29,158,117,.12)',
+                  borderRadius: 3,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: 6,
+                    background: TEAL,
+                    borderRadius: 3,
+                    width: `${currentScore}%`,
+                    boxShadow: '0 0 6px rgba(29,158,117,.3)',
+                    transition: 'width 0.8s ease',
+                  }}
+                />
               </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
+
+        <div
+          style={{
+            padding: '12px 20px 14px',
+            background: 'rgba(255,255,255,.6)',
+            borderTop: '0.5px solid rgba(29,158,117,.1)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              color: TEAL_DARK,
+              fontWeight: 600,
+              marginBottom: 7,
+            }}
+          >
+            ↩ Reply to Via
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 7,
+              alignItems: 'center',
+              marginBottom: 8,
+            }}
+          >
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void sendChat()
+                }
+              }}
+              placeholder="Ask Via about your progress..."
+              style={{
+                flex: 1,
+                padding: '9px 13px',
+                borderRadius: 10,
+                border: '0.5px solid rgba(29,158,117,.22)',
+                background: 'white',
+                fontSize: 12,
+                color: TEXT,
+                fontFamily: 'Arial, sans-serif',
+                outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => void sendChat()}
+              disabled={!chatInput.trim() || chatLoading}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 9,
+                background: chatInput.trim() ? TEAL : '#ccc',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: chatInput.trim() ? 'pointer' : 'default',
+                flexShrink: 0,
+                transition: 'background 0.15s',
+              }}
+            >
+              <Send size={13} color="white" />
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 5,
+              flexWrap: 'wrap',
+            }}
+          >
+            {quickPrompts.map(prompt => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => void sendChat(prompt)}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  background: 'rgba(29,158,117,.08)',
+                  border: '0.5px solid rgba(29,158,117,.18)',
+                  fontSize: 10,
+                  color: TEAL_DARK,
+                  cursor: 'pointer',
+                  fontFamily: 'Arial, sans-serif',
+                }}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+
+          {showChat && chatMessages.length > 0 && (
+            <div
+              style={{
+                marginTop: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 7,
+                maxHeight: 240,
+                overflowY: 'auto',
+              }}
+            >
+              {chatMessages.map((m, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: '85%',
+                      padding: '8px 12px',
+                      borderRadius:
+                        m.role === 'user'
+                          ? '10px 10px 3px 10px'
+                          : '10px 10px 10px 3px',
+                      background: m.role === 'user' ? TEAL : 'rgba(255,255,255,.9)',
+                      color: m.role === 'user' ? 'white' : TEXT,
+                      fontSize: 12,
+                      lineHeight: 1.55,
+                      border:
+                        m.role === 'assistant'
+                          ? '0.5px solid rgba(29,158,117,.15)'
+                          : 'none',
+                    }}
+                  >
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 4,
+                    padding: '6px 10px',
+                    background: 'rgba(255,255,255,.8)',
+                    borderRadius: 10,
+                    width: 'fit-content',
+                    border: '0.5px solid rgba(29,158,117,.15)',
+                  }}
+                >
+                  {[0, 1, 2].map(i => (
+                    <div
+                      key={i}
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: '50%',
+                        background: TEAL,
+                        opacity: 0.5,
+                        animation: `viaRing 1.2s ease-in-out ${i * 0.2}s infinite`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {(pose?.length || currentScore !== null) && (
+        <div style={{ marginBottom: 14 }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: TEXT_MUTED,
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+              marginBottom: 9,
+            }}
+          >
+            Your numbers
+          </div>
+          <div
+            className="metrics-grid"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 7,
+            }}
+          >
+            {pose?.slice(0, 2).map((m, i) => (
+              <div
+                key={i}
+                style={{
+                  background:
+                    m.status === 'critical' || m.status === 'warning'
+                      ? '#FEF9EC'
+                      : WARM_BG,
+                  border: `0.5px solid ${
+                    m.status === 'critical' ? '#FCD34D' : BORDER
+                  }`,
+                  borderRadius: 12,
+                  padding: '11px 12px',
+                  textAlign: 'center',
+                }}
+              >
+                <div
+                  style={{ fontSize: 9, color: TEXT_MUTED, marginBottom: 3 }}
+                >
+                  {m.label}
+                </div>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    color:
+                      m.status === 'good'
+                        ? TEAL
+                        : m.status === 'warning'
+                          ? AMBER
+                          : RED,
+                    lineHeight: 1,
+                  }}
+                >
+                  {m.measured}°
+                </div>
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: m.status === 'good' ? TEAL : AMBER,
+                    marginTop: 2,
+                  }}
+                >
+                  {m.status === 'good'
+                    ? '✓ in range'
+                    : `${m.deficit ?? 0}° off`}
+                </div>
+              </div>
+            ))}
+
+            <div
+              style={{
+                background: WARM_BG,
+                border: `0.5px solid ${BORDER}`,
+                borderRadius: 12,
+                padding: '11px 12px',
+                textAlign: 'center',
+              }}
+            >
+              <div
+                style={{ fontSize: 9, color: TEXT_MUTED, marginBottom: 3 }}
+              >
+                Streak
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: PURPLE,
+                  lineHeight: 1,
+                }}
+              >
+                {consecutiveClean}
+              </div>
+              <div
+                style={{ fontSize: 9, color: PURPLE, marginTop: 2 }}
+              >
+                clean sessions
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: WARM_BG,
+                border: `0.5px solid ${BORDER}`,
+                borderRadius: 12,
+                padding: '11px 12px',
+                textAlign: 'center',
+              }}
+            >
+              <div
+                style={{ fontSize: 9, color: TEXT_MUTED, marginBottom: 3 }}
+              >
+                All time
+              </div>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: TEXT,
+                  lineHeight: 1,
+                }}
+              >
+                {totalGain > 0 ? `+${totalGain}` : '—'}
+              </div>
+              <div
+                style={{ fontSize: 9, color: TEAL, marginTop: 2 }}
+              >
+                pts gained
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div
+        className="bottom-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            background: WARM_BG,
+            border: `0.5px solid ${BORDER}`,
+            borderRadius: 14,
+            padding: '13px 14px',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: TEXT_MUTED,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              marginBottom: 8,
+            }}
+          >
+            {"Today's drill"}
+          </div>
+          {upcomingDrill ? (
+            <>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: TEXT,
+                  marginBottom: 3,
+                  lineHeight: 1.3,
+                }}
+              >
+                {String(upcomingDrill.title)}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: TEXT_MUTED,
+                  marginBottom: 12,
+                }}
+              >
+                Assigned by your coach
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: TEXT,
+                  marginBottom: 3,
+                }}
+              >
+                No drill assigned yet
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: TEXT_MUTED,
+                  marginBottom: 12,
+                }}
+              >
+                Upload a video for a personalized plan
+              </div>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => router.push('/player/drills')}
+            style={{
+              padding: '8px 0',
+              borderRadius: 9,
+              background: TEAL,
+              border: 'none',
+              color: 'white',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontFamily: 'Arial, sans-serif',
+              width: '100%',
+            }}
+          >
+            {upcomingDrill ? 'View drill →' : 'Get drills →'}
+          </button>
+        </div>
+
+        <div
+          style={{
+            background: WARM_BG,
+            border: `0.5px solid ${BORDER}`,
+            borderRadius: 14,
+            padding: '13px 14px',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: TEXT_MUTED,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              marginBottom: 8,
+            }}
+          >
+            Next lesson
+          </div>
+          {nextLesson && nextLessonDate ? (
+            <>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: TEXT,
+                  marginBottom: 3,
+                }}
+              >
+                {format(nextLessonDate, 'EEE MMM d')}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: TEXT_MUTED,
+                  marginBottom: 12,
+                }}
+              >
+                {format(nextLessonDate, 'h:mm a')}
+                {typeof nextLesson.notes === 'string' && nextLesson.notes
+                  ? ` · ${nextLesson.notes.slice(0, 30)}...`
+                  : ''}
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: TEXT,
+                  marginBottom: 3,
+                }}
+              >
+                No lesson scheduled
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: TEXT_MUTED,
+                  marginBottom: 12,
+                }}
+              >
+                Book a session with your coach
+              </div>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => router.push('/player/lessons')}
+            style={{
+              padding: '8px 0',
+              borderRadius: 9,
+              border: `0.5px solid ${BORDER}`,
+              background: 'white',
+              color: '#555',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'Arial, sans-serif',
+              width: '100%',
+            }}
+          >
+            {nextLesson ? 'View lesson →' : 'Book lesson →'}
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          background: 'white',
+          border: `0.5px solid ${BORDER}`,
+          borderRadius: 14,
+          padding: '14px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: TEXT,
+              marginBottom: 2,
+            }}
+          >
+            {sportEmoji[player.sport || 'tennis'] || '🎾'} Add to your Reels
+          </div>
+          <div style={{ fontSize: 11, color: TEXT_MUTED }}>
+            Upload a video and Via will measure your joint angles
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push('/player/reels')}
+          style={{
+            padding: '9px 18px',
+            borderRadius: 10,
+            background: TEXT,
+            border: 'none',
+            color: 'white',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontFamily: 'Arial, sans-serif',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          Reels →
+        </button>
+      </div>
     </div>
   )
 }

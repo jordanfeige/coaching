@@ -16,7 +16,7 @@ const nav = [
   { href: '/dashboard/players', label: 'Players', icon: Users },
   { href: '/dashboard/accounts', label: 'Accounts', icon: UserRoundCog },
   { href: '/dashboard/drills', label: 'Drills', icon: Dumbbell },
-  { href: '/dashboard/video', label: 'Video', icon: Video },
+  { href: '/dashboard/video', label: 'Reels', icon: Video },
   { href: '/dashboard/bulletin', label: 'Bulletin', icon: Megaphone },
 ]
 

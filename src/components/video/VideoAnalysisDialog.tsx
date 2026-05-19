@@ -1,9 +1,9 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import CoachChatPanel from '@/components/video/CoachChatPanel'
 import FeedbackButtons from '@/components/FeedbackButtons'
-import PoseOverlay from '@/components/PoseOverlay'
+import PoseSplitView from '@/components/PoseSplitView'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,7 +17,6 @@ import { cn } from '@/lib/utils'
 import { brand } from '@/lib/brand'
 import PDFExportButton from '@/components/PDFExportButton'
 import AnalysisQualityBadges from '@/components/AnalysisQualityBadges'
-import type { PoseAnalysisResult } from '@/lib/poseAnalysis'
 
 export function analysisPreviewHeadline(analysis: Record<string, unknown> | null | undefined): string {
   if (!analysis) return ''
@@ -362,10 +361,6 @@ export default function VideoAnalysisDialog({
   onFetchCoachingVideos?: (issueArea: string, drill?: string) => void
 }) {
   const [tab, setTab] = useState<TabKey>('overview')
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [poseResult, setPoseResult] = useState<PoseAnalysisResult | null>(null)
-  const [showPoseOverlay, setShowPoseOverlay] = useState(false)
-
   const isComparison = !!(analysis?.observations_old || analysis?.improvements)
   const savedSessionId = analysisSessionId(analysis)
 
@@ -392,7 +387,7 @@ export default function VideoAnalysisDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {!analysis ? (
-            <p className="text-sm text-muted-foreground">Run analysis to see coaching feedback.</p>
+            <p className="text-sm text-muted-foreground">Add to Reels to see coaching feedback.</p>
           ) : (
             <>
               {videoUrl && (
@@ -401,44 +396,10 @@ export default function VideoAnalysisDialog({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={videoUrl} alt={title || 'Analysis media'} className="max-h-[520px] w-full object-contain" />
                   ) : (
-                    <>
-                      <div className="relative">
-                        <video ref={videoRef} src={videoUrl} controls playsInline className="max-h-[520px] w-full bg-black" />
-                        <PoseOverlay
-                          videoRef={videoRef}
-                          sport={sport || 'tennis'}
-                          show={showPoseOverlay}
-                          onMeasurementsReady={result => {
-                            setPoseResult(result)
-                            console.log('Coach pose measurements:', result.measurements)
-                          }}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between gap-3 border-t border-border bg-white px-3.5 py-2.5">
-                        <span className="text-[11px] text-muted-foreground">
-                          {poseResult
-                            ? `${poseResult.measurements.length} joint measurements captured`
-                            : 'Show pose overlay to capture exact joint angles'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowPoseOverlay(!showPoseOverlay)}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: 8,
-                            border: '1px solid hsl(30,10%,88%)',
-                            background: showPoseOverlay ? 'hsl(168,62%,95%)' : 'white',
-                            color: showPoseOverlay ? 'hsl(168,62%,36%)' : 'hsl(220,10%,55%)',
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            fontFamily: 'Arial, sans-serif',
-                          }}
-                        >
-                          {showPoseOverlay ? 'Hide pose overlay' : 'Show pose overlay'}
-                        </button>
-                      </div>
-                    </>
+                    <PoseSplitView
+                      videoURL={videoUrl}
+                      sport={sport || 'tennis'}
+                    />
                   )}
                 </div>
               )}

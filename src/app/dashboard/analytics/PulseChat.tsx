@@ -408,7 +408,7 @@ export default function PulseChat({ rosterContext }: Props) {
                             {message.action.type === 'viewPlayer' &&
                               `View ${message.action.playerName}'s profile`}
                             {message.action.type === 'analyzeVideo' &&
-                              `Analyze ${message.action.playerName}'s video`}
+                              `Add reel for ${message.action.playerName}'s video`}
                             <ArrowRight size={12} />
                           </button>
                         </div>

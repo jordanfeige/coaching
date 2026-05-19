@@ -295,12 +295,12 @@ export default function PlayerDetailPage() {
       })
       const analysis = await response.json()
       if (!response.ok || analysis.error) {
-        throw new Error(analysis.error || 'Analysis failed')
+        throw new Error(analysis.error || 'Reel failed')
       }
       await supabase.from('videos').update({ ai_analysis: JSON.stringify(analysis) }).eq('id', video.id)
       setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
     } catch (e: any) {
-      alert(`Analysis failed: ${e.message}`)
+      alert(`Reel failed: ${e.message}`)
     } finally {
       setAnalyzingVideo(null)
       setCompareMode(false)
@@ -832,7 +832,7 @@ export default function PlayerDetailPage() {
                               className="w-full"
                               onClick={() => openAnalysisSheet(video)}
                             >
-                              View analysis
+                              View reel
                             </Button>
                           </div>
                         )}
@@ -861,7 +861,7 @@ export default function PlayerDetailPage() {
                                 onClick={() => analyzeVideo(video)}
                               >
                                 <Sparkles size={12} />
-                                {isAnalyzing ? 'Analyzing (may take 30s)…' : analysis ? 'Re-analyze' : 'Analyze'}
+                                {isAnalyzing ? 'Adding to Reels (may take 30s)…' : analysis ? 'Re-run reel' : 'Add to Reels'}
                               </Button>
                               {videos.length > 1 && (
                                 <Button

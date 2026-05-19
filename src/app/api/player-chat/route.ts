@@ -94,7 +94,7 @@ TONE:
 CURRENT PAGE: ${playerContext?.currentPage || '/player'}
 
 Tailor suggestions to the current page context:
-- On /player/analyze: help them understand what to film
+- On /player/reels: help them understand what to film
 - On /player/progress: discuss their score trends
 - On /player/drills: explain drills in detail
 - On /player/lessons: discuss lesson preparation
@@ -113,9 +113,14 @@ No labels, no formatting markers.`
       })),
     })
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    const cleaned = raw
+      .replace(/\[ACTION:\{[^}]+\}\]/g, '')
+      .replace(/\[ACTION:[^\]]+\]/g, '')
+      .replace(/\[PICKER:[^\]]+\]/g, '')
+      .trim()
 
-    return NextResponse.json({ response: text })
+    return NextResponse.json({ response: cleaned })
   } catch (error) {
     console.error('Player chat failed:', error)
     return NextResponse.json({

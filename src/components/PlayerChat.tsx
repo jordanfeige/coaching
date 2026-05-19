@@ -96,7 +96,7 @@ const PAGE_SUGGESTIONS: Record<string, string[]> = {
     'What is my biggest weakness?',
     'Book a lesson with my coach',
   ],
-  '/player/analyze': [
+  '/player/reels': [
     'What should I focus on in this video?',
     'How does my technique compare to last session?',
     'What camera angle is best for my sport?',
@@ -176,7 +176,7 @@ function getActionLabel(action: PlayerAction): string {
     case 'bookLesson':
       return '📅 Book a lesson'
     case 'analyze':
-      return '📹 Analyze my technique'
+      return '📹 Add to your Reels'
     case 'viewProgress':
       return '📈 View my progress'
     case 'viewDrills':
@@ -342,7 +342,7 @@ export default function PlayerChat({ playerId, playerName, sport, skillLevel }: 
         router.push('/player/lessons')
         break
       case 'analyze':
-        router.push('/player/analyze')
+        router.push('/player/reels')
         break
       case 'viewProgress':
         router.push('/player/progress')
@@ -409,7 +409,7 @@ export default function PlayerChat({ playerId, playerName, sport, skillLevel }: 
     }
   }
 
-  if (pathname === '/player/analyze') return null
+  if (pathname === '/player/reels' || pathname === '/player/analyze') return null
 
   const suggestions = PAGE_SUGGESTIONS[pathname] || DEFAULT_SUGGESTIONS
   const firstName = playerName.split(' ')[0] || playerName

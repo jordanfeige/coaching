@@ -87,7 +87,7 @@ const COACH_SUGGESTIONS: Record<string, string[]> = {
   '/dashboard/analytics': ['Find events for my players', 'Who should I focus on?', 'Build a group session plan'],
   '/dashboard/players': ['Which player improved most?', 'Generate drills for struggling players', 'Find camps for my roster'],
   '/dashboard/schedule': ['Schedule my most urgent lesson', 'Who should I prioritize?'],
-  '/dashboard/video': ['Which player needs analysis most?', 'What should I look for?'],
+  '/dashboard/video': ['Which player needs a reel most?', 'What should I look for?'],
   '/dashboard/bulletin': [
     'Find tennis tournaments within 100 miles',
     'Find summer camps for ages 10-16',
@@ -97,6 +97,7 @@ const COACH_SUGGESTIONS: Record<string, string[]> = {
 
 const PLAYER_SUGGESTIONS: Record<string, string[]> = {
   '/player': ['How am I improving?', 'What should I practice this week?', 'What is my biggest weakness?'],
+  '/player/reels': ['What should I film for my next reel?', 'Explain my last session', 'What was my top issue?'],
   '/player/progress': ['What is my biggest improvement?', 'Am I improving fast enough?', 'What should I focus on next?'],
   '/player/drills': ['Explain how to do this drill', 'How many times per week?', 'What should I feel when I do this right?'],
   '/player/lessons': ['What did my coach say last session?', 'How should I prepare for my next lesson?', 'Book a new lesson'],
@@ -135,6 +136,7 @@ export default function ViaBar({ role, playerContext }: Props) {
   const [selectedEvent, setSelectedEvent] = useState<EventListing | null>(null)
   const [briefText, setBriefText] = useState(role === 'coach' ? 'Ask Via anything about your coaching' : 'Ask Via anything about your training')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const pathname = usePathname()
   const router = useRouter()
@@ -256,8 +258,9 @@ export default function ViaBar({ role, playerContext }: Props) {
 
   useEffect(() => {
     if (!expanded) return
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 100)
+    const container = messagesContainerRef.current
+    if (container) container.scrollTop = container.scrollHeight
+    const timer = window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100)
     return () => window.clearTimeout(timer)
   }, [messages, expanded])
 
@@ -355,7 +358,7 @@ export default function ViaBar({ role, playerContext }: Props) {
         setExpanded(false)
         break
       case 'analyze':
-        router.push('/player/analyze')
+        router.push('/player/reels')
         setExpanded(false)
         break
       case 'viewProgress':
@@ -425,12 +428,12 @@ export default function ViaBar({ role, playerContext }: Props) {
   const playerFirstName = role === 'player' ? firstName(playerContext?.name) : null
 
   return (
-    <div style={{ marginBottom: 20, fontFamily: 'Arial, sans-serif' }}>
+    <div style={{ marginBottom: 20, fontFamily: 'Arial, sans-serif', position: 'relative', zIndex: expanded ? 40 : 1 }}>
       <div
         style={{
           background: 'white',
           border: `0.5px solid ${expanded ? 'hsl(168,62%,60%)' : BORDER}`,
-          borderRadius: expanded ? '14px 14px 0 0' : 14,
+          borderRadius: 14,
           padding: '10px 14px',
           display: 'flex',
           alignItems: 'center',
@@ -538,17 +541,23 @@ export default function ViaBar({ role, playerContext }: Props) {
       {expanded && (
         <div
           style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            right: 0,
+            zIndex: 50,
             background: 'white',
             border: '0.5px solid hsl(168,62%,60%)',
-            borderTop: 'none',
-            borderRadius: '0 0 14px 14px',
+            borderRadius: 14,
             overflow: 'hidden',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+            boxShadow: '0 14px 36px rgba(0,0,0,0.14)',
           }}
         >
           <div
+            ref={messagesContainerRef}
             style={{
-              maxHeight: 320,
+              maxHeight: 'min(360px, calc(100vh - 220px))',
+              minHeight: 180,
               overflowY: 'auto',
               padding: '14px 14px 8px',
               background: WARM_BG,

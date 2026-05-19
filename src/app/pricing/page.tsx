@@ -10,7 +10,7 @@ const textSecondary = 'hsl(220, 10%, 45%)'
 const textMuted = 'hsl(220, 10%, 65%)'
 
 const proFeatures = [
-  'Unlimited AI technique analyses',
+  'Unlimited Via reels',
   'Full progress timeline — track your score over time',
   'Weekly AI-generated practice plans',
   'Monthly progress reports',
@@ -58,7 +58,7 @@ export default function PricingPage() {
           Playvia Pro is coming.
         </h1>
         <p className="mx-auto mt-3 max-w-md text-center text-lg leading-relaxed" style={{ color: textSecondary }}>
-          We&apos;re putting the finishing touches on our Pro plan — unlimited analyses, progress tracking, weekly practice plans, and more. Join the list to get early access and help shape the pricing.
+          We&apos;re putting the finishing touches on our Pro plan — unlimited reels, progress tracking, weekly practice plans, and more. Join the list to get early access and help shape the pricing.
         </p>
 
         <section className="mt-8 rounded-2xl bg-white p-6 text-left shadow-sm" style={{ border: `1px solid ${warmBorder}` }}>
@@ -114,8 +114,8 @@ export default function PricingPage() {
 PRICING CARDS — restore when Stripe is ready
 
 The previous pricing page rendered:
-- Free: $0, 3 AI analyses, Ask Coach AI, YouTube coaching videos
-- Pro: $12/mo or $99/yr, unlimited analyses, full progress timeline, score history, issues fixed tracker, weekly practice plans, monthly progress report, unlimited Ask Coach AI
+- Free: $0, 3 Via reels, Ask Coach AI, YouTube coaching videos
+- Pro: $12/mo or $99/yr, unlimited reels, full progress timeline, score history, issues fixed tracker, weekly practice plans, monthly progress report, unlimited Ask Coach AI
 - Family: $22/mo or $179/yr, up to 5 athlete profiles, all sports per athlete, parent dashboard, coach connection per athlete, one login for everyone
 
 It also included a monthly / annual toggle and three full pricing cards.

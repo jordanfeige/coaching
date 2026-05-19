@@ -38,7 +38,9 @@ export const IDEAL_ANGLES: Record<string, Record<string, {
     elbow_backswing: { min: 85, max: 100, label: 'Lead arm at backswing' },
     hip_rotation: { min: 35, max: 55, label: 'Hip rotation' },
     knee_bend: { min: 140, max: 165, label: 'Knee flex at address' },
-    shoulder_turn: { min: 85, max: 100, label: 'Shoulder turn' },
+    shoulder_turn: { min: 0, max: 15, label: 'Shoulder level at address' },
+    spine_angle: { min: 25, max: 45, label: 'Spine angle' },
+    hip_level: { min: 0, max: 5, label: 'Hip level' },
   },
   baseball: {
     elbow_launch: { min: 85, max: 100, label: 'Elbow at launch' },
@@ -109,6 +111,29 @@ function evaluateMeasurement(
   }
 }
 
+function getLandmark(
+  landmarks: NormalizedLandmark[],
+  index: number,
+  minVisibility = 0.6,
+): NormalizedLandmark | null {
+  const landmark = landmarks[index]
+  if (!landmark || landmark.visibility < minVisibility) return null
+  return landmark
+}
+
+function angleFromLandmarks(
+  landmarks: NormalizedLandmark[],
+  aIndex: number,
+  bIndex: number,
+  cIndex: number,
+): number | null {
+  const a = getLandmark(landmarks, aIndex)
+  const b = getLandmark(landmarks, bIndex)
+  const c = getLandmark(landmarks, cIndex)
+  if (!a || !b || !c) return null
+  return calculateAngle(a, b, c)
+}
+
 export function extractMeasurements(landmarks: NormalizedLandmark[], sport: string): JointMeasurement[] {
   if (!landmarks || landmarks.length < 29) return []
   const lm = landmarks
@@ -117,29 +142,34 @@ export function extractMeasurements(landmarks: NormalizedLandmark[], sport: stri
 
   try {
     if (sport === 'tennis' || sport === 'pickleball') {
-      const rightElbow = calculateAngle(lm[LANDMARKS.RIGHT_SHOULDER], lm[LANDMARKS.RIGHT_ELBOW], lm[LANDMARKS.RIGHT_WRIST])
-      const leftElbow = calculateAngle(lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.LEFT_ELBOW], lm[LANDMARKS.LEFT_WRIST])
-      const dominantElbow = rightElbow < leftElbow ? rightElbow : leftElbow
-      const dominantSide = rightElbow < leftElbow ? 'right' : 'left'
+      const rightElbow = angleFromLandmarks(lm, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_WRIST)
+      const leftElbow = angleFromLandmarks(lm, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_WRIST)
       const elbowIdeal = sport === 'tennis' ? ideals.elbow_contact : ideals.elbow_dink
+      const elbowOptions = [
+        rightElbow !== null ? { angle: rightElbow, side: 'right' as const } : null,
+        leftElbow !== null ? { angle: leftElbow, side: 'left' as const } : null,
+      ].filter((option): option is { angle: number; side: 'left' | 'right' } => option !== null)
 
-      measurements.push(evaluateMeasurement('elbow', elbowIdeal.label, dominantElbow, elbowIdeal.min, elbowIdeal.max, dominantSide))
+      if (elbowOptions.length > 0) {
+        const dominant = elbowOptions.sort((a, b) => a.angle - b.angle)[0]
+        measurements.push(evaluateMeasurement('elbow', elbowIdeal.label, dominant.angle, elbowIdeal.min, elbowIdeal.max, dominant.side))
+      }
 
-      const rightKnee = calculateAngle(lm[LANDMARKS.RIGHT_HIP], lm[LANDMARKS.RIGHT_KNEE], lm[LANDMARKS.RIGHT_ANKLE])
+      const rightKnee = angleFromLandmarks(lm, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE)
       const kneeIdeal = ideals.hip_knee_bend || ideals.knee_ready
-      if (kneeIdeal) {
+      if (kneeIdeal && rightKnee !== null) {
         measurements.push(evaluateMeasurement('knee', kneeIdeal.label, rightKnee, kneeIdeal.min, kneeIdeal.max, 'right'))
       }
 
-      const leftHip = lm[LANDMARKS.LEFT_HIP]
-      const rightHip = lm[LANDMARKS.RIGHT_HIP]
-      const leftShoulder = lm[LANDMARKS.LEFT_SHOULDER]
-      const rightShoulder = lm[LANDMARKS.RIGHT_SHOULDER]
-      const hipAngle = (Math.atan2(rightHip.y - leftHip.y, rightHip.x - leftHip.x) * 180) / Math.PI
-      const shoulderAngle = (Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x) * 180) / Math.PI
-      const separation = Math.abs(Math.round(Math.abs(hipAngle - shoulderAngle)))
+      const leftHip = getLandmark(lm, LANDMARKS.LEFT_HIP)
+      const rightHip = getLandmark(lm, LANDMARKS.RIGHT_HIP)
+      const leftShoulder = getLandmark(lm, LANDMARKS.LEFT_SHOULDER)
+      const rightShoulder = getLandmark(lm, LANDMARKS.RIGHT_SHOULDER)
 
-      if (ideals.hip_shoulder_sep) {
+      if (ideals.hip_shoulder_sep && leftHip && rightHip && leftShoulder && rightShoulder) {
+        const hipAngle = (Math.atan2(rightHip.y - leftHip.y, rightHip.x - leftHip.x) * 180) / Math.PI
+        const shoulderAngle = (Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x) * 180) / Math.PI
+        const separation = Math.abs(Math.round(Math.abs(hipAngle - shoulderAngle)))
         measurements.push(
           evaluateMeasurement(
             'hip_shoulder_sep',
@@ -153,39 +183,70 @@ export function extractMeasurements(landmarks: NormalizedLandmark[], sport: stri
     }
 
     if (sport === 'golf') {
-      const leadElbow = calculateAngle(lm[LANDMARKS.LEFT_SHOULDER], lm[LANDMARKS.LEFT_ELBOW], lm[LANDMARKS.LEFT_WRIST])
-      measurements.push(evaluateMeasurement('lead_elbow', ideals.elbow_backswing.label, leadElbow, ideals.elbow_backswing.min, ideals.elbow_backswing.max, 'left'))
+      const leadElbow = angleFromLandmarks(lm, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_WRIST)
+      if (leadElbow !== null) {
+        measurements.push(evaluateMeasurement('lead_elbow', ideals.elbow_backswing.label, leadElbow, ideals.elbow_backswing.min, ideals.elbow_backswing.max, 'left'))
+      }
 
-      const kneeAngle = calculateAngle(lm[LANDMARKS.RIGHT_HIP], lm[LANDMARKS.RIGHT_KNEE], lm[LANDMARKS.RIGHT_ANKLE])
-      measurements.push(evaluateMeasurement('knee', ideals.knee_bend.label, kneeAngle, ideals.knee_bend.min, ideals.knee_bend.max, 'right'))
+      const leftKnee = angleFromLandmarks(lm, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE)
+      const rightKnee = angleFromLandmarks(lm, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE)
+      const kneeOptions = [
+        leftKnee !== null ? { angle: leftKnee, side: 'left' as const } : null,
+        rightKnee !== null ? { angle: rightKnee, side: 'right' as const } : null,
+      ].filter((option): option is { angle: number; side: 'left' | 'right' } => option !== null)
+      if (kneeOptions.length > 0) {
+        const visibleKnee = kneeOptions.sort((a, b) => a.angle - b.angle)[0]
+        measurements.push(evaluateMeasurement('knee', ideals.knee_bend.label, visibleKnee.angle, ideals.knee_bend.min, ideals.knee_bend.max, visibleKnee.side))
+      }
 
-      const shoulderTurn = Math.abs(
-        Math.round(
-          (Math.atan2(
-            lm[LANDMARKS.RIGHT_SHOULDER].y - lm[LANDMARKS.LEFT_SHOULDER].y,
-            lm[LANDMARKS.RIGHT_SHOULDER].x - lm[LANDMARKS.LEFT_SHOULDER].x,
-          ) *
-            180) /
-            Math.PI,
-        ),
-      )
-      measurements.push(evaluateMeasurement('shoulder_turn', ideals.shoulder_turn.label, shoulderTurn, ideals.shoulder_turn.min, ideals.shoulder_turn.max))
+      const leftShoulder = getLandmark(lm, LANDMARKS.LEFT_SHOULDER)
+      const rightShoulder = getLandmark(lm, LANDMARKS.RIGHT_SHOULDER)
+      const leftHip = getLandmark(lm, LANDMARKS.LEFT_HIP)
+      const rightHip = getLandmark(lm, LANDMARKS.RIGHT_HIP)
+
+      if (leftShoulder && rightShoulder) {
+        const shoulderAngle = Math.abs(
+          Math.round((Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x) * 180) / Math.PI),
+        )
+        measurements.push(evaluateMeasurement('shoulder_turn', ideals.shoulder_turn.label, shoulderAngle, ideals.shoulder_turn.min, ideals.shoulder_turn.max))
+      }
+
+      if (leftShoulder && leftHip) {
+        const spineAngle = Math.abs(
+          Math.round((Math.atan2(leftHip.y - leftShoulder.y, leftHip.x - leftShoulder.x) * 180) / Math.PI),
+        )
+        const spineFromVertical = Math.abs(90 - spineAngle)
+        measurements.push(evaluateMeasurement('spine_angle', ideals.spine_angle.label, spineFromVertical, ideals.spine_angle.min, ideals.spine_angle.max))
+      }
+
+      if (leftHip && rightHip) {
+        const hipLevelDiff = Math.abs(Math.round((leftHip.y - rightHip.y) * 100))
+        measurements.push(evaluateMeasurement('hip_level', ideals.hip_level.label, hipLevelDiff, ideals.hip_level.min, ideals.hip_level.max))
+      }
     }
 
     if (sport === 'baseball') {
-      const throwingElbow = calculateAngle(lm[LANDMARKS.RIGHT_SHOULDER], lm[LANDMARKS.RIGHT_ELBOW], lm[LANDMARKS.RIGHT_WRIST])
-      measurements.push(evaluateMeasurement('elbow', ideals.elbow_launch.label, throwingElbow, ideals.elbow_launch.min, ideals.elbow_launch.max, 'right'))
+      const throwingElbow = angleFromLandmarks(lm, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_WRIST)
+      if (throwingElbow !== null) {
+        measurements.push(evaluateMeasurement('elbow', ideals.elbow_launch.label, throwingElbow, ideals.elbow_launch.min, ideals.elbow_launch.max, 'right'))
+      }
 
-      const strideKnee = calculateAngle(lm[LANDMARKS.LEFT_HIP], lm[LANDMARKS.LEFT_KNEE], lm[LANDMARKS.LEFT_ANKLE])
-      measurements.push(evaluateMeasurement('stride_knee', ideals.knee_stride.label, strideKnee, ideals.knee_stride.min, ideals.knee_stride.max, 'left'))
+      const strideKnee = angleFromLandmarks(lm, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE)
+      if (strideKnee !== null) {
+        measurements.push(evaluateMeasurement('stride_knee', ideals.knee_stride.label, strideKnee, ideals.knee_stride.min, ideals.knee_stride.max, 'left'))
+      }
     }
 
     if (sport === 'basketball') {
-      const shootingElbow = calculateAngle(lm[LANDMARKS.RIGHT_SHOULDER], lm[LANDMARKS.RIGHT_ELBOW], lm[LANDMARKS.RIGHT_WRIST])
-      measurements.push(evaluateMeasurement('elbow', ideals.elbow_release.label, shootingElbow, ideals.elbow_release.min, ideals.elbow_release.max, 'right'))
+      const shootingElbow = angleFromLandmarks(lm, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_WRIST)
+      if (shootingElbow !== null) {
+        measurements.push(evaluateMeasurement('elbow', ideals.elbow_release.label, shootingElbow, ideals.elbow_release.min, ideals.elbow_release.max, 'right'))
+      }
 
-      const kneeAngle = calculateAngle(lm[LANDMARKS.RIGHT_HIP], lm[LANDMARKS.RIGHT_KNEE], lm[LANDMARKS.RIGHT_ANKLE])
-      measurements.push(evaluateMeasurement('knee', ideals.knee_bend.label, kneeAngle, ideals.knee_bend.min, ideals.knee_bend.max, 'right'))
+      const kneeAngle = angleFromLandmarks(lm, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE)
+      if (kneeAngle !== null) {
+        measurements.push(evaluateMeasurement('knee', ideals.knee_bend.label, kneeAngle, ideals.knee_bend.min, ideals.knee_bend.max, 'right'))
+      }
     }
   } catch (error) {
     console.error('Measurement extraction error:', error)
@@ -232,6 +293,27 @@ export async function analyzePoseFromVideo(
 ): Promise<PoseAnalysisResult | null> {
   try {
     if (!videoElement.videoWidth || !videoElement.videoHeight) return null
+    const fallbackTime = Number.isFinite(videoElement.duration) ? videoElement.duration * 0.15 : 0
+    const analysisTime = targetTimeSeconds !== undefined && targetTimeSeconds > 0.25 ? targetTimeSeconds : fallbackTime
+
+    if (Number.isFinite(analysisTime) && Math.abs(videoElement.currentTime - analysisTime) > 0.05) {
+      await new Promise<void>(resolve => {
+        const timeout = window.setTimeout(() => {
+          videoElement.removeEventListener('seeked', onSeeked)
+          resolve()
+        }, 800)
+        const onSeeked = () => {
+          window.clearTimeout(timeout)
+          videoElement.removeEventListener('seeked', onSeeked)
+          resolve()
+        }
+        videoElement.addEventListener('seeked', onSeeked)
+        videoElement.currentTime = analysisTime
+      })
+    }
+
+    await new Promise(resolve => window.setTimeout(resolve, 100))
+
     const landmarker = await initPoseLandmarker()
     const canvas = document.createElement('canvas')
     canvas.width = videoElement.videoWidth
@@ -254,10 +336,15 @@ export async function analyzePoseFromVideo(
     return {
       measurements,
       landmarks,
-      keyFrameIndex: Math.round(targetTimeSeconds || 0),
+      keyFrameIndex: Math.round(analysisTime || 0),
       overallPostureScore,
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.toLowerCase().includes('tainted') || message.toLowerCase().includes('cross-origin')) {
+      console.warn('Pose analysis skipped: video frame is cross-origin and cannot be read by canvas.')
+      return null
+    }
     console.error('Pose analysis error:', error)
     return null
   }
@@ -301,12 +388,15 @@ export function drawSkeletonOverlay(
     [LANDMARKS.RIGHT_ELBOW]: problemJoints.has('elbow'),
     [LANDMARKS.LEFT_KNEE]: problemJoints.has('knee') || problemJoints.has('stride_knee'),
     [LANDMARKS.RIGHT_KNEE]: problemJoints.has('knee') || problemJoints.has('stride_knee'),
-    [LANDMARKS.LEFT_HIP]: problemJoints.has('hip_shoulder_sep'),
-    [LANDMARKS.RIGHT_HIP]: problemJoints.has('hip_shoulder_sep'),
+    [LANDMARKS.LEFT_HIP]: problemJoints.has('hip_shoulder_sep') || problemJoints.has('spine_angle') || problemJoints.has('hip_level'),
+    [LANDMARKS.RIGHT_HIP]: problemJoints.has('hip_shoulder_sep') || problemJoints.has('hip_level'),
+    [LANDMARKS.LEFT_SHOULDER]: problemJoints.has('shoulder_turn') || problemJoints.has('spine_angle'),
+    [LANDMARKS.RIGHT_SHOULDER]: problemJoints.has('shoulder_turn'),
   }
 
   connections.forEach(([a, b]) => {
     if (!landmarks[a] || !landmarks[b]) return
+    if (landmarks[a].visibility < 0.65 || landmarks[b].visibility < 0.65) return
     const isProblem = jointToProblem[a] || jointToProblem[b]
     ctx.beginPath()
     ctx.moveTo(landmarks[a].x * videoWidth, landmarks[a].y * videoHeight)
@@ -318,7 +408,7 @@ export function drawSkeletonOverlay(
   })
 
   landmarks.forEach((landmark, index) => {
-    if (landmark.visibility < 0.5) return
+    if (landmark.visibility < 0.65) return
     const x = landmark.x * videoWidth
     const y = landmark.y * videoHeight
     const isProblem = jointToProblem[index]
@@ -348,7 +438,7 @@ export function drawSkeletonOverlay(
             ? LANDMARKS.RIGHT_SHOULDER
             : LANDMARKS.RIGHT_HIP
 
-    if (landmarks[jointIndex]?.visibility <= 0.5) return
+    if (landmarks[jointIndex]?.visibility <= 0.65) return
     const labelX = landmarks[jointIndex].x * videoWidth + 12
     const labelY = landmarks[jointIndex].y * videoHeight - 8
     const text = `${measurement.measured} deg (ideal: ${measurement.idealMin}-${measurement.idealMax})`
