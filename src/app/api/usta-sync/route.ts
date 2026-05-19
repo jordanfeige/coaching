@@ -25,17 +25,28 @@ async function fetchUSTAEndpoint(
 ): Promise<unknown> {
   const targetUrl = `https://www.usta.com/usta/api?type=${type}`
 
-  const res = await fetch('https://api.scraperapi.com/', {
+  const scraperUrl = new URL(
+    'https://api.scraperapi.com/structured/render_json',
+  )
+  scraperUrl.searchParams.set('api_key', apiKey)
+  scraperUrl.searchParams.set('url', targetUrl)
+  scraperUrl.searchParams.set('country_code', 'us')
+  scraperUrl.searchParams.set('keep_headers', 'true')
+
+  const res = await fetch(scraperUrl.toString(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-ScraperAPI-Target-URL': targetUrl,
+      'X-ScraperAPI-Method': 'POST',
+      'X-ScraperAPI-Body': JSON.stringify(body),
+      'X-ScraperAPI-Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      api_key: apiKey,
       url: targetUrl,
       method: 'POST',
       body: JSON.stringify(body),
-      headers: JSON.stringify({
+      headers: {
         'Content-Type': 'application/json',
         accept: 'application/json, text/plain, */*',
         origin: 'https://www.usta.com',
@@ -43,26 +54,27 @@ async function fetchUSTAEndpoint(
           'https://www.usta.com/en/home/play/player-search/profile.html',
         hash: 'undefined',
         'csrf-token': 'undefined',
-      }),
-      country_code: 'us',
-      render: false,
+      },
     }),
     cache: 'no-store',
   })
 
-  if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(`ScraperAPI error ${res.status}: ${errText}`)
-  }
-
   const text = await res.text()
+  console.log(
+    `ScraperAPI ${type} status: ${res.status}`,
+    text.slice(0, 300),
+  )
+
+  if (!res.ok) {
+    throw new Error(
+      `ScraperAPI error ${res.status}: ${text.slice(0, 200)}`,
+    )
+  }
 
   try {
     return JSON.parse(text)
   } catch {
-    throw new Error(
-      `USTA returned non-JSON response: ${text.slice(0, 200)}`,
-    )
+    throw new Error(`Non-JSON response: ${text.slice(0, 200)}`)
   }
 }
 
@@ -137,36 +149,80 @@ export async function POST(req: NextRequest) {
     let gradYear: number | null = null
 
     if (playerInfo.status === 'fulfilled') {
-      const payload = playerInfo.value as {
-        data?: Array<Record<string, unknown>>
-      }
-      const p = payload?.data?.[0]
-      if (p) {
-        playerName = (p.name as string) ?? null
-        playerState = (p.state as string) ?? null
-        const section = p.section as { name?: string } | undefined
-        playerSection = section?.name ?? null
+      const raw = playerInfo.value as Record<string, unknown>
 
-        const ratings = p.ratings as
-          | { wtn?: Array<Record<string, unknown>> }
+      const playerData =
+        (raw?.data as Array<Record<string, unknown>> | undefined)?.[0] ||
+        (
+          (raw?.body as { data?: Array<Record<string, unknown>> })?.data?.[0]
+        ) ||
+        (
+          (raw?.response as { data?: Array<Record<string, unknown>> })?.data?.[0]
+        ) ||
+        null
+
+      if (playerData) {
+        playerName = (playerData.name as string) || null
+        playerState = (playerData.state as string) || null
+        playerSection =
+          (playerData.section as { name?: string } | undefined)?.name || null
+
+        const ratings = playerData.ratings as
+          | {
+              wtn?: Array<Record<string, unknown>>
+              wtn_ratings?: Array<Record<string, unknown>>
+            }
           | undefined
-        const wtnList = ratings?.wtn ?? []
-        const wtnSinglesData = wtnList.find(w => w.type === 'SINGLE')
-        const wtnDoublesData = wtnList.find(w => w.type === 'DOUBLE')
+        const wtnList = ratings?.wtn || ratings?.wtn_ratings || []
+
+        const wtnSinglesData = wtnList.find(
+          (w: Record<string, unknown>) =>
+            w.type === 'SINGLE' || w.type === 'single',
+        )
+        const wtnDoublesData = wtnList.find(
+          (w: Record<string, unknown>) =>
+            w.type === 'DOUBLE' || w.type === 'double',
+        )
 
         if (wtnSinglesData) {
-          wtnSingles = Number(wtnSinglesData.tennisNumber)
-          wtnConfidence = Number(wtnSinglesData.confidence)
-          wtnLastUpdated = (wtnSinglesData.ratingDate as string) ?? null
+          const singlesNum =
+            wtnSinglesData.tennisNumber ?? wtnSinglesData.tennis_number
+          wtnSingles =
+            singlesNum != null && !Number.isNaN(Number(singlesNum))
+              ? Number(singlesNum)
+              : null
+          const conf = wtnSinglesData.confidence
+          wtnConfidence =
+            conf != null && !Number.isNaN(Number(conf)) ? Number(conf) : null
+          wtnLastUpdated =
+            (wtnSinglesData.ratingDate as string) ||
+            (wtnSinglesData.rating_date as string) ||
+            null
         }
         if (wtnDoublesData) {
-          wtnDoubles = Number(wtnDoublesData.tennisNumber)
+          const doublesNum =
+            wtnDoublesData.tennisNumber ?? wtnDoublesData.tennis_number
+          wtnDoubles =
+            doublesNum != null && !Number.isNaN(Number(doublesNum))
+              ? Number(doublesNum)
+              : null
         }
 
-        const extended = p.extendedProfile as
+        const extended = playerData.extendedProfile as
           | { highSchoolGraduatingYear?: number }
           | undefined
-        gradYear = extended?.highSchoolGraduatingYear ?? null
+        const extendedSnake = playerData.extended_profile as
+          | { high_school_graduating_year?: number }
+          | undefined
+        gradYear =
+          extended?.highSchoolGraduatingYear ||
+          extendedSnake?.high_school_graduating_year ||
+          null
+      } else {
+        console.log(
+          'playerInfo unexpected shape:',
+          JSON.stringify(raw).slice(0, 300),
+        )
       }
     }
 
@@ -178,16 +234,39 @@ export async function POST(req: NextRequest) {
     let ageCategory: string | null = null
 
     if (rankingsData.status === 'fulfilled') {
-      const payload = rankingsData.value as {
-        player?: { rankings?: Array<Record<string, unknown>> }
+      const raw = rankingsData.value as Record<string, unknown>
+
+      const rankings =
+        (raw?.player as { rankings?: Array<Record<string, unknown>> })
+          ?.rankings ||
+        (
+          raw?.body as {
+            player?: { rankings?: Array<Record<string, unknown>> }
+          }
+        )?.player?.rankings ||
+        (raw?.rankings as Array<Record<string, unknown>> | undefined) ||
+        (
+          raw?.data as {
+            player?: { rankings?: Array<Record<string, unknown>> }
+          }
+        )?.player?.rankings ||
+        []
+
+      if (rankings.length === 0) {
+        console.log(
+          'rankingsData unexpected shape:',
+          JSON.stringify(raw).slice(0, 300),
+        )
       }
-      const rankings = payload?.player?.rankings ?? []
-      const quotaRanking = rankings.find(r => r.listType === 'QUOTA')
-      const seedingRanking = rankings.find(
-        r => r.listType === 'SEEDING' && r.matchFormat === 'SINGLES',
+
+      const quotaRanking = rankings.find(
+        (r: Record<string, unknown>) => r.listType === 'QUOTA',
       )
-      const primaryRanking =
-        quotaRanking ?? seedingRanking ?? rankings[0]
+      const seedingRanking = rankings.find(
+        (r: Record<string, unknown>) =>
+          r.listType === 'SEEDING' && r.matchFormat === 'SINGLES',
+      )
+      const primaryRanking = quotaRanking || seedingRanking || rankings[0]
 
       if (primaryRanking) {
         const rank = primaryRanking.rank as Record<string, number> | undefined
@@ -200,7 +279,8 @@ export async function POST(req: NextRequest) {
         winRecord = record?.win ?? 0
         lossRecord = record?.loss ?? 0
         ageCategory =
-          `${primaryRanking.ageRestrictionModifier ?? ''} ${primaryRanking.ageRestriction ?? ''}`.trim()
+          `${primaryRanking.ageRestrictionModifier || ''} ${primaryRanking.ageRestriction || ''}`.trim() ||
+          null
       }
     }
 
@@ -255,6 +335,18 @@ export async function POST(req: NextRequest) {
         playerState,
         playerSection,
         gradYear,
+      },
+      _debug: {
+        playerInfoStatus: playerInfo.status,
+        rankingsStatus: rankingsData.status,
+        playerInfoShape:
+          playerInfo.status === 'fulfilled'
+            ? Object.keys((playerInfo.value as Record<string, unknown>) || {})
+            : null,
+        rankingsShape:
+          rankingsData.status === 'fulfilled'
+            ? Object.keys((rankingsData.value as Record<string, unknown>) || {})
+            : null,
       },
     })
   } catch (error: unknown) {

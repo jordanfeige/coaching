@@ -45,6 +45,7 @@ export default function RecruitingProfile({
     useState(initialProfileId)
   const [syncResult, setSyncResult] = useState<any>(null)
   const [syncError, setSyncError] = useState('')
+  const [projectionError, setProjectionError] = useState('')
 
   // Form state (coach only)
   const [uaId, setUaId] = useState('')
@@ -140,53 +141,55 @@ export default function RecruitingProfile({
     setLoading(false)
   }
 
-  async function saveProfile(): Promise<string | undefined> {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+  async function saveProfile(): Promise<string | null> {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return profileId || null
 
-    const profileData = {
-      player_id: playerId,
-      coach_id: user?.id,
-      usta_uaid: uaId ? parseUstaUaid(uaId) : null,
-      utr_singles: utrSingles
-        ? parseFloat(utrSingles)
-        : null,
-      target_division: targetDivision,
-      gpa: gpa ? parseFloat(gpa) : null,
-      grad_year: gradYear ? parseInt(gradYear, 10) : null,
-      geographic_preference: geoPreference || null,
-      coach_assessment: coachAssessment || null,
-      gender,
-      updated_at: new Date().toISOString(),
-    }
+      const profileData = {
+        player_id: playerId,
+        coach_id: user.id,
+        usta_uaid: uaId ? parseUstaUaid(uaId) : null,
+        utr_singles: utrSingles ? parseFloat(utrSingles) : null,
+        target_division: targetDivision,
+        gpa: gpa ? parseFloat(gpa) : null,
+        grad_year: gradYear ? parseInt(gradYear, 10) : null,
+        geographic_preference: geoPreference || null,
+        coach_assessment: coachAssessment || null,
+        gender,
+        updated_at: new Date().toISOString(),
+      }
 
-    if (profileId) {
-      const { data } = await supabase
+      if (profileId) {
+        await supabase
+          .from('recruiting_profiles')
+          .update(profileData)
+          .eq('id', profileId)
+        return profileId
+      }
+
+      const { data, error } = await supabase
         .from('recruiting_profiles')
-        .update(profileData)
-        .eq('id', profileId)
-        .select()
-        .maybeSingle()
-      if (data) {
-        setProfile(data)
+        .insert(profileData)
+        .select('id')
+        .single()
+
+      if (error) {
+        console.error('saveProfile error:', error)
+        return null
+      }
+
+      if (data?.id) {
         setProfileId(data.id)
         return data.id
       }
-      return profileId
+      return null
+    } catch (e) {
+      console.error('saveProfile exception:', e)
+      return null
     }
-
-    const { data } = await supabase
-      .from('recruiting_profiles')
-      .insert(profileData)
-      .select()
-      .maybeSingle()
-    if (data) {
-      setProfile(data)
-      setProfileId(data.id)
-      return data.id
-    }
-    return undefined
   }
 
   async function syncUSTAData() {
@@ -223,58 +226,72 @@ export default function RecruitingProfile({
 
   async function generateProjection() {
     setGenerating(true)
+    setProjectionError('')
 
     const id = await saveProfile()
 
-    try {
-      const res = await fetch(
-        '/api/recruiting-projection',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            profileId: id,
-            playerId,
-            playerName,
-            sport,
-            gender,
-            gradYear: gradYear
-              ? parseInt(gradYear, 10)
-              : null,
-            age: profile?.age,
-            gpa: gpa ? parseFloat(gpa) : null,
-            wtnSingles: profile?.wtn_singles,
-            utrSingles: utrSingles
-              ? parseFloat(utrSingles)
-              : null,
-            nationalRank: profile?.usta_national_rank,
-            sectionRank: profile?.usta_section_rank,
-            winRecord: profile?.usta_win_record,
-            lossRecord: profile?.usta_loss_record,
-            ageCategory: profile?.usta_age_category,
-            targetDivision,
-            geographicPreference: geoPreference,
-            coachAssessment,
-            techniqueScore:
-              techniqueStats?.currentScore,
-            techniqueVelocity:
-              techniqueStats?.velocity,
-            topIssues: techniqueStats?.topIssues,
-            fixedIssues: techniqueStats?.fixedIssues,
-            sessionCount:
-              techniqueStats?.sessionCount,
-          }),
-        }
+    if (!id) {
+      setProjectionError(
+        'Could not save profile. Check you are logged in and try again.',
       )
+      setGenerating(false)
+      return
+    }
+
+    try {
+      const res = await fetch('/api/recruiting-projection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profileId: id,
+          playerId,
+          playerName,
+          sport,
+          gender,
+          gradYear: gradYear ? parseInt(gradYear, 10) : null,
+          gpa: gpa ? parseFloat(gpa) : null,
+          wtnSingles: profile?.wtn_singles || null,
+          utrSingles: utrSingles ? parseFloat(utrSingles) : null,
+          nationalRank: profile?.usta_national_rank || null,
+          sectionRank: profile?.usta_section_rank || null,
+          winRecord: profile?.usta_win_record || null,
+          lossRecord: profile?.usta_loss_record || null,
+          ageCategory: profile?.usta_age_category || null,
+          targetDivision,
+          geographicPreference: geoPreference || null,
+          coachAssessment: coachAssessment || null,
+          techniqueScore:
+            analysisSessions?.[analysisSessions.length - 1]?.overall_score ||
+            null,
+          techniqueVelocity: techniqueStats?.velocity,
+          topIssues: techniqueStats?.topIssues,
+          fixedIssues: techniqueStats?.fixedIssues,
+          sessionCount: analysisSessions?.length || 0,
+        }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(
+          (errData as { error?: string }).error || `Server error ${res.status}`,
+        )
+      }
+
       const data = await res.json()
       if (data.success) {
         await loadProfile()
+      } else {
+        throw new Error(data.error || 'Projection failed')
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error('Projection error:', e)
+      setProjectionError(
+        e instanceof Error
+          ? e.message
+          : 'Something went wrong. Try again.',
+      )
     }
+
     setGenerating(false)
   }
 
@@ -877,6 +894,11 @@ export default function RecruitingProfile({
       color: TEXT,
       maxWidth: 600,
     }}>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
 
       {/* Header */}
       <div style={{
@@ -1487,15 +1509,56 @@ export default function RecruitingProfile({
           transition: 'opacity 0.15s',
         }}
       >
-        <div style={{ flexShrink: 0, pointerEvents: 'none' }}>
-          <ViaBlob size={20} />
-        </div>
-        {generating
-          ? 'Via is generating projection...'
-          : profile?.via_projection
-          ? 'Regenerate projection'
-          : 'Generate with Via →'}
+        {!generating && (
+          <div style={{ flexShrink: 0, pointerEvents: 'none' }}>
+            <ViaBlob size={20} />
+          </div>
+        )}
+        {generating ? (
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                border: '2px solid rgba(15,110,86,.25)',
+                borderTopColor: '#0F6E56',
+                borderRadius: '50%',
+                animation: 'spin .8s linear infinite',
+              }}
+            />
+            Via is generating...
+          </span>
+        ) : profile?.via_projection ? (
+          'Regenerate projection'
+        ) : (
+          'Generate with Via →'
+        )}
       </button>
+
+      {projectionError && (
+        <div
+          style={{
+            marginTop: 8,
+            marginBottom: 14,
+            padding: '10px 14px',
+            borderRadius: 10,
+            background: '#FEF2F2',
+            border: '0.5px solid #FCA5A5',
+            fontSize: 12,
+            color: '#A32D2D',
+            lineHeight: 1.55,
+          }}
+        >
+          {projectionError}
+        </div>
+      )}
 
       {/* Generated projection preview */}
       {projection && (
