@@ -51,6 +51,9 @@ ACTION:CREATE_DRILL:{"title":"Drill name","description":"2-3 sentence instructio
 Show recruiting:
 ACTION:SHOW_RECRUITING:{"name":"Player name","wtn":8.2,"national_rank":51,"target_division":"D1","grad_year":2027,"player_id":"uuid","href":"/dashboard/players/uuid?tab=recruiting"}
 
+Suggest schools (3-5 schools for coach to verify — never auto-add):
+ACTION:SUGGEST_SCHOOLS:{"player_name":"Player name","player_id":"uuid","schools":[{"school":"University of Virginia","division":"D1","type":"reach","why":"WTN gap of ~1.2","wtn_needed":7.5,"location":"VA"}]}
+
 Navigate (executes immediately, no confirm):
 ACTION:NAVIGATE:{"path":"/dashboard/players/uuid"}
 
@@ -115,7 +118,11 @@ the split-step drill — worth running through
 it before then."
 
 Player asks vague question
-Good: One short clarifying question.`
+Good: One short clarifying question.
+
+When the player is on the reels page with a selected session,
+reference that reel's score, top issue, and shot type.
+Help them understand the reel or decide what to work on next.`
 
 type ChatMessage = {
   role: 'user' | 'assistant'

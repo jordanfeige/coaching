@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/utr-sync-all",
+      "schedule": "0 6 * * 3"
+    },
+    {
+      "path": "/api/utr-sync-colleges",
+      "schedule": "0 7 * * 3"
+    },
+    {
+      "path": "/api/enrich-colleges",
+      "schedule": "0 8 * * 3"
+    }
+  ]
+}

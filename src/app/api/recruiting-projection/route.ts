@@ -6,6 +6,243 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 })
 
+type ProjectionBody = {
+  mode?: 'full' | 'suggest_schools'
+  profileId?: string
+  playerName?: string
+  sport?: string
+  gender?: string
+  gradYear?: number | null
+  age?: number | null
+  gpa?: number | null
+  wtnSingles?: number | null
+  utrSingles?: number | null
+  nationalRank?: number | null
+  sectionRank?: number | null
+  winRecord?: number | null
+  lossRecord?: number | null
+  ageCategory?: string | null
+  targetDivision?: string | null
+  geographicPreference?: string | null
+  coachAssessment?: string | null
+  proInterest?: string | null
+  techniqueScore?: number | null
+  techniqueVelocity?: string | null
+  topIssues?: string[]
+  fixedIssues?: string[]
+  sessionCount?: number
+}
+
+type CollegeRow = {
+  display_name: string | null
+  avg_utr: number | null
+  min_utr: number | null
+  max_utr: number | null
+  division: string | null
+  conference: string | null
+  sat_25th: number | null
+  sat_75th: number | null
+  acceptance_rate: number | null
+  tuition_out_of_state: number | null
+  median_earnings_10yr: number | null
+}
+
+type ScheduleProfileFields = {
+  schedule_strength_score?: number | null
+  schedule_avg_opponent_utr?: number | null
+  schedule_highest_utr_beaten?: number | null
+  schedule_quality_wins?: number | null
+  schedule_win_rate_vs_higher?: number | null
+  schedule_sanctioned_pct?: number | null
+  schedule_total_matches?: number | null
+  schedule_summary?: string | null
+}
+
+function buildScheduleContext(schedule?: ScheduleProfileFields | null) {
+  if (!schedule) return ''
+  return `
+SCHEDULE STRENGTH:
+Score: ${schedule.schedule_strength_score ?? 'not calculated'}/100
+Avg opponent UTR: ${schedule.schedule_avg_opponent_utr ?? 'unknown'}
+Highest UTR beaten: ${schedule.schedule_highest_utr_beaten ?? 'unknown'}
+Quality wins vs higher-rated: ${schedule.schedule_quality_wins ?? 0}
+Win rate vs higher-rated: ${schedule.schedule_win_rate_vs_higher ?? 0}%
+Total matches: ${schedule.schedule_total_matches ?? 0}
+Sanctioned events: ${schedule.schedule_sanctioned_pct ?? 0}%
+Summary: ${schedule.schedule_summary || 'no data'}`
+}
+
+const SCHEDULE_INSTRUCTIONS = `
+Use schedule strength to add context beyond the UTR number. A player with strong schedule (quality wins vs higher opponents) is more attractive to coaches than an equal UTR with weak schedule. Be specific — reference actual numbers from the schedule strength data.`
+
+function buildPlayerContext(
+  body: ProjectionBody,
+  yearsUntilGrad: number,
+  schedule?: ScheduleProfileFields | null,
+) {
+  return `PLAYER DATA:
+Name: ${body.playerName}
+Sport: ${body.sport} (${body.gender})
+Age: ${body.age ?? 'unknown'}
+Grad year: ${body.gradYear} (${yearsUntilGrad} years away)
+GPA: ${body.gpa || 'not provided'}
+
+CURRENT RANKINGS:
+WTN Singles: ${body.wtnSingles || 'not provided'}
+UTR Singles: ${body.utrSingles || 'not provided'}
+USTA National Rank: ${body.nationalRank || 'not provided'} (${body.ageCategory || ''})
+USTA Section Rank: ${body.sectionRank || 'not provided'}
+Win/Loss: ${body.winRecord}/${body.lossRecord}
+
+TARGET:
+Division: ${body.targetDivision}
+Geographic preference: ${body.geographicPreference || 'no preference'}
+
+COACH ASSESSMENT:
+${body.coachAssessment || 'not provided'}
+
+PLAYVIA TECHNIQUE DATA:
+Current technique score: ${body.techniqueScore || 'no data'}
+Improvement velocity: ${body.techniqueVelocity || 'unknown'} pts/month
+Sessions analyzed: ${body.sessionCount || 0}
+Active issues: ${body.topIssues?.join(', ') || 'none'}
+Fixed issues: ${body.fixedIssues?.join(', ') || 'none'}${buildScheduleContext(schedule)}`
+}
+
+function buildCollegeSchoolContext(schools: CollegeRow[] | null | undefined) {
+  return (
+    schools
+      ?.map(s => {
+        const acceptance = s.acceptance_rate
+        return (
+          `${s.display_name}: ` +
+          `avg UTR ${s.avg_utr}, ` +
+          `min ${s.min_utr}, ` +
+          `max ${s.max_utr}, ` +
+          `${s.division}, ` +
+          `${s.conference}, ` +
+          `SAT 25th ${s.sat_25th ?? 'n/a'}, ` +
+          `SAT 75th ${s.sat_75th ?? 'n/a'}, ` +
+          `acceptance ${
+            acceptance != null
+              ? `${Math.round(acceptance * 100)}%`
+              : 'n/a'
+          }, ` +
+          `tuition OOS ${
+            s.tuition_out_of_state
+              ? s.tuition_out_of_state.toLocaleString()
+              : 'n/a'
+          }, ` +
+          `earnings 10yr ${
+            s.median_earnings_10yr
+              ? s.median_earnings_10yr.toLocaleString()
+              : 'n/a'
+          }`
+        )
+      })
+      .join('\n') || 'No matching schools found'
+  )
+}
+
+function normalizeCollegeProjection(
+  parsed: Record<string, unknown>,
+): Record<string, unknown> {
+  const outlookText = String(parsed.outlook || '')
+  const schools =
+    (parsed.schools as Array<Record<string, unknown>>) || []
+
+  const school_targets: Record<
+    string,
+    Array<Record<string, unknown>>
+  > = { reach: [], target: [], likely: [] }
+
+  for (const s of schools) {
+    const type = String(s.type || 'target').toLowerCase()
+    const bucket =
+      type === 'reach'
+        ? 'reach'
+        : type === 'likely'
+          ? 'likely'
+          : 'target'
+    school_targets[bucket].push({
+      school: s.name,
+      division: s.division,
+      why: s.note,
+      wtn_needed: s.utrGap,
+    })
+  }
+
+  const whatNeedsToHappen = parsed.whatNeedsToHappen as
+    | string[]
+    | undefined
+  const what_needs_to_happen =
+    whatNeedsToHappen?.map(action => ({
+      priority: 'important',
+      action,
+      why: '',
+    })) || []
+
+  const timelineRaw = parsed.timeline as
+    | Array<{ period?: string; action?: string }>
+    | undefined
+  const timeline =
+    timelineRaw?.map(t => ({
+      phase: t.period,
+      timeframe: t.period,
+      description: t.action,
+    })) || []
+
+  return {
+    ...parsed,
+    confidence: 'medium',
+    confidence_note: 'Based on synced UTR college roster data.',
+    overall_assessment: outlookText,
+    via_family_summary: outlookText,
+    outlook: {
+      snapshot: outlookText,
+      confidence: 'medium',
+      confidence_note: 'Based on synced UTR college roster data.',
+      factors: [],
+      actions: what_needs_to_happen.map(w => ({
+        title: w.action,
+        priority: w.priority,
+        detail: w.why,
+      })),
+    },
+    school_targets,
+    what_needs_to_happen,
+    timeline,
+    recruiting_contact_rules: {
+      d1_contact_opens: 'Sept 1 of junior year',
+      d2_d3_contact: 'Can be contacted at any time',
+      current_allowed: 'Varies by division and grad year',
+    },
+    disclaimer:
+      'Projections use real UTR roster averages; outcomes are not guaranteed.',
+  }
+}
+
+async function fetchMatchingColleges(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  body: ProjectionBody,
+) {
+  const playerUtr = body.utrSingles ?? 8
+  const genderCode = body.gender === 'female' ? 'F' : 'M'
+
+  const { data } = await supabase
+    .from('college_tennis_benchmarks')
+    .select(
+      'display_name, avg_utr, min_utr, max_utr, division, conference, sat_25th, sat_75th, acceptance_rate, tuition_out_of_state, median_earnings_10yr',
+    )
+    .gte('avg_utr', playerUtr - 2.0)
+    .lte('avg_utr', playerUtr + 1.5)
+    .eq('gender', genderCode)
+    .order('avg_utr', { ascending: false })
+    .limit(30)
+
+  return (data || []) as CollegeRow[]
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createServerSupabaseClient()
   const {
@@ -20,146 +257,156 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'AI not configured' }, { status: 503 })
   }
 
-  const {
-    profileId,
-    playerName,
-    sport,
-    gender,
-    gradYear,
-    age,
-    gpa,
-    wtnSingles,
-    utrSingles,
-    nationalRank,
-    sectionRank,
-    winRecord,
-    lossRecord,
-    ageCategory,
-    targetDivision,
-    geographicPreference,
-    coachAssessment,
-    techniqueScore,
-    techniqueVelocity,
-    topIssues,
-    fixedIssues,
-    sessionCount,
-  } = await req.json()
+  const body = (await req.json()) as ProjectionBody
+  const mode = body.mode || 'full'
 
-  const { data: benchmarks } = await supabase
-    .from('school_benchmarks')
-    .select('*')
-    .eq('sport', sport || 'tennis')
-    .eq('gender', gender || 'male')
-    .order('avg_utr', { ascending: false })
+  let scheduleFields: ScheduleProfileFields | null = null
+  if (body.profileId) {
+    const { data: profileSchedule } = await supabase
+      .from('recruiting_profiles')
+      .select(
+        'schedule_strength_score, schedule_avg_opponent_utr, schedule_highest_utr_beaten, schedule_quality_wins, schedule_win_rate_vs_higher, schedule_sanctioned_pct, schedule_total_matches, schedule_summary',
+      )
+      .eq('id', body.profileId)
+      .maybeSingle()
+    scheduleFields = profileSchedule
+  }
+
+  const matchingSchools = await fetchMatchingColleges(supabase, body)
+  const schoolContext = buildCollegeSchoolContext(matchingSchools)
 
   const currentYear = new Date().getFullYear()
-  const yearsUntilGrad = gradYear ? gradYear - currentYear : 3
+  const yearsUntilGrad = body.gradYear ? body.gradYear - currentYear : 3
+  const playerBlock = buildPlayerContext(body, yearsUntilGrad, scheduleFields)
 
-  const systemPrompt = `You are Via, an expert tennis recruiting analyst for Playvia. You analyze junior player data and generate accurate, appropriately uncertain recruiting projections.
+  if (mode === 'suggest_schools') {
+    const systemPrompt = `You are Via, a tennis recruiting analyst for Playvia.
+Suggest 3-5 realistic college tennis programs for this player.
+Use ONLY the real school data below. Mix reach, target, and likely.
+These are SUGGESTIONS for the coach to verify — not confirmed targets.
+${SCHEDULE_INSTRUCTIONS}
 
-IMPORTANT GUIDELINES:
-- Always express projections as ranges, never single numbers
-- Be honest about confidence level based on data quality
-- Reference NCAA recruiting contact rules accurately
-- D1 contact rule: coaches cannot contact until Sept 1 of junior year (with exceptions for campus visits)
-- D2/D3/NAIA: can be contacted at any time
-- WTN benchmarks for college tennis (approximate):
-  * D1 top programs: WTN 1-6 (men), WTN 3-8 (women)
-  * D1 mid-major: WTN 6-10 (men), WTN 8-12 (women)
-  * D2: WTN 9-13 (men), WTN 12-16 (women)
-  * D3: WTN 12-16 (men), WTN 15-19 (women)
-  * NAIA: WTN 14-18 (men), WTN 17-21 (women)
-- School benchmarks provided are real data
-- Never guarantee outcomes
-- Coach assessment overrides algorithmic projection
-- Technique improvement velocity is a strong predictor
-
-Respond ONLY with valid JSON. No preamble.`
-
-  const benchmarkSummary = benchmarks
-    ?.slice(0, 20)
-    .map(
-      b =>
-        `${b.school_name} (${b.division}): WTN avg ${b.avg_wtn_singles}, UTR avg ${b.avg_utr}, region: ${b.regions?.join('/')}`,
-    )
-    .join('\n')
-
-  const userMessage = `Generate a recruiting profile projection for this player.
-
-PLAYER DATA:
-Name: ${playerName}
-Sport: ${sport} (${gender})
-Age: ${age}
-Grad year: ${gradYear} (${yearsUntilGrad} years away)
-GPA: ${gpa || 'not provided'}
-
-CURRENT RANKINGS:
-WTN Singles: ${wtnSingles || 'not provided'}
-UTR Singles: ${utrSingles || 'not provided'}
-USTA National Rank: ${nationalRank || 'not provided'} (${ageCategory || ''})
-USTA Section Rank: ${sectionRank || 'not provided'}
-Win/Loss: ${winRecord}/${lossRecord}
-
-TARGET:
-Division: ${targetDivision}
-Geographic preference: ${geographicPreference || 'no preference'}
-
-COACH ASSESSMENT:
-${coachAssessment || 'not provided'}
-
-PLAYVIA TECHNIQUE DATA:
-Current technique score: ${techniqueScore || 'no data'}
-Improvement velocity: ${techniqueVelocity || 'unknown'} pts/month
-Sessions analyzed: ${sessionCount || 0}
-Active issues: ${topIssues?.join(', ') || 'none'}
-Fixed issues: ${fixedIssues?.join(', ') || 'none'}
-
-SCHOOL BENCHMARKS (for matching):
-${benchmarkSummary || 'no benchmarks available'}
-
-Generate projection JSON:
+Respond ONLY with valid JSON:
 {
-  "confidence": "low|medium|high",
-  "confidence_note": "explanation of confidence level",
-  "overall_assessment": "2-3 sentence honest assessment",
-  "projected_wtn_at_graduation": {
-    "low": number,
-    "high": number,
-    "basis": "explanation"
-  },
-  "projected_wtn_junior_year": {
-    "low": number,
-    "high": number
-  },
-  "recruiting_tier": "D1|D2|D3|NAIA|JC|multiple",
-  "school_targets": {
-    "reach": [{ "school": "school name", "division": "D1/D2/D3", "why": "one line reason", "wtn_needed": number }],
-    "target": [{ "school": "school name", "division": "D1/D2/D3", "why": "one line reason", "wtn_needed": number }],
-    "likely": [{ "school": "school name", "division": "D1/D2/D3", "why": "one line reason", "wtn_needed": number }]
-  },
+  "schools": [
+    {
+      "school": "school name",
+      "division": "D1|D2|D3|NAIA|JC",
+      "type": "reach|target|likely",
+      "why": "one line reason",
+      "wtn_needed": number,
+      "location": "state or region"
+    }
+  ]
+}`
+
+    const userMessage = `${playerBlock}
+
+MATCHING SCHOOLS (real UTR + academic data):
+${schoolContext}
+
+Return exactly 3-5 schools as JSON.`
+
+    try {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1200,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+      })
+
+      const text = response.content
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('')
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim()
+
+      const parsed = JSON.parse(text) as { schools?: unknown[] }
+      const schools = parsed.schools || []
+
+      if (body.profileId) {
+        await supabase
+          .from('recruiting_profiles')
+          .update({
+            via_suggested_schools: schools,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', body.profileId)
+      }
+
+      return NextResponse.json({ success: true, schools })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'School suggestions failed'
+      console.error('Suggest schools error:', error)
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
+  }
+
+  const systemPrompt = `You are Via, a college tennis recruiting analyst inside Playvia.
+
+You have REAL data for every matching school.
+Use ONLY the numbers provided below.
+Never invent UTR ranges, SAT scores, or acceptance rates.
+${SCHEDULE_INSTRUCTIONS}
+
+PLAYER PROFILE:
+Name: ${body.playerName}
+Sport: ${body.sport}
+Gender: ${body.gender}
+UTR Singles: ${body.utrSingles || 'not set'}
+WTN Singles: ${body.wtnSingles || 'not set'}
+National rank: ${body.nationalRank || 'not set'}
+GPA: ${body.gpa || 'not set'}
+Grad year: ${body.gradYear || 'not set'}
+Target division: ${body.targetDivision || 'not set'}
+Geographic preference: ${body.geographicPreference || 'none'}
+Pro tennis interest: ${body.proInterest || 'no'}
+Coach assessment: ${body.coachAssessment || 'none'}
+Technique score: ${body.techniqueScore || 'not set'}
+Sessions analyzed: ${body.sessionCount || 0}
+Schedule strength score: ${scheduleFields?.schedule_strength_score ?? 'not calculated'}
+Avg opponent UTR: ${scheduleFields?.schedule_avg_opponent_utr ?? 'unknown'}
+Highest UTR beaten: ${scheduleFields?.schedule_highest_utr_beaten ?? 'unknown'}
+Quality wins (vs higher-rated): ${scheduleFields?.schedule_quality_wins ?? 0}
+Win rate vs higher-rated opponents: ${scheduleFields?.schedule_win_rate_vs_higher ?? 0}%
+Schedule summary: ${scheduleFields?.schedule_summary || 'no data'}
+
+MATCHING SCHOOLS (real UTR + academic data):
+${schoolContext}
+
+Generate a recruiting analysis with:
+1. One-sentence overall outlook
+2. Top 3 school recommendations from the list above with specific UTR gap analysis
+3. What needs to happen to reach goal
+4. Timeline with specific milestones
+5. If pro interest: note which schools allow summers for ITF circuit
+
+Respond ONLY as valid JSON:
+{
+  "outlook": "one sentence",
+  "schools": [
+    {
+      "name": "school name",
+      "division": "D1/D2/D3/NAIA",
+      "type": "reach|target|likely",
+      "utrGap": 1.3,
+      "satFit": "strong|good|reach|n/a",
+      "note": "specific insight"
+    }
+  ],
+  "whatNeedsToHappen": [
+    "specific action item"
+  ],
   "timeline": [
     {
-      "phase": "phase name",
-      "timeframe": "e.g. Now - Sophomore year",
-      "description": "what to do and why",
-      "milestones": ["specific milestone 1", "milestone 2"]
+      "period": "Summer 2026",
+      "action": "specific milestone"
     }
   ],
-  "what_needs_to_happen": [
-    {
-      "priority": "critical|important|nice_to_have",
-      "action": "specific action",
-      "why": "why this matters for recruiting",
-      "technique_connection": "how Playvia data connects (or null)"
-    }
-  ],
-  "via_family_summary": "2-3 sentences written directly to the family, encouraging but honest",
-  "recruiting_contact_rules": {
-    "d1_contact_opens": "Sept 1 of junior year",
-    "d2_d3_contact": "Can be contacted at any time",
-    "current_allowed": "what outreach is allowed right now"
-  },
-  "disclaimer": "standard disclaimer about projection uncertainty"
+  "proPath": "string or null"
 }`
 
   try {
@@ -167,7 +414,7 @@ Generate projection JSON:
       model: 'claude-sonnet-4-6',
       max_tokens: 3000,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
+      messages: [{ role: 'user', content: playerBlock }],
     })
 
     const text = response.content
@@ -178,23 +425,25 @@ Generate projection JSON:
       .replace(/```\n?/g, '')
       .trim()
 
-    const projection = JSON.parse(text)
+    const parsed = normalizeCollegeProjection(
+      JSON.parse(text) as Record<string, unknown>,
+    )
 
-    if (profileId) {
+    if (body.profileId) {
       await supabase
         .from('recruiting_profiles')
         .update({
-          via_projection: projection,
-          via_school_targets: projection.school_targets,
-          via_timeline: projection.timeline,
-          via_what_needs_to_happen: projection.what_needs_to_happen,
-          via_summary: projection.via_family_summary,
+          via_projection: parsed,
+          via_school_targets: parsed.school_targets,
+          via_timeline: parsed.timeline,
+          via_what_needs_to_happen: parsed.what_needs_to_happen,
+          via_summary: parsed.via_family_summary,
           via_generated_at: new Date().toISOString(),
         })
-        .eq('id', profileId)
+        .eq('id', body.profileId)
     }
 
-    return NextResponse.json({ success: true, projection })
+    return NextResponse.json({ success: true, projection: parsed })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Projection failed'
     console.error('Projection error:', error)

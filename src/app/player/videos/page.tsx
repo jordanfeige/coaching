@@ -2,25 +2,29 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
-import VideoAnalysisDialog, {
+import AnalysisStepperDialog from '@/components/video/AnalysisStepperDialog'
+import {
   analysisPreviewHeadline,
   issueSeverityCounts,
 } from '@/components/video/VideoAnalysisDialog'
+import {
+  getVideoAnalysisRecord,
+  resolveAnalysisSessionId,
+} from '@/lib/analysis-display'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Video } from 'lucide-react'
 import { format } from 'date-fns'
-import { isImageMediaPath } from '@/lib/video-frames'
-
 export default function PlayerVideosPage() {
   const [players, setPlayers] = useState<LinkedPlayer[]>([])
   const [selectedPlayerId, setSelectedPlayerId] = useState('all')
   const [videos, setVideos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [videoUrls, setVideoUrls] = useState<Record<string, string>>({})
-  const [sheetVideo, setSheetVideo] = useState<any>(null)
-  const [coachingVideos, setCoachingVideos] = useState<Record<string, any[]>>({})
-  const [loadingCoachingVideo, setLoadingCoachingVideo] = useState<string | null>(null)
+  const [analysisFlow, setAnalysisFlow] = useState<{
+    video: any
+    sessionId?: string
+    analysis: Record<string, unknown>
+  } | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -63,40 +67,16 @@ export default function PlayerVideosPage() {
     return data?.signedUrl || ''
   }
 
-  async function openAnalysisSheet(video: any) {
-    setSheetVideo(video)
-    if (!videoUrls[video.id]) {
-      const u = await getVideoUrl(video.storage_path)
-      if (u) setVideoUrls(prev => ({ ...prev, [video.id]: u }))
-    }
+  function openAnalysisStepper(video: any) {
+    const analysis = getVideoAnalysisRecord(video)
+    if (!analysis) return
+    const sessionId = resolveAnalysisSessionId(analysis, video.id)
+    setAnalysisFlow({ video, analysis, sessionId })
   }
 
   async function playVideo(video: any) {
     const url = await getVideoUrl(video.storage_path)
     window.open(url, '_blank')
-  }
-
-  async function fetchCoachingVideos(issueArea: string, drill?: string) {
-    setLoadingCoachingVideo(issueArea)
-    try {
-      const response = await fetch('/api/youtube-coaching', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          issue: drill,
-          issueArea,
-          sport: sheetVideo?.players?.sport,
-          shotType: '',
-        }),
-      })
-      const payload = await response.json()
-      if (!response.ok || payload.error) throw new Error(payload.error || 'Failed to find coaching videos')
-      setCoachingVideos(prev => ({ ...prev, [issueArea]: payload.videos || [] }))
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to find coaching videos')
-    } finally {
-      setLoadingCoachingVideo(null)
-    }
   }
 
   const filteredVideos = selectedPlayerId === 'all' ? videos : videos.filter(v => v.player_id === selectedPlayerId)
@@ -144,8 +124,7 @@ export default function PlayerVideosPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {filteredVideos.map(video => {
-              const analysis =
-                video.ai_analysis ? JSON.parse(video.ai_analysis as string) : null
+              const analysis = getVideoAnalysisRecord(video)
               const counts = issueSeverityCounts(analysis)
               const headline = analysisPreviewHeadline(analysis)
               return (
@@ -166,7 +145,7 @@ export default function PlayerVideosPage() {
                         type="button"
                         size="sm"
                         className="flex-1 text-xs"
-                        onClick={() => openAnalysisSheet(video)}
+                        onClick={() => openAnalysisStepper(video)}
                       >
                         Analysis
                       </Button>
@@ -183,10 +162,10 @@ export default function PlayerVideosPage() {
                     {analysis && (
                       <div className="space-y-2 border-t border-border pt-3">
                         <div className="flex flex-wrap gap-1.5">
-                          {analysis.overall_rating && (
+                          {analysis.overall_rating != null && analysis.overall_rating !== '' && (
                             <Badge variant="secondary">{String(analysis.overall_rating)}</Badge>
                           )}
-                          {analysis.confidence && (
+                          {analysis.confidence != null && analysis.confidence !== '' && (
                             <Badge variant="outline">{String(analysis.confidence)} confidence</Badge>
                           )}
                           {counts.total > 0 && counts.critical > 0 && (
@@ -206,7 +185,7 @@ export default function PlayerVideosPage() {
                           variant="secondary"
                           size="sm"
                           className="w-full"
-                          onClick={() => openAnalysisSheet(video)}
+                          onClick={() => openAnalysisStepper(video)}
                         >
                           View full breakdown
                         </Button>
@@ -219,30 +198,18 @@ export default function PlayerVideosPage() {
           </div>
         )}
 
-      <VideoAnalysisDialog
-        open={!!sheetVideo}
-        onOpenChange={v => {
-          if (!v) setSheetVideo(null)
+      <AnalysisStepperDialog
+        open={!!analysisFlow}
+        onOpenChange={open => {
+          if (!open) setAnalysisFlow(null)
         }}
-        title={sheetVideo?.title ?? ''}
-        recordedLabel={
-          sheetVideo ? format(new Date(sheetVideo.recorded_at), 'MMM d, yyyy • h:mm a') : ''
-        }
-        videoUrl={sheetVideo ? videoUrls[sheetVideo.id] ?? null : null}
-        mediaKind={sheetVideo && isImageMediaPath(sheetVideo.storage_path || sheetVideo.title) ? 'image' : 'video'}
-        videoId={sheetVideo?.id ?? null}
-        lessonId={sheetVideo?.lesson_id ?? null}
-        sport={sheetVideo?.players?.sport ?? null}
-        coachingVideos={coachingVideos}
-        loadingCoachingVideo={loadingCoachingVideo}
-        onFetchCoachingVideos={fetchCoachingVideos}
-        analysis={
-          sheetVideo
-            ? (typeof sheetVideo.ai_analysis === 'string'
-                ? JSON.parse(sheetVideo.ai_analysis)
-                : sheetVideo.ai_analysis)
-            : null
-        }
+        analysis={analysisFlow?.analysis ?? null}
+        sport={(analysisFlow?.video?.players?.sport || 'tennis').toLowerCase()}
+        sessionId={analysisFlow?.sessionId}
+        playerId={analysisFlow?.video?.player_id}
+        progressHref="/player/progress"
+        onSaved={() => setAnalysisFlow(null)}
+        onReanalyze={() => setAnalysisFlow(null)}
       />
     </div>
   )

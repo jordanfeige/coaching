@@ -609,7 +609,7 @@ function ProgressPageContent() {
           </div>
         )}
 
-        <GlassCard mode="dark" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <GlassCard mode="light" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <div
               style={{

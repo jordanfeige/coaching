@@ -32,7 +32,7 @@ function panelShell(mode: PanelMode): CSSProperties {
 }
 
 function textColors(mode: PanelMode) {
-  if (mode === 'playerVia' || mode === 'dark') return glass.dark.text
+  if (mode === 'dark') return glass.dark.text
   return glass.light.text
 }
 
@@ -145,12 +145,12 @@ export function ViaPanelTitleRow({
         style={{
           fontSize: 10,
           background: 'rgba(29,158,117,.12)',
-          color: mode === 'playerVia' || mode === 'dark' ? 'rgba(93,202,165,.92)' : '#085041',
+          color: mode === 'dark' ? 'rgba(93,202,165,.92)' : '#085041',
           padding: '2px 8px',
           borderRadius: 999,
           fontWeight: 600,
           border:
-            mode === 'playerVia' || mode === 'dark'
+            mode === 'dark'
               ? '0.5px solid rgba(29,158,117,.28)'
               : '0.5px solid rgba(29,158,117,.2)',
           whiteSpace: 'nowrap',
@@ -258,8 +258,7 @@ export function ViaPanelInput({
   onFocus?: () => void
   mode?: PanelMode
 }) {
-  const inputStyle =
-    mode === 'playerVia' || mode === 'dark' ? glass.dark.input : glass.light.input
+  const inputStyle = mode === 'dark' ? glass.dark.input : glass.light.input
   return (
     <div
       style={{

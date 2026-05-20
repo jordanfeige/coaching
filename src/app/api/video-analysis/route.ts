@@ -707,7 +707,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'GEMINI_API_KEY is not configured' }, { status: 500 })
   }
 
-  const body = await req.json()
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          'Request body too large. Reload the page and try again — videos should upload by URL, not inline data.',
+      },
+      { status: 413 },
+    )
+  }
   const supabase = await createServerSupabaseClient()
   const {
     data: { user },
@@ -725,7 +736,9 @@ export async function POST(req: NextRequest) {
     videoUrl,
     videoMimeType = 'video/mp4',
     compareVideoBase64,
+    compareVideoUrl,
     compareVideoMimeType = 'video/mp4',
+    existingVideoId,
     frames,
     imageBase64,
     mediaType,
@@ -742,7 +755,34 @@ export async function POST(req: NextRequest) {
     storagePath: storagePathInput,
     videoDurationSeconds,
     lessonId,
-  } = body
+  } = body as {
+    videoBase64?: string
+    videoUrl?: string
+    videoMimeType?: string
+    compareVideoBase64?: string
+    compareVideoUrl?: string
+    compareVideoMimeType?: string
+    existingVideoId?: string
+    frames?: InlineFrame[]
+    imageBase64?: string
+    mediaType?: string
+    compareFrames?: InlineFrame[]
+    compareImageBase64?: string
+    compareMediaType?: string
+    playerName?: string
+    playerId?: string
+    sport?: string
+    shotType?: string
+    playerHistory?: string
+    cameraAngle?: string
+    poseData?: PosePromptData
+    storagePath?: string
+    videoDurationSeconds?: number
+    lessonId?: string
+    mode?: string
+    localAnalysis?: Record<string, unknown>
+    focusNote?: string
+  }
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -753,8 +793,15 @@ export async function POST(req: NextRequest) {
   const isSubscribed = profile?.is_subscribed === true
   const isCoach = profile?.role === 'coach'
   const analysesUsed = profile?.analyses_used || 0
+  const reelLimitDisabled = process.env.DISABLE_REEL_LIMIT === 'true'
 
-  if (!isAdmin && !isSubscribed && !isCoach && analysesUsed >= 3) {
+  if (
+    !reelLimitDisabled &&
+    !isAdmin &&
+    !isSubscribed &&
+    !isCoach &&
+    analysesUsed >= 3
+  ) {
     const { data: scoreRows } = await supabase
       .from('analysis_sessions')
       .select('overall_score')
@@ -797,7 +844,16 @@ export async function POST(req: NextRequest) {
       parts.push(...inlineParts(frames, imageBase64, mediaType))
     }
 
-    if (compareVideoBase64) {
+    if (compareVideoUrl) {
+      const uploaded = await uploadUrlMedia(
+        fileManager,
+        compareVideoUrl,
+        compareVideoMimeType,
+        'comparison',
+      )
+      uploadedFiles.push(uploaded)
+      parts.push({ fileData: { fileUri: uploaded.uri, mimeType: uploaded.mimeType } })
+    } else if (compareVideoBase64) {
       const uploaded = await uploadBase64Media(fileManager, compareVideoBase64, compareVideoMimeType, 'comparison')
       uploadedFiles.push(uploaded)
       parts.push({ fileData: { fileUri: uploaded.uri, mimeType: uploaded.mimeType } })
@@ -818,7 +874,12 @@ export async function POST(req: NextRequest) {
       playerHistory,
       fewShotExamples,
       poseData,
-      isComparison: Boolean(compareVideoBase64 || compareFrames?.length || compareImageBase64),
+      isComparison: Boolean(
+        compareVideoUrl ||
+          compareVideoBase64 ||
+          compareFrames?.length ||
+          compareImageBase64,
+      ),
     })
 
     const genAI = new GoogleGenerativeAI(apiKey)
@@ -905,7 +966,15 @@ export async function POST(req: NextRequest) {
       let persistedStoragePath: string | null = null
       let videoId: string | null = null
 
-      if (typeof storagePathInput === 'string' && storagePathInput.trim()) {
+      if (typeof existingVideoId === 'string' && existingVideoId.trim()) {
+        videoId = existingVideoId.trim()
+        if (typeof storagePathInput === 'string' && storagePathInput.trim()) {
+          const raw = storagePathInput.trim().replace(/^\/+/, '')
+          persistedStoragePath = raw.includes('/')
+            ? raw
+            : fullStoragePath('videos', raw)
+        }
+      } else if (typeof storagePathInput === 'string' && storagePathInput.trim()) {
         const raw = storagePathInput.trim().replace(/^\/+/, '')
         persistedStoragePath = raw.includes('/')
           ? raw

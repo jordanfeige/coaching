@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { GlassCard } from '@/components/GlassCard'
 
 const TEAL = '#1D9E75'
+const TEAL_DARK = '#085041'
 const BORDER = 'hsl(30,10%,88%)'
 const TEXT = 'hsl(220,20%,15%)'
 const TEXT_SEC = 'hsl(220,10%,45%)'
@@ -43,6 +44,11 @@ interface Props {
   fixedIssues: string[]
   totalGain: number
   nextLesson: Lesson | null
+  utrLinked?: boolean
+  utrSingles?: number | null
+  utrLastSynced?: string | null
+  onLinkUTR?: () => void
+  onSyncUTR?: () => void | Promise<void>
 }
 
 function StatCard({
@@ -203,6 +209,11 @@ export default function PlayerOverviewTab({
   fixedIssues,
   totalGain,
   nextLesson,
+  utrLinked = false,
+  utrSingles,
+  utrLastSynced,
+  onLinkUTR,
+  onSyncUTR,
 }: Props) {
   const router = useRouter()
   const firstName = player.name.split(' ')[0] || player.name
@@ -250,6 +261,104 @@ export default function PlayerOverviewTab({
           sub="all time"
           accent={totalGain > 0 ? TEAL : undefined}
         />
+      </div>
+
+      {/* UTR status */}
+      <div
+        style={{
+          background: utrLinked ? '#E1F5EE' : 'white',
+          border: utrLinked ? '0.5px solid #9FE1CB' : `0.5px solid ${BORDER}`,
+          borderRadius: 12,
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          {utrLinked ? (
+            <>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginBottom: 2,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 500,
+                    color: TEAL_DARK,
+                    lineHeight: 1,
+                  }}
+                >
+                  {utrSingles != null ? Number(utrSingles).toFixed(2) : '—'}
+                </span>
+                <span style={{ fontSize: 11, color: GREEN_TEXT }}>UTR Singles</span>
+              </div>
+              <div style={{ fontSize: 10, color: GREEN_TEXT }}>
+                {utrLastSynced
+                  ? `Synced ${format(new Date(utrLastSynced), 'MMM d')}`
+                  : 'Linked'}
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: TEXT,
+                  marginBottom: 2,
+                }}
+              >
+                Link UTR account
+              </div>
+              <div style={{ fontSize: 11, color: TEXT_MUTED }}>
+                Enables schedule strength, auto-sync, and recruiting projection
+                accuracy
+              </div>
+            </>
+          )}
+        </div>
+        {utrLinked ? (
+          <button
+            type="button"
+            onClick={() => void onSyncUTR?.()}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 8,
+              border: '0.5px solid #9FE1CB',
+              background: 'white',
+              fontSize: 11,
+              color: GREEN_TEXT,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            Sync
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onLinkUTR}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 9,
+              background: TEAL,
+              border: 'none',
+              color: 'white',
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            Link UTR →
+          </button>
+        )}
       </div>
 
       {/* Score trend + issues */}

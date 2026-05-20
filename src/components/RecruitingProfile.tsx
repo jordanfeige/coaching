@@ -2,8 +2,15 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import ViaBlob from '@/components/ViaBlob'
+import ViaRecruitingOutlookCard from '@/components/ViaRecruitingOutlookCard'
+import ViaSchoolSuggestionsCard from '@/components/ViaSchoolSuggestionsCard'
 import { format } from 'date-fns'
 import { parseUstaUaid } from '@/lib/usta'
+import {
+  parseRecruitingOutlook,
+  parseSuggestedSchools,
+  type ViaSuggestedSchool,
+} from '@/lib/recruiting-outlook'
 
 const TEAL = '#1D9E75'
 const TEAL_DARK = '#085041'
@@ -16,6 +23,98 @@ const RED = '#DC2626'
 const AMBER = '#D97706'
 const PURPLE = '#7C3AED'
 const BLUE = '#185FA5'
+
+const CARD: React.CSSProperties = {
+  background: 'white',
+  border: `0.5px solid ${BORDER}`,
+  borderRadius: 14,
+  padding: '14px 16px',
+}
+
+const SCHOOL_COLORS = {
+  reach: {
+    bg: '#EEEDFE',
+    border: '#AFA9EC',
+    dot: '#534AB7',
+    text: '#26215C',
+    sub: '#534AB7',
+    badge: '#534AB7',
+  },
+  target: {
+    bg: '#E1F5EE',
+    border: '#9FE1CB',
+    dot: '#0F6E56',
+    text: '#04342C',
+    sub: '#0F6E56',
+    badge: '#0F6E56',
+  },
+  likely: {
+    bg: '#E6F1FB',
+    border: '#85B7EB',
+    dot: '#185FA5',
+    text: '#042C53',
+    sub: '#185FA5',
+    badge: '#185FA5',
+  },
+} as const
+
+type SchoolRow = {
+  name: string
+  division: string
+  type: keyof typeof SCHOOL_COLORS
+  conference?: string
+  location?: string
+}
+
+function flattenSchools(targets: unknown): SchoolRow[] {
+  if (!targets || typeof targets !== 'object') return []
+  const t = targets as Record<string, unknown[]>
+  const rows: SchoolRow[] = []
+  for (const type of ['reach', 'target', 'likely'] as const) {
+    const list = t[type]
+    if (!Array.isArray(list)) continue
+    for (const raw of list) {
+      const s = raw as Record<string, string>
+      rows.push({
+        name: s.school || s.name || 'School',
+        division: s.division || '—',
+        type,
+        conference: s.conference,
+        location: s.location || s.region,
+      })
+    }
+  }
+  return rows
+}
+
+function projectionText(p: unknown): string {
+  if (!p) return ''
+  if (typeof p === 'string') return p
+  const o = p as Record<string, unknown>
+  return String(o.overall_assessment || o.via_family_summary || '')
+}
+
+function roadmapItems(
+  projection: Record<string, unknown> | null | undefined,
+  timeline: unknown,
+): Array<{ action: string }> {
+  const wnh = projection?.what_needs_to_happen
+  if (Array.isArray(wnh) && wnh.length > 0) {
+    return wnh.map((item: unknown) => {
+      const i = item as Record<string, string>
+      return { action: i.action || String(item) }
+    })
+  }
+  if (Array.isArray(timeline)) {
+    return timeline.map((item: unknown) => {
+      const i = item as Record<string, string>
+      return {
+        action: i.action || i.description || i.timeframe || String(item),
+      }
+    })
+  }
+  return []
+}
 
 interface Props {
   profileId?: string
@@ -38,18 +137,26 @@ export default function RecruitingProfile({
 
   const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [profileId, setProfileId] =
     useState(initialProfileId)
-  const [syncResult, setSyncResult] = useState<any>(null)
-  const [syncError, setSyncError] = useState('')
   const [projectionError, setProjectionError] = useState('')
+  const [suggestingSchools, setSuggestingSchools] = useState(false)
+  const [verifyingSchool, setVerifyingSchool] = useState<string | null>(null)
 
   // Form state (coach only)
   const [uaId, setUaId] = useState('')
-  const [utrSingles, setUtrSingles] = useState('')
+  const [wtnSinglesInput, setWtnSinglesInput] = useState('')
+  const [nationalRankInput, setNationalRankInput] = useState('')
+  const [sectionRankInput, setSectionRankInput] = useState('')
+  const [winLossInput, setWinLossInput] = useState('')
+  const [utrSinglesInput, setUtrSinglesInput] = useState('')
+  const [utrSearch, setUtrSearch] = useState('')
+  const [utrResults, setUtrResults] = useState<any[]>([])
+  const [utrSearching, setUtrSearching] = useState(false)
+  const [utrSyncing, setUtrSyncing] = useState(false)
+  const [utrError, setUtrError] = useState('')
   const [targetDivision, setTargetDivision] =
     useState('D1')
   const [gpa, setGpa] = useState('')
@@ -58,8 +165,17 @@ export default function RecruitingProfile({
   const [coachAssessment, setCoachAssessment] =
     useState('')
   const [gender, setGender] = useState('male')
+  const [sportInput, setSportInput] = useState(sport)
+  const [isMobile, setIsMobile] = useState(false)
 
   const firstName = playerName.split(' ')[0]
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   // Calculate technique stats from sessions
   const techniqueStats = (() => {
@@ -130,13 +246,23 @@ export default function RecruitingProfile({
       setProfile(data)
       setProfileId(data.id)
       setUaId(data.usta_uaid || '')
-      setUtrSingles(data.utr_singles?.toString() || '')
+      setUtrSinglesInput(data.utr_singles?.toString() || '')
       setTargetDivision(data.target_division || 'D1')
       setGpa(data.gpa?.toString() || '')
       setGradYear(data.grad_year?.toString() || '')
       setGeoPreference(data.geographic_preference || '')
       setCoachAssessment(data.coach_assessment || '')
       setGender(data.gender || 'male')
+      setWtnSinglesInput(data.wtn_singles?.toString() || '')
+      setNationalRankInput(data.usta_national_rank?.toString() || '')
+      setSectionRankInput(data.usta_section_rank?.toString() || '')
+      if (data.usta_win_record != null && data.usta_loss_record != null) {
+        setWinLossInput(
+          `${data.usta_win_record}/${data.usta_loss_record}`,
+        )
+      } else {
+        setWinLossInput('')
+      }
     }
     setLoading(false)
   }
@@ -148,11 +274,30 @@ export default function RecruitingProfile({
       } = await supabase.auth.getUser()
       if (!user) return profileId || null
 
+      const winLossParts = winLossInput
+        .split('/')
+        .map(s => parseInt(s.trim(), 10))
+      const winRecord = winLossParts[0] || null
+      const lossRecord = winLossParts[1] || null
+
       const profileData = {
         player_id: playerId,
         coach_id: user.id,
         usta_uaid: uaId ? parseUstaUaid(uaId) : null,
-        utr_singles: utrSingles ? parseFloat(utrSingles) : null,
+        wtn_singles: wtnSinglesInput ? parseFloat(wtnSinglesInput) : null,
+        wtn_last_updated: wtnSinglesInput
+          ? new Date().toISOString().split('T')[0]
+          : null,
+        usta_national_rank: nationalRankInput
+          ? parseInt(nationalRankInput, 10)
+          : null,
+        usta_section_rank: sectionRankInput
+          ? parseInt(sectionRankInput, 10)
+          : null,
+        usta_win_record: winRecord,
+        usta_loss_record: lossRecord,
+        last_synced_at: new Date().toISOString(),
+        utr_singles: utrSinglesInput ? parseFloat(utrSinglesInput) : null,
         target_division: targetDivision,
         gpa: gpa ? parseFloat(gpa) : null,
         grad_year: gradYear ? parseInt(gradYear, 10) : null,
@@ -162,11 +307,19 @@ export default function RecruitingProfile({
         updated_at: new Date().toISOString(),
       }
 
+      if (sportInput) {
+        await supabase
+          .from('players')
+          .update({ sport: sportInput })
+          .eq('id', playerId)
+      }
+
       if (profileId) {
         await supabase
           .from('recruiting_profiles')
           .update(profileData)
           .eq('id', profileId)
+        await loadProfile()
         return profileId
       }
 
@@ -192,36 +345,84 @@ export default function RecruitingProfile({
     }
   }
 
-  async function syncUSTAData() {
-    if (!uaId) return
-    setSyncing(true)
-    setSyncError('')
-
-    const id = await saveProfile()
+  async function searchUTR() {
+    if (!utrSearch.trim()) return
+    setUtrSearching(true)
+    setUtrResults([])
+    setUtrError('')
     try {
-      const res = await fetch('/api/usta-sync', {
+      const res = await fetch('/api/utr-player-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          uaid: uaId.trim(),
-          profileId: id,
+          action: 'search',
+          query: utrSearch,
         }),
       })
       const data = await res.json()
-
       if (data.success) {
-        setSyncResult(data.data)
-        await loadProfile()
-      } else if (data.fallback) {
-        setSyncError(data.message)
+        setUtrResults(data.players)
+      } else {
+        setUtrError(data.error || 'Search failed')
       }
-    } catch (e) {
-      setSyncError(
-        'Sync failed. You can still enter ' +
-        'rankings manually below.'
-      )
+    } catch (e: unknown) {
+      setUtrError(e instanceof Error ? e.message : 'Search failed')
     }
-    setSyncing(false)
+    setUtrSearching(false)
+  }
+
+  async function linkUTRPlayer(utrPlayer: { id: string | number }) {
+    setUtrSyncing(true)
+    setUtrError('')
+    setUtrResults([])
+
+    await saveProfile()
+
+    try {
+      const res = await fetch('/api/utr-player-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'link',
+          utrPlayerId: utrPlayer.id.toString(),
+          playerId,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setUtrSearch('')
+        await loadProfile()
+      } else {
+        setUtrError(data.error || 'Link failed')
+      }
+    } catch (e: unknown) {
+      setUtrError(e instanceof Error ? e.message : 'Link failed')
+    }
+    setUtrSyncing(false)
+  }
+
+  async function syncUTR() {
+    setUtrSyncing(true)
+    setUtrError('')
+    try {
+      const res = await fetch('/api/utr-player-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sync',
+          playerId,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        await loadProfile()
+      } else {
+        setUtrError(data.error || 'Sync failed')
+      }
+    } catch (e: unknown) {
+      setUtrError(e instanceof Error ? e.message : 'Sync failed')
+    }
+    setUtrSyncing(false)
   }
 
   async function generateProjection() {
@@ -246,16 +447,30 @@ export default function RecruitingProfile({
           profileId: id,
           playerId,
           playerName,
-          sport,
+          sport: sportInput || sport,
           gender,
           gradYear: gradYear ? parseInt(gradYear, 10) : null,
           gpa: gpa ? parseFloat(gpa) : null,
-          wtnSingles: profile?.wtn_singles || null,
-          utrSingles: utrSingles ? parseFloat(utrSingles) : null,
-          nationalRank: profile?.usta_national_rank || null,
-          sectionRank: profile?.usta_section_rank || null,
-          winRecord: profile?.usta_win_record || null,
-          lossRecord: profile?.usta_loss_record || null,
+          wtnSingles: wtnSinglesInput
+            ? parseFloat(wtnSinglesInput)
+            : profile?.wtn_singles || null,
+          utrSingles: utrSinglesInput ? parseFloat(utrSinglesInput) : null,
+          nationalRank: nationalRankInput
+            ? parseInt(nationalRankInput, 10)
+            : profile?.usta_national_rank || null,
+          sectionRank: sectionRankInput
+            ? parseInt(sectionRankInput, 10)
+            : profile?.usta_section_rank || null,
+          winRecord: winLossInput
+            ? parseInt(winLossInput.split('/')[0]?.trim() || '', 10) ||
+              profile?.usta_win_record ||
+              null
+            : profile?.usta_win_record || null,
+          lossRecord: winLossInput
+            ? parseInt(winLossInput.split('/')[1]?.trim() || '', 10) ||
+              profile?.usta_loss_record ||
+              null
+            : profile?.usta_loss_record || null,
           ageCategory: profile?.usta_age_category || null,
           targetDivision,
           geographicPreference: geoPreference || null,
@@ -309,9 +524,155 @@ export default function RecruitingProfile({
     setPublishing(false)
   }
 
-  const projection = profile?.via_projection
+  async function suggestSchools() {
+    setSuggestingSchools(true)
+    setProjectionError('')
+    const id = await saveProfile()
+    if (!id) {
+      setProjectionError('Save profile first, then try again.')
+      setSuggestingSchools(false)
+      return
+    }
+    try {
+      const res = await fetch('/api/recruiting-projection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'suggest_schools',
+          profileId: id,
+          playerName,
+          sport: sportInput || sport,
+          gender,
+          gradYear: gradYear ? parseInt(gradYear, 10) : null,
+          gpa: gpa ? parseFloat(gpa) : null,
+          wtnSingles: wtnSinglesInput
+            ? parseFloat(wtnSinglesInput)
+            : profile?.wtn_singles || null,
+          utrSingles: utrSinglesInput
+            ? parseFloat(utrSinglesInput)
+            : profile?.utr_singles || null,
+          nationalRank: nationalRankInput
+            ? parseInt(nationalRankInput, 10)
+            : profile?.usta_national_rank || null,
+          sectionRank: sectionRankInput
+            ? parseInt(sectionRankInput, 10)
+            : profile?.usta_section_rank || null,
+          winRecord: winLossInput
+            ? parseInt(winLossInput.split('/')[0]?.trim() || '', 10) ||
+              profile?.usta_win_record ||
+              null
+            : profile?.usta_win_record || null,
+          lossRecord: winLossInput
+            ? parseInt(winLossInput.split('/')[1]?.trim() || '', 10) ||
+              profile?.usta_loss_record ||
+              null
+            : profile?.usta_loss_record || null,
+          targetDivision,
+          geographicPreference: geoPreference || null,
+          coachAssessment: coachAssessment || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Suggestions failed')
+      await loadProfile()
+    } catch (e: unknown) {
+      setProjectionError(
+        e instanceof Error ? e.message : 'Could not suggest schools',
+      )
+    }
+    setSuggestingSchools(false)
+  }
+
+  async function verifySuggestedSchool(school: ViaSuggestedSchool) {
+    if (!profileId) return
+    setVerifyingSchool(school.school)
+    const targets =
+      (profile?.via_school_targets as Record<string, unknown[]>) || {}
+    const type = school.type
+    const list = Array.isArray(targets[type]) ? [...targets[type]] : []
+    list.push({
+      school: school.school,
+      division: school.division,
+      why: school.why,
+      wtn_needed: school.wtn_needed,
+      location: school.location,
+      conference: school.conference,
+    })
+    const nextTargets = { ...targets, [type]: list }
+    const remaining = parseSuggestedSchools(
+      profile?.via_suggested_schools,
+    ).filter(s => s.school !== school.school)
+    await supabase
+      .from('recruiting_profiles')
+      .update({
+        via_school_targets: nextTargets,
+        via_suggested_schools: remaining,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', profileId)
+    await loadProfile()
+    setVerifyingSchool(null)
+  }
+
+  async function dismissSuggestedSchool(school: ViaSuggestedSchool) {
+    if (!profileId) return
+    setVerifyingSchool(school.school)
+    const remaining = parseSuggestedSchools(
+      profile?.via_suggested_schools,
+    ).filter(s => s.school !== school.school)
+    await supabase
+      .from('recruiting_profiles')
+      .update({
+        via_suggested_schools: remaining,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', profileId)
+    await loadProfile()
+    setVerifyingSchool(null)
+  }
+
+  const projection = profile?.via_projection as
+    | Record<string, unknown>
+    | string
+    | null
+    | undefined
   const schoolTargets = profile?.via_school_targets
   const timeline = profile?.via_timeline
+  const schools = flattenSchools(schoolTargets)
+  const suggestedSchools = parseSuggestedSchools(
+    profile?.via_suggested_schools,
+  )
+  const outlook = parseRecruitingOutlook(projection)
+  const roadmap = outlook?.actions?.length
+    ? outlook.actions.map(a => ({
+        action: a.detail ? `${a.title} — ${a.detail}` : a.title,
+      }))
+    : roadmapItems(
+        typeof projection === 'object' && projection
+          ? (projection as Record<string, unknown>)
+          : null,
+        timeline,
+      )
+  const summary = outlook?.snapshot || projectionText(projection)
+  const displaySport = sportInput || sport
+  const initials = playerName
+    ?.split(' ')
+    .map(w => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const fieldInput: React.CSSProperties = {
+    width: '100%',
+    padding: '7px 10px',
+    borderRadius: 8,
+    border: `0.5px solid ${BORDER}`,
+    background: WARM_BG,
+    fontSize: 12,
+    color: TEXT,
+    outline: 'none',
+    fontFamily: 'Arial, sans-serif',
+  }
 
   if (loading) {
     return null
@@ -353,508 +714,298 @@ export default function RecruitingProfile({
       <div style={{
         fontFamily: 'Arial, sans-serif',
         color: TEXT,
-        maxWidth: 560,
+        maxWidth: 720,
         margin: '0 auto',
         padding: '0 0 40px',
       }}>
 
-        {/* Hero */}
+        {/* Hero header with rankings */}
         <div style={{
-          background:
-            'linear-gradient(160deg, #04342C, ' +
-            '#085041 55%, #0d1a30)',
-          padding: '24px 20px 20px',
-          borderRadius: 16,
-          marginBottom: 14,
-          position: 'relative',
-          overflow: 'hidden',
+          background: 'white',
+          border: `0.5px solid ${BORDER}`,
+          borderRadius: 14,
+          padding: '18px 20px',
+          marginBottom: 12,
         }}>
           <div style={{
-            position: 'absolute',
-            fontSize: 140,
-            fontWeight: 900,
-            color: 'rgba(255,255,255,.03)',
-            lineHeight: 1,
-            top: -10,
-            right: -10,
-            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            marginBottom: 16,
           }}>
-            {profile.wtn_singles?.toFixed(1) || '—'}
-          </div>
-          <div style={{ position: 'relative' }}>
             <div style={{
-              fontSize: 10,
-              color: 'rgba(255,255,255,.4)',
-              textTransform: 'uppercase',
-              letterSpacing: '.1em',
-              marginBottom: 4,
-            }}>
-              Recruiting Profile · Class of{' '}
-              {profile.grad_year}
-            </div>
-            <div style={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: 'white',
-              marginBottom: 2,
-            }}>
-              {playerName}
-            </div>
-            <div style={{
-              fontSize: 12,
-              color: 'rgba(255,255,255,.5)',
-              marginBottom: 16,
-            }}>
-              Tennis ·{' '}
-              {profile.usta_section || 'USA'} ·
-              Target {profile.target_division}
-            </div>
-            <div style={{
+              width: 52, height: 52,
+              borderRadius: '50%',
+              background: '#E1F5EE',
               display: 'flex',
-              gap: 16,
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 18,
+              fontWeight: 500,
+              color: '#085041',
+              flexShrink: 0,
             }}>
-              {profile.wtn_singles && (
-                <div>
-                  <div style={{
-                    fontSize: 10,
-                    color: 'rgba(255,255,255,.4)',
-                    marginBottom: 1,
-                  }}>
-                    WTN Singles
-                  </div>
-                  <div style={{
-                    fontSize: 22,
-                    fontWeight: 700,
-                    color: 'white',
-                    lineHeight: 1,
-                  }}>
-                    {profile.wtn_singles.toFixed(2)}
-                  </div>
-                </div>
-              )}
-              {profile.usta_national_rank && (
-                <>
-                  <div style={{
-                    width: .5,
-                    background: 'rgba(255,255,255,.1)',
-                  }} />
-                  <div>
-                    <div style={{
-                      fontSize: 10,
-                      color: 'rgba(255,255,255,.4)',
-                      marginBottom: 1,
-                    }}>
-                      National Rank
-                    </div>
-                    <div style={{
-                      fontSize: 22,
-                      fontWeight: 700,
-                      color: 'white',
-                      lineHeight: 1,
-                    }}>
-                      #{profile.usta_national_rank}
-                    </div>
-                  </div>
-                </>
-              )}
-              {techniqueStats?.currentScore && (
-                <>
-                  <div style={{
-                    width: .5,
-                    background: 'rgba(255,255,255,.1)',
-                  }} />
-                  <div>
-                    <div style={{
-                      fontSize: 10,
-                      color: 'rgba(255,255,255,.4)',
-                      marginBottom: 1,
-                    }}>
-                      Technique
-                    </div>
-                    <div style={{
-                      fontSize: 22,
-                      fontWeight: 700,
-                      color: '#5DCAA5',
-                      lineHeight: 1,
-                    }}>
-                      {techniqueStats.currentScore}
-                    </div>
-                  </div>
-                </>
-              )}
+              {initials}
             </div>
+            <div style={{ flex: 1 }}>
+              <div style={{
+                fontSize: 20,
+                fontWeight: 500,
+                color: TEXT,
+                marginBottom: 2,
+              }}>
+                {playerName}
+              </div>
+              <div style={{
+                fontSize: 13,
+                color: TEXT_MUTED,
+              }}>
+                {displaySport} · Class of {profile?.grad_year}
+                {profile?.gpa ? ` · GPA ${profile.gpa}` : ''}
+              </div>
+            </div>
+            {profile?.target_division && (
+              <span style={{
+                padding: '4px 12px',
+                borderRadius: 999,
+                background: '#E1F5EE',
+                border: '0.5px solid #9FE1CB',
+                fontSize: 11,
+                color: '#085041',
+                fontWeight: 500,
+              }}>
+                {String(profile.target_division).toUpperCase()} Target
+              </span>
+            )}
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile
+              ? 'repeat(2,1fr)'
+              : 'repeat(4,1fr)',
+            gap: 10,
+          }}>
+            {[
+              {
+                value: profile?.utr_singles
+                  ? Number(profile.utr_singles).toFixed(2)
+                  : '—',
+                label: 'UTR Singles',
+                highlight: true,
+              },
+              {
+                value: profile?.wtn_singles || '—',
+                label: 'WTN Singles',
+                highlight: false,
+              },
+              {
+                value: profile?.usta_national_rank
+                  ? `#${profile.usta_national_rank}`
+                  : '—',
+                label: 'National rank',
+                highlight: false,
+              },
+              {
+                value: profile?.usta_win_record != null &&
+                  profile?.usta_loss_record != null
+                  ? `${profile.usta_win_record}–${profile.usta_loss_record}`
+                  : '—',
+                label: 'Win / Loss',
+                highlight: false,
+              },
+            ].map(stat => (
+              <div key={stat.label} style={{
+                textAlign: 'center',
+                padding: '12px 8px',
+                background: stat.highlight
+                  ? '#E1F5EE' : WARM_BG,
+                borderRadius: 10,
+                border: stat.highlight
+                  ? '0.5px solid #9FE1CB' : 'none',
+              }}>
+                <div style={{
+                  fontSize: stat.highlight ? 28 : 22,
+                  fontWeight: 500,
+                  color: stat.highlight
+                    ? '#085041' : TEXT,
+                  lineHeight: 1,
+                }}>
+                  {stat.value}
+                </div>
+                <div style={{
+                  fontSize: 10,
+                  color: stat.highlight
+                    ? '#0F6E56' : TEXT_MUTED,
+                  marginTop: 4,
+                  fontWeight: stat.highlight ? 500 : 400,
+                }}>
+                  {stat.label}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Via summary */}
-        {projection?.via_family_summary && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 10,
-            padding: '13px 15px',
-            background:
-              'linear-gradient(135deg, #eaf7f2, ' +
-              '#eff3fe 60%, #f5f0fd)',
-            borderRadius: 14,
-            border:
-              '0.5px solid rgba(29,158,117,.15)',
-            marginBottom: 14,
-          }}>
-            <ViaBlob size={22} style={{ marginTop: 1 }} />
-            <p style={{
-              fontSize: 13,
-              color: TEXT,
-              lineHeight: 1.65,
-              margin: 0,
-            }}>
-              {projection.via_family_summary}
-            </p>
+        {outlook && (
+          <div style={{ marginBottom: 12 }}>
+            <ViaRecruitingOutlookCard
+              outlook={outlook}
+              title="Via — recruiting outlook"
+              compact
+            />
           </div>
         )}
 
-        {/* WTN Projection */}
-        {projection?.projected_wtn_at_graduation && (
-          <div style={{
-            background: 'white',
-            border: `0.5px solid ${BORDER}`,
-            borderRadius: 14,
-            padding: '14px 16px',
-            marginBottom: 14,
-          }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+          gap: 12,
+        }}>
+          <div style={CARD}>
             <div style={{
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 600,
               color: TEXT_MUTED,
               textTransform: 'uppercase',
               letterSpacing: '.07em',
               marginBottom: 10,
             }}>
-              WTN projection
+              Target schools
             </div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: 12,
-            }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{
-                  fontSize: 10,
-                  color: TEXT_MUTED,
-                  marginBottom: 3,
+            {schools.map((school, i) => {
+              const c = SCHOOL_COLORS[school.type] || SCHOOL_COLORS.target
+              return (
+                <div key={i} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: c.bg,
+                  border: `0.5px solid ${c.border}`,
+                  marginBottom: 6,
                 }}>
-                  Today
+                  <div style={{
+                    width: 6, height: 6,
+                    borderRadius: '50%',
+                    background: c.dot,
+                    flexShrink: 0,
+                  }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: c.text,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {school.name}
+                    </div>
+                    <div style={{
+                      fontSize: 10,
+                      color: c.sub,
+                    }}>
+                      {school.division} ·{' '}
+                      {school.type.charAt(0).toUpperCase() +
+                        school.type.slice(1)}
+                    </div>
+                  </div>
                 </div>
-                <div style={{
-                  fontSize: 24,
-                  fontWeight: 800,
-                  color: TEXT,
-                  lineHeight: 1,
-                }}>
-                  {profile.wtn_singles?.toFixed(1)
-                    || '—'}
-                </div>
-              </div>
+              )
+            })}
+            {schools.length === 0 && (
               <div style={{
-                fontSize: 18,
+                fontSize: 12,
                 color: TEXT_MUTED,
-                alignSelf: 'center',
+                textAlign: 'center',
+                padding: '16px 0',
               }}>
-                →
+                Your coach hasn&apos;t added schools yet
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{
-                  fontSize: 10,
-                  color: TEXT_MUTED,
-                  marginBottom: 3,
-                }}>
-                  Junior yr
-                </div>
-                <div style={{
-                  fontSize: 24,
-                  fontWeight: 800,
-                  color: TEAL,
-                  lineHeight: 1,
-                }}>
-                  {projection
-                    .projected_wtn_junior_year
-                    ?.low}
-                  –
-                  {projection
-                    .projected_wtn_junior_year
-                    ?.high}
-                </div>
-              </div>
-              <div style={{
-                fontSize: 18,
-                color: TEXT_MUTED,
-                alignSelf: 'center',
-              }}>
-                →
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{
-                  fontSize: 10,
-                  color: TEXT_MUTED,
-                  marginBottom: 3,
-                }}>
-                  Signing
-                </div>
-                <div style={{
-                  fontSize: 24,
-                  fontWeight: 800,
-                  color: TEAL,
-                  lineHeight: 1,
-                }}>
-                  {projection
-                    .projected_wtn_at_graduation
-                    ?.low}
-                  –
-                  {projection
-                    .projected_wtn_at_graduation
-                    ?.high}
-                </div>
-              </div>
-            </div>
+            )}
+          </div>
+
+          <div style={CARD}>
             <div style={{
               fontSize: 11,
-              color: TEXT_MUTED,
-              textAlign: 'center',
-              fontStyle: 'italic',
-            }}>
-              {projection
-                .projected_wtn_at_graduation?.basis}
-            </div>
-          </div>
-        )}
-
-        {/* School targets */}
-        {schoolTargets && (
-          <div style={{ marginBottom: 14 }}>
-            <div style={{
-              fontSize: 10,
               fontWeight: 600,
               color: TEXT_MUTED,
               textTransform: 'uppercase',
               letterSpacing: '.07em',
-              marginBottom: 9,
+              marginBottom: 10,
             }}>
-              School targets
+              What needs to happen
             </div>
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 7,
-            }}>
-              {schoolTargets.reach?.length > 0 && (
-                <div style={{
-                  background: 'white',
-                  border: '0.5px solid #C4B5FD',
-                  borderRadius: 12,
-                  padding: '11px 13px',
-                }}>
-                  <div style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: PURPLE,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.06em',
-                    marginBottom: 7,
-                  }}>
-                    Reach
-                  </div>
-                  <div style={{
+            {roadmap.length > 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}>
+                {roadmap.slice(0, 4).map((item, i) => (
+                  <div key={i} style={{
                     display: 'flex',
-                    gap: 6,
-                    flexWrap: 'wrap',
+                    alignItems: 'flex-start',
+                    gap: 8,
                   }}>
-                    {schoolTargets.reach.map(
-                      (s: any) => (
-                        <span key={s.school} style={{
-                          padding: '4px 10px',
-                          borderRadius: 999,
-                          background: '#EDE9FE',
-                          border: '0.5px solid #C4B5FD',
-                          fontSize: 11,
-                          color: PURPLE,
-                        }}>
-                          {s.school}
-                        </span>
-                      )
-                    )}
-                  </div>
-                </div>
-              )}
-              {schoolTargets.target?.length > 0 && (
-                <div style={{
-                  background: 'white',
-                  border: '0.5px solid #86EFAC',
-                  borderRadius: 12,
-                  padding: '11px 13px',
-                }}>
-                  <div style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: TEAL,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.06em',
-                    marginBottom: 7,
-                  }}>
-                    Target
-                  </div>
-                  <div style={{
-                    display: 'flex',
-                    gap: 6,
-                    flexWrap: 'wrap',
-                  }}>
-                    {schoolTargets.target.map(
-                      (s: any) => (
-                        <span key={s.school} style={{
-                          padding: '4px 10px',
-                          borderRadius: 999,
-                          background: '#E1F5EE',
-                          border: '0.5px solid #86EFAC',
-                          fontSize: 11,
-                          color: '#0F6E56',
-                        }}>
-                          {s.school}
-                        </span>
-                      )
-                    )}
-                  </div>
-                </div>
-              )}
-              {schoolTargets.likely?.length > 0 && (
-                <div style={{
-                  background: 'white',
-                  border: '0.5px solid #93C5FD',
-                  borderRadius: 12,
-                  padding: '11px 13px',
-                }}>
-                  <div style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: BLUE,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.06em',
-                    marginBottom: 7,
-                  }}>
-                    Likely
-                  </div>
-                  <div style={{
-                    display: 'flex',
-                    gap: 6,
-                    flexWrap: 'wrap',
-                  }}>
-                    {schoolTargets.likely.map(
-                      (s: any) => (
-                        <span key={s.school} style={{
-                          padding: '4px 10px',
-                          borderRadius: 999,
-                          background: '#E6F1FB',
-                          border: '0.5px solid #93C5FD',
-                          fontSize: 11,
-                          color: BLUE,
-                        }}>
-                          {s.school}
-                        </span>
-                      )
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Timeline */}
-        {timeline?.length > 0 && (
-          <div style={{ marginBottom: 14 }}>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 600,
-              color: TEXT_MUTED,
-              textTransform: 'uppercase',
-              letterSpacing: '.07em',
-              marginBottom: 9,
-            }}>
-              Recruiting timeline
-            </div>
-            <div style={{
-              background: 'white',
-              border: `0.5px solid ${BORDER}`,
-              borderRadius: 14,
-              padding: '14px 16px',
-            }}>
-              {timeline.map(
-                (phase: any, i: number) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: 'flex',
-                      gap: 12,
-                      paddingBottom:
-                        i < timeline.length - 1
-                          ? 14 : 0,
-                    }}
-                  >
                     <div style={{
+                      width: 18, height: 18,
+                      borderRadius: '50%',
+                      background: i === 0 ? TEAL : WARM_BG,
+                      border: i === 0
+                        ? 'none'
+                        : `0.5px solid ${BORDER}`,
                       display: 'flex',
-                      flexDirection: 'column',
                       alignItems: 'center',
-                      width: 16,
+                      justifyContent: 'center',
                       flexShrink: 0,
+                      marginTop: 1,
                     }}>
-                      <div style={{
-                        width: 10, height: 10,
-                        borderRadius: '50%',
-                        background:
-                          i === 0 ? TEAL
-                          : i === 1 ? AMBER
-                          : PURPLE,
-                        marginTop: 3,
-                        flexShrink: 0,
-                      }} />
-                      {i < timeline.length - 1 && (
-                        <div style={{
-                          width: 1.5,
-                          flex: 1,
-                          background: BORDER,
-                          marginTop: 3,
-                        }} />
+                      {i === 0 ? (
+                        <svg width="10" height="10"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="white"
+                          strokeWidth="2.5">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : (
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 500,
+                          color: TEXT_MUTED,
+                        }}>
+                          {i + 1}
+                        </span>
                       )}
                     </div>
                     <div style={{
-                      flex: 1,
-                      paddingBottom:
-                        i < timeline.length - 1
-                          ? 4 : 0,
+                      fontSize: 12,
+                      color: TEXT,
+                      lineHeight: 1.5,
                     }}>
-                      <div style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: TEXT,
-                        marginBottom: 2,
-                      }}>
-                        {phase.timeframe}
-                      </div>
-                      <div style={{
-                        fontSize: 12,
-                        color: TEXT_SEC,
-                        lineHeight: 1.55,
-                      }}>
-                        {phase.description}
-                      </div>
+                      {item.action}
                     </div>
                   </div>
-                )
-              )}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{
+                fontSize: 12,
+                color: TEXT_MUTED,
+                textAlign: 'center',
+                padding: '16px 0',
+              }}>
+                Generate a Via projection to see
+                your recruiting roadmap
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* Disclaimer */}
-        {projection?.disclaimer && (
+        {typeof projection === 'object' && projection?.disclaimer && (
           <div style={{
             fontSize: 11,
             color: TEXT_MUTED,
@@ -863,12 +1014,12 @@ export default function RecruitingProfile({
             background: WARM_BG,
             borderRadius: 10,
             fontStyle: 'italic',
+            marginTop: 12,
           }}>
-            {projection.disclaimer}
+            {String(projection.disclaimer)}
           </div>
         )}
 
-        {/* Last updated */}
         {profile.published_at && (
           <div style={{
             textAlign: 'center',
@@ -879,7 +1030,7 @@ export default function RecruitingProfile({
             Published by coach ·{' '}
             {format(
               new Date(profile.published_at),
-              'MMM d, yyyy'
+              'MMM d, yyyy',
             )}
           </div>
         )}
@@ -887,12 +1038,393 @@ export default function RecruitingProfile({
     )
   }
 
-  // ── COACH VIEW ───────────────────────────────────
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 600,
+    color: TEXT_MUTED,
+    textTransform: 'uppercase',
+    letterSpacing: '.07em',
+  }
+
+  const utrSection = (
+    <div style={{
+      background: 'white',
+      border: `0.5px solid ${BORDER}`,
+      borderRadius: 14,
+      padding: '14px 16px',
+      marginBottom: 14,
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 12,
+      }}>
+        <div style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: TEXT_MUTED,
+          textTransform: 'uppercase' as const,
+          letterSpacing: '.07em',
+        }}>
+          UTR
+        </div>
+        {profile?.utr_player_id && (
+          <button
+            type="button"
+            onClick={syncUTR}
+            disabled={utrSyncing}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '3px 9px',
+              borderRadius: 7,
+              border: `0.5px solid ${BORDER}`,
+              background: 'white',
+              fontSize: 11,
+              color: TEXT_MUTED,
+              cursor: utrSyncing ? 'default' : 'pointer',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M23 4v6h-6" />
+              <path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {utrSyncing ? 'Syncing...' : 'Sync'}
+          </button>
+        )}
+      </div>
+
+      {profile?.utr_player_id ? (
+        <>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '12px 14px',
+            background: '#E1F5EE',
+            borderRadius: 10,
+            border: '0.5px solid #9FE1CB',
+            marginBottom: 10,
+          }}>
+            <div>
+              <div style={{
+                fontSize: 32,
+                fontWeight: 500,
+                color: '#085041',
+                lineHeight: 1,
+              }}>
+                {profile.utr_singles != null
+                  ? Number(profile.utr_singles).toFixed(2)
+                  : '—'}
+              </div>
+              <div style={{
+                fontSize: 11,
+                color: '#0F6E56',
+                marginTop: 2,
+              }}>
+                UTR Singles
+              </div>
+            </div>
+            {profile.utr_doubles > 0 && (
+              <>
+                <div style={{
+                  width: 1,
+                  height: 36,
+                  background: '#9FE1CB',
+                }} />
+                <div>
+                  <div style={{
+                    fontSize: 18,
+                    fontWeight: 500,
+                    color: '#085041',
+                    lineHeight: 1,
+                  }}>
+                    {Number(profile.utr_doubles).toFixed(2)}
+                  </div>
+                  <div style={{
+                    fontSize: 11,
+                    color: '#0F6E56',
+                    marginTop: 2,
+                  }}>
+                    UTR Doubles
+                  </div>
+                </div>
+              </>
+            )}
+            {profile.utr_status && (
+              <div style={{ marginLeft: 'auto' }}>
+                <span style={{
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  background: '#085041',
+                  color: 'white',
+                  fontSize: 10,
+                  fontWeight: 500,
+                }}>
+                  {profile.utr_status}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {profile.schedule_strength_score != null && (
+            <div style={{
+              padding: '10px 12px',
+              background: WARM_BG,
+              borderRadius: 9,
+              border: `0.5px solid ${BORDER}`,
+              marginBottom: 10,
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 6,
+              }}>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: TEXT,
+                }}>
+                  Schedule strength
+                </span>
+                <span style={{
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: profile.schedule_strength_score >= 70
+                    ? '#085041'
+                    : profile.schedule_strength_score >= 40
+                      ? '#633806'
+                      : '#A32D2D',
+                }}>
+                  {profile.schedule_strength_score}/100
+                </span>
+              </div>
+              <div style={{
+                height: 5,
+                background: BORDER,
+                borderRadius: 3,
+                overflow: 'hidden',
+                marginBottom: 7,
+              }}>
+                <div style={{
+                  height: 5,
+                  width: `${profile.schedule_strength_score}%`,
+                  background: profile.schedule_strength_score >= 70
+                    ? '#1D9E75'
+                    : profile.schedule_strength_score >= 40
+                      ? '#EF9F27'
+                      : '#E24B4A',
+                  borderRadius: 3,
+                }} />
+              </div>
+              <div style={{
+                display: 'flex',
+                gap: 12,
+                marginBottom: 5,
+              }}>
+                {[
+                  {
+                    value: profile.schedule_avg_opponent_utr?.toFixed(1) || '—',
+                    label: 'Avg opponent',
+                  },
+                  {
+                    value: profile.schedule_highest_utr_beaten?.toFixed(1) || '—',
+                    label: 'Highest beaten',
+                  },
+                  {
+                    value: profile.schedule_quality_wins || 0,
+                    label: 'Quality wins',
+                  },
+                  {
+                    value: `${profile.schedule_win_rate_vs_higher || 0}%`,
+                    label: 'Win vs higher',
+                  },
+                ].map(stat => (
+                  <div key={stat.label} style={{ textAlign: 'center' }}>
+                    <div style={{
+                      fontSize: 14,
+                      fontWeight: 500,
+                      color: TEXT,
+                      lineHeight: 1,
+                    }}>
+                      {stat.value}
+                    </div>
+                    <div style={{
+                      fontSize: 9,
+                      color: TEXT_MUTED,
+                      marginTop: 2,
+                    }}>
+                      {stat.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {profile.schedule_summary && (
+                <div style={{
+                  fontSize: 11,
+                  color: TEXT_SEC,
+                  lineHeight: 1.55,
+                  fontStyle: 'italic',
+                }}>
+                  {profile.schedule_summary}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{
+            fontSize: 10,
+            color: TEXT_MUTED,
+          }}>
+            {profile.utr_display_name && `${profile.utr_display_name} · `}
+            {profile.last_synced_at
+              ? `Synced ${format(new Date(profile.last_synced_at), 'MMM d, h:mm a')}`
+              : 'Not yet synced'}
+          </div>
+        </>
+      ) : (
+        <>
+          <p style={{
+            fontSize: 12,
+            color: TEXT_MUTED,
+            marginBottom: 10,
+            lineHeight: 1.55,
+          }}>
+            Link {playerName}&apos;s UTR account to automatically sync ratings and
+            schedule strength. One-time setup.
+          </p>
+
+          <div style={{
+            display: 'flex',
+            gap: 7,
+            marginBottom: 8,
+          }}>
+            <input
+              value={utrSearch}
+              onChange={e => setUtrSearch(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') searchUTR()
+              }}
+              placeholder={`Search "${playerName}" on UTR`}
+              style={{
+                flex: 1,
+                padding: '9px 12px',
+                borderRadius: 9,
+                border: `0.5px solid ${BORDER}`,
+                background: WARM_BG,
+                fontSize: 13,
+                color: TEXT,
+                outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              onClick={searchUTR}
+              disabled={utrSearching || !utrSearch.trim()}
+              style={{
+                padding: '9px 16px',
+                borderRadius: 9,
+                background: utrSearching ? BORDER : TEAL,
+                border: 'none',
+                color: 'white',
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: utrSearching ? 'default' : 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              {utrSearching ? 'Searching...' : 'Search'}
+            </button>
+          </div>
+
+          {utrResults.length > 0 && (
+            <div style={{
+              border: `0.5px solid ${BORDER}`,
+              borderRadius: 10,
+              overflow: 'hidden',
+              marginBottom: 8,
+            }}>
+              {utrResults.map((p, i) => (
+                <div
+                  key={p.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 13px',
+                    borderTop: i > 0 ? `0.5px solid ${BORDER}` : 'none',
+                    background: i % 2 === 0 ? 'white' : WARM_BG,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: TEXT,
+                      marginBottom: 1,
+                    }}>
+                      {p.name}
+                    </div>
+                    <div style={{
+                      fontSize: 11,
+                      color: TEXT_MUTED,
+                    }}>
+                      UTR {p.singlesUtr || '—'}
+                      {p.location ? ` · ${p.location}` : ''}
+                      {p.ageRange ? ` · ${p.ageRange}` : ''}
+                      {p.gradYear ? ` · Class of ${p.gradYear}` : ''}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => linkUTRPlayer(p)}
+                    disabled={utrSyncing}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: 8,
+                      background: utrSyncing ? BORDER : TEAL,
+                      border: 'none',
+                      color: 'white',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      cursor: utrSyncing ? 'default' : 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {utrSyncing ? 'Linking...' : 'Link →'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {utrError && (
+        <div style={{
+          padding: '8px 12px',
+          borderRadius: 8,
+          background: '#FEF2F2',
+          border: '0.5px solid #FCA5A5',
+          fontSize: 11,
+          color: '#A32D2D',
+          marginTop: 6,
+        }}>
+          {utrError}
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <div style={{
       fontFamily: 'Arial, sans-serif',
       color: TEXT,
-      maxWidth: 600,
+      maxWidth: 1100,
     }}>
       <style>{`
         @keyframes spin {
@@ -900,7 +1432,6 @@ export default function RecruitingProfile({
         }
       `}</style>
 
-      {/* Header */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -919,11 +1450,8 @@ export default function RecruitingProfile({
           }}>
             Recruiting Profile
           </h2>
-          <p style={{
-            fontSize: 12,
-            color: TEXT_MUTED,
-          }}>
-            {playerName} · Tennis
+          <p style={{ fontSize: 12, color: TEXT_MUTED }}>
+            {playerName} · {displaySport}
           </p>
         </div>
         {profile?.published_to_family && (
@@ -931,8 +1459,7 @@ export default function RecruitingProfile({
             padding: '4px 10px',
             borderRadius: 999,
             background: '#E1F5EE',
-            border:
-              '0.5px solid rgba(29,158,117,.2)',
+            border: '0.5px solid rgba(29,158,117,.2)',
             fontSize: 11,
             color: '#0F6E56',
             fontWeight: 600,
@@ -942,791 +1469,682 @@ export default function RecruitingProfile({
         )}
       </div>
 
-      {/* USTA Sync section */}
-      <div style={{
-        background: 'white',
-        border: `0.5px solid ${BORDER}`,
-        borderRadius: 14,
-        padding: '16px 18px',
-        marginBottom: 14,
-      }}>
-        <div style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: TEXT_MUTED,
-          textTransform: 'uppercase',
-          letterSpacing: '.07em',
-          marginBottom: 10,
-        }}>
-          USTA Data Sync
-        </div>
-
-        <div style={{
-          fontSize: 12,
-          color: TEXT_SEC,
-          marginBottom: 10,
-          lineHeight: 1.55,
-        }}>
-          Connect {firstName}'s USTA profile to
-          automatically sync WTN ratings and
-          national rankings.
-        </div>
-
+      {techniqueStats && (
         <div style={{
           display: 'flex',
-          gap: 8,
-          marginBottom: syncResult || syncError
-            ? 10 : 0,
+          gap: 10,
+          flexWrap: 'wrap',
+          marginBottom: 14,
+          padding: '10px 14px',
+          background: 'white',
+          border: `0.5px solid ${BORDER}`,
+          borderRadius: 12,
         }}>
-          <input
-            value={uaId}
-            onChange={e => setUaId(e.target.value)}
-            placeholder="Paste USTA profile URL or player ID"
-            style={{
-              flex: 1,
-              padding: '9px 12px',
-              borderRadius: 9,
-              border: `0.5px solid ${BORDER}`,
-              background: WARM_BG,
-              fontSize: 12,
-              color: TEXT,
-              fontFamily: 'Arial, sans-serif',
-              outline: 'none',
-            }}
-          />
-          <button
-            onClick={syncUSTAData}
-            disabled={!uaId.trim() || syncing}
-            style={{
-              padding: '9px 16px',
-              borderRadius: 9,
-              background: uaId.trim() && !syncing
-                ? TEAL : '#ccc',
-              border: 'none',
-              color: 'white',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: uaId.trim() && !syncing
-                ? 'pointer' : 'default',
-              fontFamily: 'Arial, sans-serif',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            {syncing ? 'Syncing...' : 'Sync →'}
-          </button>
+          <span style={{ fontSize: 12, color: TEXT_MUTED }}>
+            Technique score{' '}
+            <strong style={{ color: TEXT }}>
+              {techniqueStats.currentScore}
+            </strong>
+          </span>
+          {techniqueStats.velocity && (
+            <span style={{ fontSize: 12, color: TEXT_MUTED }}>
+              Velocity{' '}
+              <strong style={{ color: TEAL }}>
+                {techniqueStats.velocity}/session
+              </strong>
+            </span>
+          )}
+          <span style={{ fontSize: 12, color: TEXT_MUTED }}>
+            {techniqueStats.sessionCount} sessions analyzed
+          </span>
         </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: TEXT_MUTED,
-            marginTop: 4,
-            marginBottom: syncResult || syncError ? 10 : 0,
-          }}
-        >
-          e.g. usta.com/...profile.html#uaid=2018494192 or just the number:
-          2018494192
-        </div>
+      )}
 
-        {syncResult && (
-          <div style={{
-            background: '#E1F5EE',
-            border:
-              '0.5px solid rgba(29,158,117,.2)',
-            borderRadius: 9,
-            padding: '9px 12px',
-            display: 'flex',
-            gap: 12,
-            flexWrap: 'wrap',
-          }}>
-            {syncResult.wtnSingles && (
-              <div>
-                <div style={{
-                  fontSize: 9,
-                  color: '#0F6E56',
-                  marginBottom: 1,
-                }}>
-                  WTN Singles
-                </div>
-                <div style={{
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: '#0F6E56',
-                }}>
-                  {syncResult.wtnSingles.toFixed(2)}
-                </div>
-              </div>
-            )}
-            {syncResult.nationalRank && (
-              <div>
-                <div style={{
-                  fontSize: 9,
-                  color: '#0F6E56',
-                  marginBottom: 1,
-                }}>
-                  National Rank
-                </div>
-                <div style={{
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: '#0F6E56',
-                }}>
-                  #{syncResult.nationalRank}
-                </div>
-              </div>
-            )}
-            {syncResult.winRecord !== undefined && (
-              <div>
-                <div style={{
-                  fontSize: 9,
-                  color: '#0F6E56',
-                  marginBottom: 1,
-                }}>
-                  Win/Loss
-                </div>
-                <div style={{
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: '#0F6E56',
-                }}>
-                  {syncResult.winRecord}/
-                  {syncResult.lossRecord}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {syncError && (
-          <div style={{
-            background: '#FFFBEB',
-            border: '0.5px solid #FCD34D',
-            borderRadius: 9,
-            padding: '9px 12px',
-            fontSize: 12,
-            color: AMBER,
-          }}>
-            {syncError}
-          </div>
-        )}
-
-        {profile?.last_synced_at && (
-          <div style={{
-            fontSize: 10,
-            color: TEXT_MUTED,
-            marginTop: 6,
-          }}>
-            Last synced:{' '}
-            {format(
-              new Date(profile.last_synced_at),
-              'MMM d, h:mm a'
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Coach inputs */}
       <div style={{
-        background: 'white',
-        border: `0.5px solid ${BORDER}`,
-        borderRadius: 14,
-        padding: '16px 18px',
-        marginBottom: 14,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
+        display: 'grid',
+        gridTemplateColumns: isMobile
+          ? '1fr'
+          : 'minmax(0,2fr) minmax(0,3fr)',
+        gap: 14,
       }}>
         <div style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: TEXT_MUTED,
-          textTransform: 'uppercase',
-          letterSpacing: '.07em',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
         }}>
-          Player details
-        </div>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 10,
-        }}>
-          <div>
+          {/* Player header */}
+          <div style={CARD}>
             <div style={{
-              fontSize: 11,
-              color: TEXT_MUTED,
-              marginBottom: 4,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 14,
             }}>
-              Grad year
-            </div>
-            <input
-              value={gradYear}
-              onChange={e =>
-                setGradYear(e.target.value)
-              }
-              placeholder="e.g. 2027"
-              style={{
-                width: '100%',
-                padding: '8px 11px',
-                borderRadius: 8,
-                border: `0.5px solid ${BORDER}`,
-                background: WARM_BG,
-                fontSize: 13,
-                color: TEXT,
-                fontFamily: 'Arial, sans-serif',
-                outline: 'none',
-              }}
-            />
-          </div>
-          <div>
-            <div style={{
-              fontSize: 11,
-              color: TEXT_MUTED,
-              marginBottom: 4,
-            }}>
-              GPA (optional)
-            </div>
-            <input
-              value={gpa}
-              onChange={e => setGpa(e.target.value)}
-              placeholder="e.g. 3.8"
-              style={{
-                width: '100%',
-                padding: '8px 11px',
-                borderRadius: 8,
-                border: `0.5px solid ${BORDER}`,
-                background: WARM_BG,
-                fontSize: 13,
-                color: TEXT,
-                fontFamily: 'Arial, sans-serif',
-                outline: 'none',
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Gender */}
-        <div>
-          <div style={{
-            fontSize: 11,
-            color: TEXT_MUTED,
-            marginBottom: 6,
-          }}>
-            Gender
-          </div>
-          <div style={{
-            display: 'flex',
-            gap: 6,
-          }}>
-            {['male', 'female'].map(g => (
-              <button
-                key={g}
-                onClick={() => setGender(g)}
-                style={{
-                  padding: '7px 16px',
-                  borderRadius: 8,
-                  background: gender === g
-                    ? TEAL : 'white',
-                  border: `0.5px solid ${gender === g
-                    ? TEAL : BORDER}`,
-                  color: gender === g
-                    ? 'white' : TEXT_SEC,
+              <div style={{
+                width: 40, height: 40,
+                borderRadius: '50%',
+                background: '#E1F5EE',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 14,
+                fontWeight: 500,
+                color: '#085041',
+                flexShrink: 0,
+              }}>
+                {initials}
+              </div>
+              <div>
+                <div style={{
+                  fontSize: 15,
+                  fontWeight: 500,
+                  color: TEXT,
+                }}>
+                  {playerName}
+                </div>
+                <div style={{
                   fontSize: 12,
-                  fontWeight: gender === g ? 600 : 400,
-                  cursor: 'pointer',
-                  fontFamily: 'Arial, sans-serif',
-                  textTransform: 'capitalize',
-                }}
-              >
-                {g}
-              </button>
-            ))}
-          </div>
-        </div>
+                  color: TEXT_MUTED,
+                }}>
+                  {displaySport} · {gender} · Class of {gradYear || '—'}
+                </div>
+              </div>
+            </div>
 
-        {/* UTR manual */}
-        <div>
-          <div style={{
-            fontSize: 11,
-            color: TEXT_MUTED,
-            marginBottom: 4,
-          }}>
-            UTR Singles (manual — update after tournaments)
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 8,
+            }}>
+              {[
+                {
+                  label: 'Sport',
+                  value: sportInput,
+                  set: setSportInput,
+                  type: 'select' as const,
+                  options: ['tennis', 'golf', 'baseball', 'basketball', 'pickleball'],
+                },
+                {
+                  label: 'Grad year',
+                  value: gradYear,
+                  set: setGradYear,
+                  placeholder: '2027',
+                },
+                {
+                  label: 'GPA',
+                  value: gpa,
+                  set: setGpa,
+                  placeholder: '3.8',
+                },
+                {
+                  label: 'Gender',
+                  value: gender,
+                  set: setGender,
+                  type: 'select' as const,
+                  options: ['male', 'female'],
+                },
+              ].map(field => (
+                <div key={field.label}>
+                  <div style={{
+                    fontSize: 11,
+                    color: TEXT_MUTED,
+                    marginBottom: 4,
+                  }}>
+                    {field.label}
+                  </div>
+                  {field.type === 'select' ? (
+                    <select
+                      value={field.value}
+                      onChange={e => field.set(e.target.value)}
+                      style={fieldInput}
+                    >
+                      {field.options!.map(o => (
+                        <option key={o} value={o}>
+                          {o.charAt(0).toUpperCase() + o.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={field.value || ''}
+                      onChange={e => field.set(e.target.value)}
+                      placeholder={field.placeholder}
+                      style={fieldInput}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-          <input
-            value={utrSingles}
-            onChange={e =>
-              setUtrSingles(e.target.value)
-            }
-            placeholder="e.g. 8.2"
-            style={{
-              width: '100%',
-              padding: '8px 11px',
-              borderRadius: 8,
-              border: `0.5px solid ${BORDER}`,
+
+          {utrSection}
+
+          {/* Rankings */}
+          <div style={CARD}>
+            <div style={{ ...sectionLabel, marginBottom: 12 }}>
+              Rankings
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: 8,
+              marginBottom: 10,
+            }}>
+              {[
+                {
+                  value: wtnSinglesInput || '—',
+                  label: 'WTN Singles',
+                },
+                {
+                  value: nationalRankInput
+                    ? `#${nationalRankInput}` : '—',
+                  label: 'National',
+                },
+                {
+                  value: sectionRankInput
+                    ? `#${sectionRankInput}` : '—',
+                  label: 'Section',
+                },
+              ].map(stat => (
+                <div key={stat.label} style={{
+                  textAlign: 'center',
+                  padding: '10px 8px',
+                  background: WARM_BG,
+                  borderRadius: 9,
+                }}>
+                  <div style={{
+                    fontSize: 20,
+                    fontWeight: 500,
+                    color: '#085041',
+                    lineHeight: 1,
+                  }}>
+                    {stat.value}
+                  </div>
+                  <div style={{
+                    fontSize: 10,
+                    color: TEXT_MUTED,
+                    marginTop: 3,
+                  }}>
+                    {stat.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 10px',
               background: WARM_BG,
-              fontSize: 13,
-              color: TEXT,
-              fontFamily: 'Arial, sans-serif',
-              outline: 'none',
-            }}
-          />
-        </div>
+              borderRadius: 8,
+              marginBottom: 10,
+            }}>
+              <span style={{ fontSize: 12, color: TEXT_MUTED }}>
+                Win / Loss
+              </span>
+              <span style={{
+                fontSize: 13,
+                fontWeight: 500,
+                color: TEXT,
+              }}>
+                {winLossInput || '—'}
+              </span>
+            </div>
 
-        {/* Target division */}
-        <div>
-          <div style={{
-            fontSize: 11,
-            color: TEXT_MUTED,
-            marginBottom: 6,
-          }}>
-            Target division
+            <div style={{
+              borderTop: `0.5px solid ${BORDER}`,
+              paddingTop: 10,
+              marginBottom: 10,
+            }}>
+              <div style={{
+                fontSize: 10,
+                color: TEXT_MUTED,
+                marginBottom: 6,
+              }}>
+                Update manually after tournaments
+              </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: 6,
+              }}>
+                {[
+                  {
+                    label: 'WTN',
+                    value: wtnSinglesInput,
+                    set: setWtnSinglesInput,
+                    placeholder: '9.1',
+                  },
+                  {
+                    label: 'Nat. rank',
+                    value: nationalRankInput,
+                    set: setNationalRankInput,
+                    placeholder: '51',
+                  },
+                  {
+                    label: 'W/L',
+                    value: winLossInput,
+                    set: setWinLossInput,
+                    placeholder: '63/33',
+                  },
+                ].map(f => (
+                  <div key={f.label}>
+                    <div style={{
+                      fontSize: 9,
+                      color: TEXT_MUTED,
+                      marginBottom: 3,
+                    }}>
+                      {f.label}
+                    </div>
+                    <input
+                      value={f.value}
+                      onChange={e => f.set(e.target.value)}
+                      placeholder={f.placeholder}
+                      style={{
+                        ...fieldInput,
+                        padding: '6px 8px',
+                        fontSize: 11,
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
-          <div style={{
-            display: 'flex',
-            gap: 6,
-            flexWrap: 'wrap',
-          }}>
-            {['D1', 'D2', 'D3', 'NAIA', 'JC'].map(
-              d => (
+
+          {/* Target division */}
+          <div style={CARD}>
+            <div style={{ ...sectionLabel, marginBottom: 10 }}>
+              Target division
+            </div>
+            <div style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              marginBottom: 10,
+            }}>
+              {['D1', 'D2', 'D3', 'NAIA', 'JC'].map(d => (
                 <button
                   key={d}
-                  onClick={() =>
-                    setTargetDivision(d)
-                  }
+                  type="button"
+                  onClick={() => setTargetDivision(d)}
                   style={{
-                    padding: '7px 14px',
-                    borderRadius: 8,
+                    padding: '6px 14px',
+                    borderRadius: 999,
+                    border: '0.5px solid',
+                    borderColor:
+                      targetDivision?.toUpperCase() === d
+                        ? '#085041' : BORDER,
                     background:
-                      targetDivision === d
-                        ? TEAL : 'white',
-                    border: `0.5px solid ${targetDivision === d
-                      ? TEAL : BORDER}`,
-                    color: targetDivision === d
-                      ? 'white' : TEXT_SEC,
+                      targetDivision?.toUpperCase() === d
+                        ? '#085041' : 'white',
+                    color:
+                      targetDivision?.toUpperCase() === d
+                        ? 'white' : TEXT_MUTED,
                     fontSize: 12,
-                    fontWeight:
-                      targetDivision === d ? 600 : 400,
+                    fontWeight: 500,
                     cursor: 'pointer',
-                    fontFamily: 'Arial, sans-serif',
                   }}
                 >
                   {d}
                 </button>
-              )
-            )}
-          </div>
-        </div>
-
-        {/* Geographic preference */}
-        <div>
-          <div style={{
-            fontSize: 11,
-            color: TEXT_MUTED,
-            marginBottom: 4,
-          }}>
-            Geographic preference (optional)
-          </div>
-          <input
-            value={geoPreference}
-            onChange={e =>
-              setGeoPreference(e.target.value)
-            }
-            placeholder="e.g. Southeast, Mid-Atlantic"
-            style={{
-              width: '100%',
-              padding: '8px 11px',
-              borderRadius: 8,
-              border: `0.5px solid ${BORDER}`,
-              background: WARM_BG,
-              fontSize: 13,
-              color: TEXT,
-              fontFamily: 'Arial, sans-serif',
-              outline: 'none',
-            }}
-          />
-        </div>
-
-        {/* Coach assessment */}
-        <div>
-          <div style={{
-            fontSize: 11,
-            color: TEXT_MUTED,
-            marginBottom: 4,
-          }}>
-            Your assessment
-          </div>
-          <textarea
-            value={coachAssessment}
-            onChange={e =>
-              setCoachAssessment(e.target.value)
-            }
-            placeholder={
-              `e.g. ${firstName} has D1 upside but needs ` +
-              `1.5 more UTR points. Work ethic is strong. ` +
-              `Footwork is the limiting factor right now.`
-            }
-            style={{
-              width: '100%',
-              height: 90,
-              padding: '9px 11px',
-              borderRadius: 9,
-              border: `0.5px solid ${BORDER}`,
-              background: WARM_BG,
-              fontSize: 12,
-              color: TEXT,
-              fontFamily: 'Arial, sans-serif',
-              resize: 'none',
-              outline: 'none',
-              lineHeight: 1.6,
-            }}
-          />
-        </div>
-
-        <button
-          onClick={saveProfile}
-          style={{
-            padding: '10px',
-            borderRadius: 10,
-            background: WARM_BG,
-            border: `0.5px solid ${BORDER}`,
-            color: TEXT_SEC,
-            fontSize: 13,
-            cursor: 'pointer',
-            fontFamily: 'Arial, sans-serif',
-          }}
-        >
-          Save details
-        </button>
-      </div>
-
-      {/* Technique data from Playvia */}
-      {techniqueStats && (
-        <div style={{
-          background: '#E1F5EE',
-          border:
-            '0.5px solid rgba(29,158,117,.2)',
-          borderRadius: 14,
-          padding: '13px 16px',
-          marginBottom: 14,
-        }}>
-          <div style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: '#0F6E56',
-            textTransform: 'uppercase',
-            letterSpacing: '.07em',
-            marginBottom: 8,
-          }}>
-            Playvia technique data
-            (auto-included in projection)
-          </div>
-          <div style={{
-            display: 'flex',
-            gap: 14,
-            flexWrap: 'wrap',
-          }}>
+              ))}
+            </div>
             <div>
               <div style={{
-                fontSize: 9,
-                color: '#0F6E56',
-                marginBottom: 1,
+                fontSize: 11,
+                color: TEXT_MUTED,
+                marginBottom: 4,
               }}>
-                Technique score
+                Geographic preference
               </div>
-              <div style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: '#0F6E56',
-              }}>
-                {techniqueStats.currentScore}
-              </div>
-            </div>
-            {techniqueStats.velocity && (
-              <div>
-                <div style={{
-                  fontSize: 9,
-                  color: '#0F6E56',
-                  marginBottom: 1,
-                }}>
-                  Improvement rate
-                </div>
-                <div style={{
-                  fontSize: 18,
-                  fontWeight: 700,
-                  color: '#0F6E56',
-                }}>
-                  +{techniqueStats.velocity}
-                  pts/session
-                </div>
-              </div>
-            )}
-            <div>
-              <div style={{
-                fontSize: 9,
-                color: '#0F6E56',
-                marginBottom: 1,
-              }}>
-                Sessions
-              </div>
-              <div style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: '#0F6E56',
-              }}>
-                {techniqueStats.sessionCount}
-              </div>
+              <input
+                value={geoPreference}
+                onChange={e => setGeoPreference(e.target.value)}
+                placeholder="e.g. Southeast, Mid-Atlantic"
+                style={{ ...fieldInput, padding: '8px 10px' }}
+              />
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Generate button */}
-      <button
-        onClick={generateProjection}
-        disabled={generating}
-        style={{
-          width: '100%',
-          padding: 14,
-          borderRadius: 12,
-          background: generating
-            ? '#ccc'
-            : 'linear-gradient(135deg, #eaf7f2, ' +
-              '#eff3fe 60%, #f5f0fd)',
-          border:
-            '0.5px solid rgba(29,158,117,.2)',
-          color: '#0F6E56',
-          fontSize: 14,
-          fontWeight: 700,
-          cursor: generating
-            ? 'default' : 'pointer',
-          fontFamily: 'Arial, sans-serif',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 9,
-          marginBottom: 14,
-          transition: 'opacity 0.15s',
-        }}
-      >
-        {!generating && (
-          <div style={{ flexShrink: 0, pointerEvents: 'none' }}>
-            <ViaBlob size={20} />
-          </div>
-        )}
-        {generating ? (
-          <span
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              justifyContent: 'center',
-            }}
-          >
-            <div
+          {/* Coach assessment */}
+          <div style={CARD}>
+            <div style={{ ...sectionLabel, marginBottom: 8 }}>
+              Coach assessment
+            </div>
+            <textarea
+              value={coachAssessment}
+              onChange={e => setCoachAssessment(e.target.value)}
+              placeholder={`e.g. ${firstName} has D1 upside but needs 1.5 more UTR points...`}
+              rows={4}
               style={{
-                width: 14,
-                height: 14,
-                border: '2px solid rgba(15,110,86,.25)',
-                borderTopColor: '#0F6E56',
-                borderRadius: '50%',
-                animation: 'spin .8s linear infinite',
+                width: '100%',
+                padding: '9px 12px',
+                borderRadius: 9,
+                border: `0.5px solid ${BORDER}`,
+                background: WARM_BG,
+                fontSize: 13,
+                color: TEXT,
+                outline: 'none',
+                resize: 'vertical',
+                lineHeight: 1.6,
+                fontFamily: 'Arial, sans-serif',
               }}
             />
-            Via is generating...
-          </span>
-        ) : profile?.via_projection ? (
-          'Regenerate projection'
-        ) : (
-          'Generate with Via →'
-        )}
-      </button>
-
-      {projectionError && (
-        <div
-          style={{
-            marginTop: 8,
-            marginBottom: 14,
-            padding: '10px 14px',
-            borderRadius: 10,
-            background: '#FEF2F2',
-            border: '0.5px solid #FCA5A5',
-            fontSize: 12,
-            color: '#A32D2D',
-            lineHeight: 1.55,
-          }}
-        >
-          {projectionError}
-        </div>
-      )}
-
-      {/* Generated projection preview */}
-      {projection && (
-        <div style={{
-          background: 'white',
-          border: `0.5px solid ${BORDER}`,
-          borderRadius: 14,
-          padding: '16px 18px',
-          marginBottom: 14,
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 12,
-            flexWrap: 'wrap',
-            gap: 8,
-          }}>
-            <div style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: TEXT,
-            }}>
-              Via's projection
-            </div>
-            <div style={{
-              fontSize: 10,
-              padding: '3px 9px',
-              borderRadius: 999,
-              background: WARM_BG,
-              border: `0.5px solid ${BORDER}`,
-              color: TEXT_MUTED,
-            }}>
-              Confidence: {projection.confidence}
-            </div>
           </div>
 
-          <p style={{
-            fontSize: 13,
-            color: TEXT,
-            lineHeight: 1.65,
-            marginBottom: 14,
-          }}>
-            {projection.overall_assessment}
-          </p>
-
-          {/* What needs to happen */}
-          {projection.what_needs_to_happen
-            ?.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: TEXT_MUTED,
-                textTransform: 'uppercase',
-                letterSpacing: '.07em',
-                marginBottom: 8,
-              }}>
-                What needs to happen
-              </div>
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 6,
-              }}>
-                {projection
-                  .what_needs_to_happen
-                  .map((item: any, i: number) => (
-                    <div key={i} style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 8,
-                      padding: '9px 12px',
-                      background: WARM_BG,
-                      border:
-                        `0.5px solid ${BORDER}`,
-                      borderRadius: 9,
-                    }}>
-                      <div style={{
-                        width: 6, height: 6,
-                        borderRadius: '50%',
-                        background:
-                          item.priority ===
-                            'critical' ? RED
-                          : item.priority ===
-                            'important' ? AMBER
-                          : TEAL,
-                        flexShrink: 0,
-                        marginTop: 4,
-                      }} />
-                      <div>
-                        <div style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: TEXT,
-                          marginBottom: 2,
-                        }}>
-                          {item.action}
-                        </div>
-                        <div style={{
-                          fontSize: 11,
-                          color: TEXT_SEC,
-                          lineHeight: 1.5,
-                        }}>
-                          {item.why}
-                        </div>
-                        {item.technique_connection && (
-                          <div style={{
-                            fontSize: 10,
-                            color: TEAL,
-                            marginTop: 3,
-                          }}>
-                            📊 {item
-                              .technique_connection}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => { saveProfile() }}
+            style={{
+              width: '100%',
+              padding: '11px',
+              borderRadius: 10,
+              background: TEAL,
+              border: 'none',
+              color: 'white',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Save details
+          </button>
         </div>
-      )}
 
-      {/* Publish button */}
-      {projection && (
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 8,
+          gap: 12,
         }}>
-          <button
-            onClick={publishToFamily}
-            disabled={publishing}
-            style={{
-              width: '100%',
-              padding: 14,
-              borderRadius: 12,
-              background: publishing
-                ? '#ccc' : TEAL,
-              border: 'none',
-              color: 'white',
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: publishing
-                ? 'default' : 'pointer',
-              fontFamily: 'Arial, sans-serif',
-            }}
-          >
-            {publishing
-              ? 'Publishing...'
-              : profile?.published_to_family
-              ? 'Update published profile'
-              : 'Publish to family →'}
-          </button>
-          <p style={{
-            fontSize: 11,
-            color: TEXT_MUTED,
-            textAlign: 'center',
-            margin: 0,
-          }}>
-            Family sees a read-only view.
-            You can update and republish anytime.
-          </p>
+          {/* Via projection */}
+          <div>
+            {outlook ? (
+              <div style={{ marginBottom: 10 }}>
+                <ViaRecruitingOutlookCard
+                  outlook={outlook}
+                  title="Via projection"
+                  generatedAt={
+                    profile?.via_generated_at
+                      ? format(
+                          new Date(profile.via_generated_at),
+                          'MMM d',
+                        )
+                      : profile?.updated_at
+                        ? format(
+                            new Date(profile.updated_at),
+                            'MMM d',
+                          )
+                        : null
+                  }
+                />
+              </div>
+            ) : (
+              <div style={{
+                background: '#E1F5EE',
+                border: '0.5px solid #9FE1CB',
+                borderRadius: 14,
+                padding: '14px 16px',
+                marginBottom: 10,
+              }}>
+                <p style={{
+                  fontSize: 13,
+                  color: '#0F6E56',
+                  lineHeight: 1.6,
+                  margin: 0,
+                  fontStyle: 'italic',
+                }}>
+                  Fill in rankings and assessment,
+                  then generate a Via projection.
+                </p>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={generateProjection}
+                disabled={generating}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 9,
+                  background: generating ? '#9FE1CB' : '#085041',
+                  border: 'none',
+                  color: 'white',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: generating ? 'default' : 'pointer',
+                }}
+              >
+                {generating ? 'Generating...' : outlook
+                  ? 'Regenerate projection'
+                  : 'Generate with Via →'}
+              </button>
+            </div>
+
+            {projectionError && (
+              <div style={{
+                marginTop: 8,
+                padding: '8px 12px',
+                borderRadius: 8,
+                background: '#FEF2F2',
+                border: '0.5px solid #FCA5A5',
+                fontSize: 12,
+                color: '#A32D2D',
+              }}>
+                {projectionError}
+              </div>
+            )}
+          </div>
+
+          {/* School targets */}
+          <div style={CARD}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 12,
+              gap: 8,
+              flexWrap: 'wrap',
+            }}>
+              <div style={sectionLabel}>
+                School targets
+              </div>
+              <button
+                type="button"
+                onClick={suggestSchools}
+                disabled={suggestingSchools}
+                style={{
+                  fontSize: 11,
+                  color: TEAL,
+                  background: 'none',
+                  border: 'none',
+                  cursor: suggestingSchools ? 'default' : 'pointer',
+                  fontWeight: 500,
+                }}
+              >
+                {suggestingSchools ? 'Suggesting...' : '+ Suggest with Via'}
+              </button>
+            </div>
+            <ViaSchoolSuggestionsCard
+              schools={suggestedSchools}
+              onVerify={verifySuggestedSchool}
+              onDismiss={dismissSuggestedSchool}
+              verifying={verifyingSchool}
+            />
+            {schools.length === 0 ? (
+              <p style={{
+                fontSize: 12,
+                color: TEXT_MUTED,
+                margin: 0,
+              }}>
+                Generate a Via projection to populate school targets.
+              </p>
+            ) : (
+              schools.map((school, i) => {
+                const c = SCHOOL_COLORS[school.type] || SCHOOL_COLORS.target
+                return (
+                  <div key={i} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '9px 12px',
+                    borderRadius: 9,
+                    background: c.bg,
+                    border: `0.5px solid ${c.border}`,
+                    marginBottom: 6,
+                  }}>
+                    <div style={{
+                      width: 6, height: 6,
+                      borderRadius: '50%',
+                      background: c.dot,
+                      flexShrink: 0,
+                    }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: c.text,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {school.name}
+                      </div>
+                      <div style={{
+                        fontSize: 11,
+                        color: c.sub,
+                      }}>
+                        {school.division}
+                        {school.conference
+                          ? ` · ${school.conference}` : ''}
+                        {school.location
+                          ? ` · ${school.location}` : ''}
+                      </div>
+                    </div>
+                    <span style={{
+                      padding: '2px 9px',
+                      borderRadius: 999,
+                      background: c.badge,
+                      color: 'white',
+                      fontSize: 10,
+                      fontWeight: 500,
+                      flexShrink: 0,
+                      textTransform: 'capitalize',
+                    }}>
+                      {school.type}
+                    </span>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* Timeline */}
+          {Array.isArray(timeline) && timeline.length > 0 && (
+            <div style={CARD}>
+              <div style={{ ...sectionLabel, marginBottom: 12 }}>
+                Recruiting timeline
+              </div>
+              {timeline.map((phase: { timeframe?: string; description?: string }, i: number) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    gap: 12,
+                    paddingBottom: i < timeline.length - 1 ? 14 : 0,
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    width: 16,
+                    flexShrink: 0,
+                  }}>
+                    <div style={{
+                      width: 10, height: 10,
+                      borderRadius: '50%',
+                      background: i === 0 ? TEAL : i === 1 ? AMBER : PURPLE,
+                      marginTop: 3,
+                    }} />
+                    {i < timeline.length - 1 && (
+                      <div style={{
+                        width: 1.5,
+                        flex: 1,
+                        background: BORDER,
+                        marginTop: 3,
+                        minHeight: 20,
+                      }} />
+                    )}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: TEXT,
+                      marginBottom: 2,
+                    }}>
+                      {phase.timeframe}
+                    </div>
+                    <div style={{
+                      fontSize: 12,
+                      color: TEXT_SEC,
+                      lineHeight: 1.55,
+                    }}>
+                      {phase.description}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {outlook && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}>
+              <button
+                type="button"
+                onClick={publishToFamily}
+                disabled={publishing}
+                style={{
+                  width: '100%',
+                  padding: 14,
+                  borderRadius: 12,
+                  background: publishing ? '#ccc' : TEAL,
+                  border: 'none',
+                  color: 'white',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: publishing ? 'default' : 'pointer',
+                }}
+              >
+                {publishing
+                  ? 'Publishing...'
+                  : profile?.published_to_family
+                    ? 'Update published profile'
+                    : 'Publish to family →'}
+              </button>
+              <p style={{
+                fontSize: 11,
+                color: TEXT_MUTED,
+                textAlign: 'center',
+                margin: 0,
+              }}>
+                Family sees a read-only view.
+                You can update and republish anytime.
+              </p>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
-}
 
+}

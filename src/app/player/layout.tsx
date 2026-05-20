@@ -58,18 +58,10 @@ export default async function PlayerLayout({ children }: { children: React.React
 
   if (player) {
     const sport = (player.sport || 'tennis').toLowerCase()
-    const recruitingSport =
-      sport === 'tennis' || sport === 'pickleball' || sport === 'baseball'
-    if (recruitingSport) {
-      showRecruitingNav = true
-    } else {
-      const { count } = await supabase
-        .from('recruiting_profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('player_id', player.id)
-        .eq('published_to_family', true)
-      showRecruitingNav = (count ?? 0) > 0
-    }
+    showRecruitingNav =
+      sport === 'tennis' ||
+      sport === 'pickleball' ||
+      sport === 'baseball'
   }
 
   return (

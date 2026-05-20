@@ -1,4 +1,5 @@
 import type { ViaCreateDrill } from '@/lib/via-drill'
+import type { ViaSuggestedSchool } from '@/lib/recruiting-outlook'
 
 export type ViaShowPlayer = {
   id: string
@@ -24,11 +25,18 @@ export type ViaShowRecruitingPayload = {
   href: string
 }
 
+export type ViaSuggestSchoolsPayload = {
+  player_name?: string
+  player_id?: string
+  schools: ViaSuggestedSchool[]
+}
+
 export type ViaUniversalParseResult = {
   response: string
   createDrill: ViaCreateDrill | null
   showPlayers: ViaShowPlayersPayload | null
   showRecruiting: ViaShowRecruitingPayload | null
+  suggestSchools: ViaSuggestSchoolsPayload | null
   navigate: string | null
 }
 
@@ -52,6 +60,7 @@ export function parseViaUniversalOutput(raw: string): ViaUniversalParseResult {
   let createDrill: ViaCreateDrill | null = null
   let showPlayers: ViaShowPlayersPayload | null = null
   let showRecruiting: ViaShowRecruitingPayload | null = null
+  let suggestSchools: ViaSuggestSchoolsPayload | null = null
   let navigate: string | null = null
 
   const actionRegex = /ACTION:([A-Z_]+):/g
@@ -86,6 +95,9 @@ export function parseViaUniversalOutput(raw: string): ViaUniversalParseResult {
         case 'SHOW_RECRUITING':
           showRecruiting = payload as ViaShowRecruitingPayload
           break
+        case 'SUGGEST_SCHOOLS':
+          suggestSchools = payload as ViaSuggestSchoolsPayload
+          break
         case 'NAVIGATE':
           if (typeof payload.path === 'string') navigate = payload.path
           break
@@ -117,6 +129,7 @@ export function parseViaUniversalOutput(raw: string): ViaUniversalParseResult {
     createDrill,
     showPlayers,
     showRecruiting,
+    suggestSchools,
     navigate,
   }
 }

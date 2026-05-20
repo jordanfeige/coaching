@@ -5,10 +5,8 @@ import { format } from 'date-fns'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2, Sparkles, Video, BookOpen, Dumbbell, Clock, RefreshCw, X, CheckCircle, TrendingUp, GraduationCap } from 'lucide-react'
 import RecruitingProfile from '@/components/RecruitingProfile'
-import AnalysisResultStepper, {
-  mapAnalysisIssues,
-  mapAnalysisStrengths,
-} from '@/components/AnalysisResultStepper'
+import CoachRecruitingWaiting from '@/components/CoachRecruitingWaiting'
+import AnalysisStepperDialog from '@/components/video/AnalysisStepperDialog'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -23,12 +21,18 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import VideoAnalysisDialog, {
+import {
   analysisPreviewHeadline,
   issueSeverityCounts,
 } from '@/components/video/VideoAnalysisDialog'
+import {
+  buildCoachReviewConfig,
+  findAnalysisSession,
+  getVideoAnalysisRecord,
+  resolveAnalysisSessionId,
+} from '@/lib/analysis-display'
 import { cn } from '@/lib/utils'
-import { isImageMediaPath } from '@/lib/video-frames'
+import { mimeTypeFromStoragePath } from '@/lib/video-frames'
 import { titleInitials } from '@/lib/video-thumbnails'
 import PlayerOverviewTab from '@/components/player/PlayerOverviewTab'
 import ViaBar from '@/components/ViaBar'
@@ -76,21 +80,6 @@ function shotTypeOptionsForSport(s?: string | null): string[] {
   return SHOT_TYPE_OPTIONS[analysisSportKey(s)] || SHOT_TYPE_OPTIONS.tennis
 }
 
-async function mediaUrlToBase64(url: string): Promise<{ base64: string; mimeType: string }> {
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Could not download media (HTTP ${response.status}). Reload and try again.`)
-  }
-  const blob = await response.blob()
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
-    reader.onerror = () => reject(new Error('Could not read media file.'))
-    reader.readAsDataURL(blob)
-  })
-  return { base64, mimeType: blob.type || 'video/mp4' }
-}
-
 function skillBadgeVariant(level: string): 'default' | 'secondary' | 'destructive' {
   if (level === 'advanced') return 'destructive'
   if (level === 'intermediate') return 'secondary'
@@ -102,6 +91,12 @@ function lessonStatusVariant(status: string): 'default' | 'secondary' | 'destruc
   if (status === 'cancelled') return 'destructive'
   return 'outline'
 }
+
+const UTR_TEAL = '#1D9E75'
+const UTR_BORDER = 'hsl(30,10%,88%)'
+const UTR_TEXT = 'hsl(220,20%,15%)'
+const UTR_TEXT_MUTED = 'hsl(220,10%,65%)'
+const UTR_WARM_BG = 'hsl(40,20%,97%)'
 
 export default function PlayerDetailPage() {
   const { id } = useParams()
@@ -130,15 +125,38 @@ export default function PlayerDetailPage() {
   const [videoUrls, setVideoUrls] = useState<Record<string, string>>({})
   const [compareMode, setCompareMode] = useState(false)
   const [compareVideoId, setCompareVideoId] = useState<string | null>(null)
-  const [sheetVideo, setSheetVideo] = useState<any>(null)
   const [shotType, setShotType] = useState('')
-  const [coachingVideos, setCoachingVideos] = useState<Record<string, any[]>>({})
-  const [loadingCoachingVideo, setLoadingCoachingVideo] = useState<string | null>(null)
-  const [coachReelFlow, setCoachReelFlow] = useState<{
+  const [analysisFlow, setAnalysisFlow] = useState<{
     video: any
-    sessionId: string
+    sessionId?: string
     analysis: Record<string, unknown>
   } | null>(null)
+  const [recruitingProfile, setRecruitingProfile] = useState<{
+    wizard_completed?: boolean
+    updated_at?: string
+  } | null>(null)
+  const [showUTRLink, setShowUTRLink] = useState(false)
+  const [utrSearchQuery, setUtrSearchQuery] = useState('')
+  const [utrSearchResults, setUtrSearchResults] = useState<
+    { id: string | number; name: string; singlesUtr?: number; location?: string; ageRange?: string }[]
+  >([])
+  const [utrSearching, setUtrSearching] = useState(false)
+  const [utrLinking, setUtrLinking] = useState(false)
+  const [utrSearchError, setUtrSearchError] = useState('')
+
+  async function parseApiJson(res: Response) {
+    const text = await res.text()
+    if (!text.trim()) return { success: false as const, error: 'Empty response from server' }
+    try {
+      return JSON.parse(text) as {
+        success?: boolean
+        players?: typeof utrSearchResults
+        error?: string
+      }
+    } catch {
+      return { success: false as const, error: 'Invalid response from server' }
+    }
+  }
 
   const supabase = createClient()
 
@@ -164,6 +182,9 @@ export default function PlayerDetailPage() {
     if (requestedTab === 'video' || requestedTab === 'reels') {
       setTab('video')
     }
+    if (requestedTab === 'recruiting') {
+      setTab('recruiting')
+    }
   }, [])
 
   async function loadAll() {
@@ -173,12 +194,55 @@ export default function PlayerDetailPage() {
     const { data: l } = await supabase.from('lessons').select('*, journal_entries(content, created_at)').eq('player_id', id).order('starts_at', { ascending: false })
     const { data: v } = await supabase.from('videos').select('*').eq('player_id', id).order('recorded_at', { ascending: false })
     const { data: s } = await supabase.from('analysis_sessions').select('*').eq('player_id', id).order('analyzed_at', { ascending: true })
+    const { data: recruiting } = await supabase
+      .from('recruiting_profiles')
+      .select('wizard_completed, updated_at')
+      .eq('player_id', id)
+      .maybeSingle()
     setPlayer(p)
+    setRecruitingProfile(recruiting)
     setEntries(e || [])
     setDrills(d || [])
     setLessons(l || [])
     setVideos(v || [])
     setPlayerSessions(s || [])
+  }
+
+  async function doUTRSearch() {
+    if (!utrSearchQuery.trim()) return
+    setUtrSearching(true)
+    setUtrSearchResults([])
+    setUtrSearchError('')
+    try {
+      const res = await fetch('/api/utr-player-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'search',
+          query: utrSearchQuery,
+        }),
+      })
+      const data = await parseApiJson(res)
+      if (data.success) {
+        setUtrSearchResults(data.players || [])
+        if (!(data.players || []).length) {
+          setUtrSearchError('No players found — try a different name or spelling.')
+        }
+      } else {
+        setUtrSearchError(
+          data.error ||
+            (res.status === 401
+              ? 'Please sign in again to search UTR.'
+              : `Search failed (${res.status})`),
+        )
+      }
+    } catch (e) {
+      console.error('UTR search error:', e)
+      setUtrSearchError(
+        e instanceof Error ? e.message : 'Search failed — check your connection.',
+      )
+    }
+    setUtrSearching(false)
   }
 
   async function addEntry() {
@@ -262,12 +326,14 @@ export default function PlayerDetailPage() {
     return data?.signedUrl || ''
   }
 
-  async function openAnalysisSheet(video: any) {
-    setSheetVideo(video)
-    if (!videoUrls[video.id]) {
-      const u = await getVideoUrl(video.storage_path)
-      if (u) setVideoUrls(prev => ({ ...prev, [video.id]: u }))
+  function openAnalysisStepper(video: any) {
+    const analysis = getVideoAnalysisRecord(video, videoAnalysis, playerSessions)
+    if (!analysis) {
+      alert('No analysis yet. Use Add to Reels first.')
+      return
     }
+    const sessionId = resolveAnalysisSessionId(analysis, video.id, playerSessions)
+    setAnalysisFlow({ video, analysis, sessionId })
   }
 
   async function analyzeVideo(video: any, compareVideo?: any) {
@@ -279,30 +345,26 @@ export default function PlayerDetailPage() {
         return
       }
       setVideoUrls(prev => ({ ...prev, [video.id]: url }))
-      const media = await mediaUrlToBase64(url)
 
       const compareUrl = compareVideo ? await getVideoUrl(compareVideo.storage_path) : undefined
       if (compareVideo && !compareUrl) {
         alert('Could not access the comparison video. Reload and try again.')
         return
       }
-      const compareMedia = compareUrl ? await mediaUrlToBase64(compareUrl) : null
-      const isPrimaryImage = media.mimeType.startsWith('image/') || isImageMediaPath(video.storage_path || video.title)
-      const isCompareImage = compareVideo && compareMedia
-        ? compareMedia.mimeType.startsWith('image/') || isImageMediaPath(compareVideo.storage_path || compareVideo.title)
-        : false
       const playerHistory = entries.slice(0, 3).map(entry => entry.content).join('\n---\n')
       const response = await fetch('/api/video-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...(isPrimaryImage
-            ? { imageBase64: media.base64, mediaType: media.mimeType }
-            : { videoBase64: media.base64, videoMimeType: media.mimeType }),
-          ...(compareMedia
-            ? isCompareImage
-              ? { compareImageBase64: compareMedia.base64, compareMediaType: compareMedia.mimeType }
-              : { compareVideoBase64: compareMedia.base64, compareVideoMimeType: compareMedia.mimeType }
+          videoUrl: url,
+          videoMimeType: mimeTypeFromStoragePath(video.storage_path || video.title),
+          ...(compareUrl
+            ? {
+                compareVideoUrl: compareUrl,
+                compareVideoMimeType: mimeTypeFromStoragePath(
+                  compareVideo.storage_path || compareVideo.title,
+                ),
+              }
             : {}),
           playerName: player?.name,
           playerId: player?.id || id || null,
@@ -310,6 +372,7 @@ export default function PlayerDetailPage() {
           shotType,
           playerHistory,
           cameraAngle: 'side-on',
+          existingVideoId: video.id,
           storagePath: video.storage_path
             ? `videos/${video.storage_path}`
             : undefined,
@@ -318,8 +381,16 @@ export default function PlayerDetailPage() {
       })
       const analysis = await response.json()
       if (!response.ok || analysis.error) {
-        throw new Error(analysis.error || 'Reel failed')
+        const message =
+          response.status === 413
+            ? 'Video file is too large for inline upload. Hard-refresh the page and try Re-run reel again.'
+            : analysis.error || 'Reel failed'
+        throw new Error(message)
       }
+      await supabase
+        .from('videos')
+        .update({ ai_analysis: JSON.stringify(analysis) })
+        .eq('id', video.id)
       const sessionId =
         typeof analysis.sessionId === 'string'
           ? analysis.sessionId
@@ -329,7 +400,8 @@ export default function PlayerDetailPage() {
       if (!sessionId) {
         throw new Error('Analysis saved but session id missing')
       }
-      setCoachReelFlow({ video, sessionId, analysis })
+      setVideoAnalysis(prev => ({ ...prev, [video.id]: analysis }))
+      setAnalysisFlow({ video, sessionId, analysis })
     } catch (e: any) {
       alert(`Reel failed: ${e.message}`)
     } finally {
@@ -337,29 +409,6 @@ export default function PlayerDetailPage() {
       setCompareMode(false)
       setCompareVideoId(null)
       loadAll()
-    }
-  }
-
-  async function fetchCoachingVideos(issueArea: string, drill?: string) {
-    setLoadingCoachingVideo(issueArea)
-    try {
-      const response = await fetch('/api/youtube-coaching', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          issue: drill,
-          issueArea,
-          sport: player?.sport,
-          shotType,
-        }),
-      })
-      const payload = await response.json()
-      if (!response.ok || payload.error) throw new Error(payload.error || 'Failed to find coaching videos')
-      setCoachingVideos(prev => ({ ...prev, [issueArea]: payload.videos || [] }))
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to find coaching videos')
-    } finally {
-      setLoadingCoachingVideo(null)
     }
   }
 
@@ -458,6 +507,25 @@ export default function PlayerDetailPage() {
               <Badge variant="outline" className="capitalize">
                 {(normalizeSportKey(player.sport || 'tennis')).replace(/^./, c => c.toUpperCase())}
               </Badge>
+              <button
+                type="button"
+                onClick={() => setTab('recruiting')}
+                className="inline-flex"
+              >
+                <Badge
+                  variant={player.utr_player_id ? 'default' : 'outline'}
+                  className={cn(
+                    'cursor-pointer',
+                    player.utr_player_id
+                      ? 'bg-[#085041] hover:bg-[#0F6E56]'
+                      : 'text-amber-700 border-amber-300 bg-amber-50 hover:bg-amber-100',
+                  )}
+                >
+                  {player.utr_player_id
+                    ? `UTR linked${player.utr_singles != null ? ` · ${Number(player.utr_singles).toFixed(2)}` : ''}`
+                    : 'UTR not linked'}
+                </Badge>
+              </button>
             </div>
           </div>
         </div>
@@ -495,6 +563,26 @@ export default function PlayerDetailPage() {
           fixedIssues={fixedIssues}
           totalGain={totalGain}
           nextLesson={nextLesson}
+          utrLinked={!!player.utr_player_id}
+          utrSingles={player.utr_singles}
+          utrLastSynced={player.utr_last_synced}
+          onLinkUTR={() => {
+            setUtrSearchQuery(player.name || '')
+            setUtrSearchResults([])
+            setUtrSearchError('')
+            setShowUTRLink(true)
+          }}
+          onSyncUTR={async () => {
+            await fetch('/api/utr-player-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'sync',
+                playerId: player.id,
+              }),
+            })
+            loadAll()
+          }}
         />
       )}
 
@@ -840,9 +928,7 @@ export default function PlayerDetailPage() {
               )}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {videos.map(video => {
-                  const analysis =
-                    videoAnalysis[video.id] ||
-                    (video.ai_analysis ? JSON.parse(video.ai_analysis as string) : null)
+                  const analysis = getVideoAnalysisRecord(video, videoAnalysis, playerSessions)
                   const isAnalyzing = analyzingVideo === video.id
                   const counts = issueSeverityCounts(analysis)
                   const headline = analysisPreviewHeadline(analysis)
@@ -857,7 +943,7 @@ export default function PlayerDetailPage() {
                       <button
                         type="button"
                         className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-muted"
-                        onClick={() => openAnalysisSheet(video)}
+                        onClick={() => openAnalysisStepper(video)}
                       >
                         {video.thumbnail_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -891,10 +977,10 @@ export default function PlayerDetailPage() {
                         {analysis && !isAnalyzing && (
                           <div className="space-y-2 border-t border-border pt-3">
                             <div className="flex flex-wrap gap-1.5">
-                              {analysis.overall_rating && (
+                              {analysis.overall_rating != null && analysis.overall_rating !== '' && (
                                 <Badge variant="secondary">{String(analysis.overall_rating)}</Badge>
                               )}
-                              {analysis.confidence && (
+                              {analysis.confidence != null && analysis.confidence !== '' && (
                                 <Badge variant="outline">{String(analysis.confidence)} confidence</Badge>
                               )}
                               {counts.total > 0 && counts.critical > 0 && (
@@ -915,7 +1001,7 @@ export default function PlayerDetailPage() {
                               variant="secondary"
                               size="sm"
                               className="w-full"
-                              onClick={() => openAnalysisSheet(video)}
+                              onClick={() => openAnalysisStepper(video)}
                             >
                               View reel
                             </Button>
@@ -1002,89 +1088,268 @@ export default function PlayerDetailPage() {
       )}
 
       {tab === 'recruiting' && (
-        <RecruitingProfile
-          playerId={String(id)}
-          playerName={player.name}
-          sport={normalizeSportKey(player.sport)}
-          isCoach
-          analysisSessions={playerSessions}
-        />
+        <>
+          {!recruitingProfile?.wizard_completed ? (
+            <CoachRecruitingWaiting
+              player={{
+                id: String(id),
+                name: player.name,
+                sport: normalizeSportKey(player.sport),
+              }}
+              onComplete={() => loadAll()}
+            />
+          ) : (
+            <RecruitingProfile
+              playerId={String(id)}
+              playerName={player.name}
+              sport={normalizeSportKey(player.sport)}
+              isCoach={true}
+              analysisSessions={playerSessions}
+            />
+          )}
+        </>
       )}
 
-      <Dialog
-        open={!!coachReelFlow}
+      <AnalysisStepperDialog
+        open={!!analysisFlow}
         onOpenChange={open => {
-          if (!open) setCoachReelFlow(null)
+          if (!open) setAnalysisFlow(null)
         }}
-      >
-        <DialogContent className="max-h-[92vh] max-w-md overflow-y-auto p-4 sm:max-w-md">
-          {coachReelFlow && (
-            <AnalysisResultStepper
-              score={
-                typeof coachReelFlow.analysis.overall_score === 'number'
-                  ? coachReelFlow.analysis.overall_score
-                  : typeof coachReelFlow.analysis.score === 'number'
-                    ? coachReelFlow.analysis.score
-                    : 0
-              }
-              sport={analysisSportKey(player?.sport)}
-              shotType={shotType || undefined}
-              issues={mapAnalysisIssues(
-                (coachReelFlow.analysis.areas_to_improve ??
-                  coachReelFlow.analysis.issues) as unknown[] | undefined,
-              )}
-              strengths={mapAnalysisStrengths(
-                coachReelFlow.analysis.strengths as unknown[] | undefined,
-              )}
-              sessionId={coachReelFlow.sessionId}
-              playerId={String(id)}
-              coachReview={{
-                sessionId: coachReelFlow.sessionId,
+        analysis={analysisFlow?.analysis ?? null}
+        sport={analysisSportKey(player?.sport)}
+        shotType={(analysisFlow?.video?.shot_type ?? shotType) || undefined}
+        sessionId={analysisFlow?.sessionId}
+        playerId={String(id)}
+        coachReview={
+          analysisFlow
+            ? buildCoachReviewConfig({
+                sessionId: analysisFlow.sessionId,
                 playerId: String(id),
                 playerName: player?.name || 'Player',
-                lessonId: coachReelFlow.video.lesson_id || undefined,
-                source: 'video',
+                lessonId: analysisFlow.video.lesson_id || undefined,
+                session: findAnalysisSession(
+                  playerSessions,
+                  analysisFlow.video.id,
+                  analysisFlow.sessionId,
+                ),
                 onVerified: () => void loadAll(),
                 onPublished: () => {
                   void loadAll()
-                  setCoachReelFlow(null)
+                  setAnalysisFlow(null)
                 },
-              }}
-              onReanalyze={() => setCoachReelFlow(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <VideoAnalysisDialog
-        open={!!sheetVideo}
-        onOpenChange={v => {
-          if (!v) setSheetVideo(null)
-        }}
-        title={sheetVideo?.title ?? ''}
-        recordedLabel={
-          sheetVideo ? format(new Date(sheetVideo.recorded_at), 'MMM d, yyyy • h:mm a') : ''
+              })
+            : undefined
         }
-        videoUrl={sheetVideo ? videoUrls[sheetVideo.id] ?? null : null}
-        mediaKind={sheetVideo && isImageMediaPath(sheetVideo.storage_path || sheetVideo.title) ? 'image' : 'video'}
-        videoId={sheetVideo?.id ?? null}
-        lessonId={sheetVideo?.lesson_id ?? null}
-        sport={player?.sport ?? null}
-        shotType={sheetVideo?.shot_type ?? shotType}
-        playerName={player?.name ?? 'Athlete'}
-        playerEmail={player?.email ?? null}
-        coachingVideos={coachingVideos}
-        loadingCoachingVideo={loadingCoachingVideo}
-        onFetchCoachingVideos={fetchCoachingVideos}
-        analysis={
-          sheetVideo
-            ? videoAnalysis[sheetVideo.id] ??
-              (typeof sheetVideo.ai_analysis === 'string'
-                ? JSON.parse(sheetVideo.ai_analysis)
-                : sheetVideo.ai_analysis)
-            : null
-        }
+        onReanalyze={() => setAnalysisFlow(null)}
       />
+
+      {showUTRLink && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.45)',
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) setShowUTRLink(false)
+          }}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: 16,
+              width: '100%',
+              maxWidth: 440,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '13px 16px',
+                borderBottom: `0.5px solid ${UTR_BORDER}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 500, color: UTR_TEXT }}>
+                Link {player.name}&apos;s UTR
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowUTRLink(false)}
+                style={{
+                  background: UTR_WARM_BG,
+                  border: `0.5px solid ${UTR_BORDER}`,
+                  borderRadius: 7,
+                  width: 28,
+                  height: 28,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: UTR_TEXT_MUTED,
+                  fontSize: 16,
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: '14px 16px' }}>
+              <p
+                style={{
+                  fontSize: 12,
+                  color: UTR_TEXT_MUTED,
+                  marginBottom: 12,
+                  lineHeight: 1.55,
+                }}
+              >
+                Search for {player.name} on UTR. Pick the right profile — this only
+                needs to happen once.
+              </p>
+              <div style={{ display: 'flex', gap: 7, marginBottom: 10 }}>
+                <input
+                  value={utrSearchQuery}
+                  onChange={e => setUtrSearchQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') void doUTRSearch()
+                  }}
+                  placeholder={`Search "${player.name}"...`}
+                  autoFocus
+                  style={{
+                    flex: 1,
+                    padding: '9px 12px',
+                    borderRadius: 9,
+                    border: `0.5px solid ${UTR_BORDER}`,
+                    background: UTR_WARM_BG,
+                    fontSize: 13,
+                    color: UTR_TEXT,
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void doUTRSearch()}
+                  disabled={utrSearching || !utrSearchQuery.trim()}
+                  style={{
+                    padding: '9px 14px',
+                    borderRadius: 9,
+                    background: utrSearching ? UTR_BORDER : UTR_TEAL,
+                    border: 'none',
+                    color: 'white',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {utrSearching ? '...' : 'Search'}
+                </button>
+              </div>
+              {utrSearchError && (
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: '#B45309',
+                    marginBottom: 10,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {utrSearchError}
+                </p>
+              )}
+              {utrSearchResults.length > 0 && (
+                <div
+                  style={{
+                    border: `0.5px solid ${UTR_BORDER}`,
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {utrSearchResults.map((p, i) => (
+                    <div
+                      key={String(p.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '10px 13px',
+                        borderTop: i > 0 ? `0.5px solid ${UTR_BORDER}` : 'none',
+                        background: i % 2 === 0 ? 'white' : UTR_WARM_BG,
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: UTR_TEXT,
+                          }}
+                        >
+                          {p.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: UTR_TEXT_MUTED }}>
+                          UTR {p.singlesUtr ?? '—'}
+                          {p.location ? ` · ${p.location}` : ''}
+                          {p.ageRange ? ` · ${p.ageRange}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setUtrLinking(true)
+                          try {
+                            const res = await fetch('/api/utr-player-sync', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                action: 'link',
+                                utrPlayerId: p.id.toString(),
+                                playerId: player.id,
+                              }),
+                            })
+                            const data = await parseApiJson(res)
+                            if (data.success) {
+                              setShowUTRLink(false)
+                              setUtrSearchResults([])
+                              setUtrSearchQuery('')
+                              loadAll()
+                            } else {
+                              setUtrSearchError(
+                                data.error || `Link failed (${res.status})`,
+                              )
+                            }
+                          } finally {
+                            setUtrLinking(false)
+                          }
+                        }}
+                        disabled={utrLinking}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: 8,
+                          background: utrLinking ? UTR_BORDER : UTR_TEAL,
+                          border: 'none',
+                          color: 'white',
+                          fontSize: 11,
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {utrLinking ? '...' : 'Link →'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <Dialog open={!!completeModal} onOpenChange={o => !o && setCompleteModal(null)}>
         <DialogContent className="rounded-2xl sm:max-w-md">

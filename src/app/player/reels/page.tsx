@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { format } from 'date-fns'
@@ -8,6 +8,7 @@ import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
 import { setPendingReelVideoFile } from '@/lib/pending-reel'
 import { parseStoragePath } from '@/lib/reel-storage'
 import ViaBlob from '@/components/ViaBlob'
+import UniversalVia from '@/components/UniversalVia'
 import { glass } from '@/lib/glass'
 
 const TEAL = 'hsl(168,62%,36%)'
@@ -159,7 +160,8 @@ function SessionCard({
         if (e.key === 'Enter' || e.key === ' ') onClick()
       }}
       style={{
-        ...glass.dark.card,
+        background: '#ffffff',
+        border: `0.5px solid ${BORDER}`,
         borderRadius: 14,
         cursor: 'pointer',
         display: 'flex',
@@ -728,28 +730,37 @@ export default function ReelsPage() {
   const [player, setPlayer] = useState<{ name?: string | null } | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [selected, setSelected] = useState<Session | null>(null)
-  const [viaOpen, setViaOpen] = useState(false)
-  const [viaMessages, setViaMessages] = useState<
-    { role: 'user' | 'assistant'; content: string }[]
-  >([
-    {
-      role: 'assistant',
-      content:
-        "Drop a video below and I'll analyze your technique — or describe your session in text and I'll structure it for you.",
-    },
-  ])
-  const [viaInput, setViaInput] = useState('')
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   function goToTextReel(message: string) {
     const msg = message.trim()
     if (!msg) return
-    setViaMessages(prev => [...prev, { role: 'user', content: msg }])
-    setViaInput('')
     sessionStorage.setItem('pendingReelDescription', msg)
-    setViaOpen(false)
     router.push('/player/reels/new?mode=text')
   }
+
+  const reelContext = useMemo(
+    () => ({
+      playerName: player?.name,
+      sessionCount: sessions.length,
+      selectedSession: selected
+        ? {
+            id: selected.id,
+            shot_type: selected.shot_type,
+            top_issue: selected.top_issue,
+            overall_score: selected.overall_score,
+            source: selected.source,
+            analyzed_at: selected.analyzed_at,
+            sport: selected.sport,
+          }
+        : null,
+      onUploadVideo: (file: File) => {
+        setPendingReelVideoFile(file)
+        router.push('/player/reels/new')
+      },
+      onTextReel: goToTextReel,
+    }),
+    [player?.name, sessions.length, selected, router],
+  )
 
   useEffect(() => {
     async function load() {
@@ -889,28 +900,9 @@ export default function ReelsPage() {
             {sessions.length !== 1 ? 's' : ''}
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setViaOpen(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            padding: '8px 14px',
-            borderRadius: 999,
-            background: 'linear-gradient(135deg, #eaf7f2, #eff3fe)',
-            border: '0.5px solid rgba(29,158,117,.2)',
-            cursor: 'pointer',
-            fontFamily: 'Arial, sans-serif',
-          }}
-        >
-          <ViaBlob size={18} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: TEAL_DARK }}>
-            Add reel with Via
-          </span>
-        </button>
       </div>
+
+      <UniversalVia role="player" embedded reelContext={reelContext} />
 
       <div
         style={{
@@ -972,28 +964,11 @@ export default function ReelsPage() {
           <div style={{ fontSize: 15, fontWeight: 700, color: TEXT, marginBottom: 6 }}>
             {filter === 'all' ? 'No reels yet' : `No ${filter} reels yet`}
           </div>
-          <p style={{ fontSize: 13, color: TEXT_SEC, lineHeight: 1.6, margin: '0 0 16px' }}>
+          <p style={{ fontSize: 13, color: TEXT_SEC, lineHeight: 1.6, margin: 0 }}>
             {filter === 'all'
-              ? 'Add your first reel — Via will review your technique and build your progress tracker.'
-              : 'Try a different filter or add a new reel.'}
+              ? 'Use Via above to upload a video or log a text session.'
+              : 'Try a different filter or add a new reel with Via above.'}
           </p>
-          <button
-            type="button"
-            onClick={() => setViaOpen(true)}
-            style={{
-              padding: '11px 22px',
-              borderRadius: 12,
-              background: TEAL,
-              border: 'none',
-              color: 'white',
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontFamily: 'Arial, sans-serif',
-            }}
-          >
-            Add reel with Via →
-          </button>
         </div>
       )}
 
@@ -1018,248 +993,6 @@ export default function ReelsPage() {
             )
           }}
         />
-      )}
-
-      {viaOpen && (
-        <>
-          <div
-            role="presentation"
-            onClick={() => setViaOpen(false)}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,.4)',
-              zIndex: 100,
-            }}
-          />
-          <div
-            style={{
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 101,
-              background: 'white',
-              borderRadius: '20px 20px 0 0',
-              maxHeight: '85vh',
-              display: 'flex',
-              flexDirection: 'column',
-              fontFamily: 'Arial, sans-serif',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'center',
-                padding: '10px 0 0',
-                flexShrink: 0,
-              }}
-            >
-              <div
-                style={{
-                  width: 36,
-                  height: 4,
-                  borderRadius: 2,
-                  background: BORDER,
-                }}
-              />
-            </div>
-
-            <div
-              style={{
-                padding: '12px 18px',
-                borderBottom: `0.5px solid ${BORDER}`,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                flexShrink: 0,
-              }}
-            >
-              <ViaBlob size={28} />
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: TEXT,
-                  }}
-                >
-                  Add a reel
-                </div>
-                <div style={{ fontSize: 11, color: TEXT_MUTED }}>
-                  Via · AI Coaching Agent
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViaOpen(false)}
-                style={{
-                  background: WARM_BG,
-                  border: `0.5px solid ${BORDER}`,
-                  borderRadius: 8,
-                  width: 30,
-                  height: 30,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  fontSize: 16,
-                  color: TEXT_MUTED,
-                }}
-              >
-                ×
-              </button>
-            </div>
-
-            <div
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '14px 18px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-              }}
-            >
-              {viaMessages.map((m, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
-                  }}
-                >
-                  {m.role === 'assistant' && (
-                    <ViaBlob
-                      size={20}
-                      style={{ marginRight: 7, marginTop: 2 }}
-                    />
-                  )}
-                  <div
-                    style={{
-                      maxWidth: '80%',
-                      padding: '9px 12px',
-                      borderRadius:
-                        m.role === 'user' ? '10px 10px 3px 10px' : '10px 10px 10px 3px',
-                      background: m.role === 'user' ? '#1D9E75' : WARM_BG,
-                      color: m.role === 'user' ? 'white' : TEXT,
-                      fontSize: 13,
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    {m.content}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div
-              style={{
-                padding: '10px 18px 24px',
-                borderTop: `0.5px solid ${BORDER}`,
-                flexShrink: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  borderRadius: 12,
-                  background: '#1D9E75',
-                  border: 'none',
-                  color: 'white',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontFamily: 'Arial, sans-serif',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 7,
-                }}
-              >
-                📹 Upload video to analyze
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="video/*"
-                style={{ display: 'none' }}
-                onChange={e => {
-                  const file = e.target.files?.[0]
-                  if (!file) return
-                  setPendingReelVideoFile(file)
-                  setViaOpen(false)
-                  router.push('/player/reels/new')
-                }}
-              />
-
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 7,
-                  alignItems: 'center',
-                }}
-              >
-                <input
-                  value={viaInput}
-                  onChange={e => setViaInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      goToTextReel(viaInput)
-                    }
-                  }}
-                  placeholder="Or describe your session in text..."
-                  style={{
-                    flex: 1,
-                    padding: '10px 13px',
-                    borderRadius: 10,
-                    border: `0.5px solid ${BORDER}`,
-                    background: WARM_BG,
-                    fontSize: 13,
-                    color: TEXT,
-                    fontFamily: 'Arial, sans-serif',
-                    outline: 'none',
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => goToTextReel(viaInput)}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    background: viaInput.trim() ? '#1D9E75' : '#ccc',
-                    border: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: viaInput.trim() ? 'pointer' : 'default',
-                    flexShrink: 0,
-                  }}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="white"
-                    strokeWidth="2.5"
-                  >
-                    <line x1="22" y1="2" x2="11" y2="13" />
-                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
       )}
     </div>
   )

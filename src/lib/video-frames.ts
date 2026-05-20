@@ -17,6 +17,18 @@ export function isImageMediaPath(path?: string | null) {
   return /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i.test(path.split('?')[0] || '')
 }
 
+export function mimeTypeFromStoragePath(path?: string | null) {
+  const name = (path || '').toLowerCase().split('?')[0] || ''
+  if (name.endsWith('.mov')) return 'video/quicktime'
+  if (name.endsWith('.webm')) return 'video/webm'
+  if (name.endsWith('.png')) return 'image/png'
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg'
+  if (name.endsWith('.gif')) return 'image/gif'
+  if (name.endsWith('.webp')) return 'image/webp'
+  if (isImageMediaPath(path)) return 'image/jpeg'
+  return 'video/mp4'
+}
+
 function seek(video: HTMLVideoElement, time: number) {
   return new Promise<void>((resolve, reject) => {
     const cleanup = () => {

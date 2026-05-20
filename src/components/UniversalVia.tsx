@@ -1,40 +1,92 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import ViaDrillSaveCard from '@/components/ViaDrillSaveCard'
-import {
-  ViaPanelBrief,
-  ViaPanelInput,
-  ViaPanelRow,
-  ViaPanelStyles,
-  ViaPanelTitleRow,
-  ViaPanelChip,
-} from '@/components/ViaPanel'
+import { ViaPanelInput, ViaPanelStyles } from '@/components/ViaPanel'
 import { glass } from '@/lib/glass'
-import { VIA_BORDER, VIA_TEAL, VIA_TEXT, VIA_TEXT_SEC, VIA_WARM_BG } from '@/lib/via-ui'
+import {
+  VIA_BORDER,
+  VIA_TEAL,
+  VIA_TEXT,
+  VIA_TEXT_MUTED,
+  VIA_TEXT_SEC,
+  VIA_WARM_BG,
+} from '@/lib/via-ui'
 import type { ViaCreateDrill } from '@/lib/via-drill'
-import type { ViaShowPlayersPayload, ViaShowRecruitingPayload } from '@/lib/via-universal-parse'
+import ViaBlob from '@/components/ViaBlob'
+import ViaSchoolSuggestionsCard from '@/components/ViaSchoolSuggestionsCard'
+import type {
+  ViaShowPlayersPayload,
+  ViaShowRecruitingPayload,
+  ViaSuggestSchoolsPayload,
+} from '@/lib/via-universal-parse'
 
 const TEAL = VIA_TEAL
+const TEAL_DARK = '#085041'
 const TEAL_LIGHT = 'hsl(168,62%,95%)'
 const BORDER = VIA_BORDER
 const TEXT = VIA_TEXT
 const TEXT_SEC = VIA_TEXT_SEC
+const TEXT_MUTED = VIA_TEXT_MUTED
 const WARM_BG = VIA_WARM_BG
+const VIA_CARD_MAX_HEIGHT = 520
 
-const QUICK_PROMPTS = [
+const COACH_QUICK_PROMPTS = [
   'Who needs my attention today?',
   'Find tournaments near me',
   'Schedule a lesson',
   'Build a session plan',
 ]
 
+const REEL_QUICK_PROMPTS = [
+  'What should I work on next?',
+  'Explain my top issue',
+  'How do I add a new reel?',
+]
+
+const REEL_SELECTED_PROMPTS = [
+  'What stands out in this reel?',
+  'How do I fix my top issue?',
+  'Compare this to my last session',
+]
+
 type Role = 'coach' | 'player'
+
+export type ReelSessionContext = {
+  id: string
+  shot_type?: string | null
+  top_issue?: string | null
+  overall_score?: number | null
+  source?: string
+  analyzed_at?: string
+  sport?: string
+}
+
+export type UniversalViaReelContext = {
+  playerName?: string | null
+  selectedSession: ReelSessionContext | null
+  sessionCount: number
+  onUploadVideo: (file: File) => void
+  onTextReel: (text: string) => void
+}
+
+type UniversalViaProps = {
+  role: Role
+  embedded?: boolean
+  reelContext?: UniversalViaReelContext
+}
 
 type ViaAction = {
   type: string
@@ -66,6 +118,7 @@ type Message = {
   createDrill?: ViaCreateDrill
   showPlayers?: ViaShowPlayersPayload
   showRecruiting?: ViaShowRecruitingPayload
+  suggestSchools?: ViaSuggestSchoolsPayload
   events?: EventListing[]
   isAction?: boolean
   isSuccess?: boolean
@@ -148,7 +201,11 @@ function buildFallbackBrief(context: {
   return `${parts[0]}, ${parts[1]}, and ${parts[2]}.`
 }
 
-export default function UniversalVia({ role }: { role: Role }) {
+export default function UniversalVia({
+  role,
+  embedded = false,
+  reelContext,
+}: UniversalViaProps) {
   const [brief, setBrief] = useState('')
   const [briefLoading, setBriefLoading] = useState(true)
   const [messages, setMessages] = useState<Message[]>([])
@@ -160,8 +217,24 @@ export default function UniversalVia({ role }: { role: Role }) {
   const [pendingAction, setPendingAction] = useState<ViaAction | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<EventListing | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
+
+  const quickPrompts =
+    role === 'player' && reelContext
+      ? reelContext.selectedSession
+        ? REEL_SELECTED_PROMPTS
+        : REEL_QUICK_PROMPTS
+      : COACH_QUICK_PROMPTS
 
   const loadCoachContext = useCallback(async () => {
     const {
@@ -270,13 +343,33 @@ export default function UniversalVia({ role }: { role: Role }) {
   }, [supabase])
 
   useEffect(() => {
-    if (role !== 'coach') {
-      setBriefLoading(false)
-      setBrief('Ask Via anything about your training.')
+    if (role === 'coach') {
+      void loadCoachContext()
       return
     }
-    void loadCoachContext()
-  }, [loadCoachContext, role])
+    if (role === 'player' && reelContext) {
+      setBriefLoading(false)
+      const sel = reelContext.selectedSession
+      if (sel) {
+        const label = sel.shot_type || sel.sport || 'session'
+        setBrief(
+          `You're viewing your ${label} reel from ${sel.analyzed_at ? format(new Date(sel.analyzed_at), 'MMM d') : 'recently'}.` +
+            (sel.top_issue
+              ? ` Top issue: ${sel.top_issue}. Ask me anything about it.`
+              : ' Ask me what to work on next.'),
+        )
+      } else {
+        setBrief(
+          reelContext.sessionCount > 0
+            ? `You have ${reelContext.sessionCount} reel${reelContext.sessionCount === 1 ? '' : 's'}. Select one to get specific feedback, or upload a new session.`
+            : 'Upload a video or describe a session — Via will analyze your technique.',
+        )
+      }
+      return
+    }
+    setBriefLoading(false)
+    setBrief('Ask Via anything about your training.')
+  }, [loadCoachContext, role, reelContext])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -390,7 +483,12 @@ export default function UniversalVia({ role }: { role: Role }) {
 
   async function sendMessage(text?: string) {
     const msg = (text ?? input).trim()
-    if (!msg || loading || role !== 'coach') return
+    if (!msg || loading) return
+    if (role === 'coach' || (role === 'player' && reelContext)) {
+      // continue
+    } else {
+      return
+    }
     setInput('')
     const userMsg: Message = { role: 'user', content: msg }
     const newMessages = [...messages, userMsg]
@@ -401,9 +499,21 @@ export default function UniversalVia({ role }: { role: Role }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          role: 'coach',
+          role,
           messages: newMessages,
-          rosterContext: { ...rosterContext, currentPage: '/dashboard' },
+          rosterContext:
+            role === 'coach'
+              ? { ...rosterContext, currentPage: '/dashboard' }
+              : undefined,
+          playerContext:
+            role === 'player' && reelContext
+              ? {
+                  page: '/player/reels',
+                  playerName: reelContext.playerName,
+                  sessionCount: reelContext.sessionCount,
+                  selectedSession: reelContext.selectedSession,
+                }
+              : undefined,
         }),
       })
       const data = (await response.json()) as {
@@ -411,6 +521,7 @@ export default function UniversalVia({ role }: { role: Role }) {
         createDrill?: ViaCreateDrill | null
         showPlayers?: ViaShowPlayersPayload | null
         showRecruiting?: ViaShowRecruitingPayload | null
+        suggestSchools?: ViaSuggestSchoolsPayload | null
         navigate?: string | null
       }
       if (data.navigate) {
@@ -426,6 +537,7 @@ export default function UniversalVia({ role }: { role: Role }) {
           createDrill: data.createDrill || undefined,
           showPlayers: data.showPlayers || undefined,
           showRecruiting: data.showRecruiting || undefined,
+          suggestSchools: data.suggestSchools || undefined,
         },
       ])
       if (action) await handleAction(action)
@@ -439,77 +551,146 @@ export default function UniversalVia({ role }: { role: Role }) {
     }
   }
 
-  if (role !== 'coach') {
+  if (role !== 'coach' && !(role === 'player' && embedded && reelContext)) {
     return null
   }
 
-  return (
-    <div>
-      <ViaPanelStyles />
-      <div
-        style={{
-          position: 'relative',
-          borderRadius: 16,
-          overflow: 'hidden',
-          marginBottom: 24,
-          background: 'rgba(255,255,255,.52)',
-          backdropFilter: 'blur(24px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-          border: '1px solid rgba(255,255,255,.65)',
-          boxShadow:
-            '0 2px 16px rgba(29,158,117,.06), 0 1px 0 rgba(255,255,255,.8) inset',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: '8%',
-            right: '8%',
-            height: 1,
-            background: 'rgba(255,255,255,.9)',
-            pointerEvents: 'none',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background:
-              'linear-gradient(135deg, rgba(29,158,117,.06) 0%, rgba(100,80,220,.04) 55%, rgba(120,60,200,.03) 100%)',
-            pointerEvents: 'none',
-          }}
-        />
-        <div style={{ position: 'relative', zIndex: 1 }}>
-        <div style={{ padding: '18px 20px 16px' }}>
-          <ViaPanelRow blobSize={36} thinking={loading && !briefLoading} frameBlob>
-            <ViaPanelTitleRow role="coach" mode="via" />
-            <ViaPanelBrief loading={briefLoading} mode="via">
-              {stripMarkdown(brief)}
-            </ViaPanelBrief>
-            {messages.length === 0 && !briefLoading && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
-                {QUICK_PROMPTS.map(question => (
-                  <ViaPanelChip key={question} mode="light" onClick={() => void sendMessage(question)}>
-                    {question}
-                  </ViaPanelChip>
-                ))}
-              </div>
-            )}
-          </ViaPanelRow>
-        </div>
+  const mobileFullscreen = embedded && isMobile
+  const showMessagesPane = messages.length > 0 || loading
 
-        {(messages.length > 0 || loading) && (
+  const cardStyle: CSSProperties = mobileFullscreen
+    ? {
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        background: 'white',
+        display: 'flex',
+        flexDirection: 'column',
+      }
+    : {
+        background: 'rgba(255,255,255,.52)',
+        backdropFilter: 'blur(24px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        border: '1px solid rgba(255,255,255,.65)',
+        borderRadius: 16,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        maxHeight: VIA_CARD_MAX_HEIGHT,
+        boxShadow: '0 2px 12px rgba(29,158,117,.08)',
+      }
+
+  return (
+    <div style={{ marginBottom: mobileFullscreen ? 0 : embedded ? 14 : 24 }}>
+      <ViaPanelStyles />
+      <div style={cardStyle}>
+        <div
+          style={{
+            background:
+              'linear-gradient(135deg,#E1F5EE 0%,#EEF0FE 55%,#F5EFFE 100%)',
+            padding: '16px 20px 14px',
+            flexShrink: 0,
+            overflow: 'hidden',
+            position: 'relative',
+            borderBottom: '0.5px solid rgba(29,158,117,.12)',
+          }}
+        >
           <div
             style={{
-              maxHeight: 360,
+              position: 'absolute',
+              top: 0,
+              left: '8%',
+              right: '8%',
+              height: 1,
+              background: 'rgba(255,255,255,.9)',
+              pointerEvents: 'none',
+            }}
+          />
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 12,
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            <div style={{ flexShrink: 0 }}>
+              <ViaBlob size={36} thinking={loading || briefLoading} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 6,
+                }}
+              >
+                <span style={{ fontSize: 14, fontWeight: 500, color: TEXT }}>
+                  Via
+                </span>
+                <span style={{ fontSize: 11, color: TEXT_MUTED }}>
+                  · {role === 'coach' ? 'coaching assistant' : 'your assistant'}
+                </span>
+              </div>
+              {brief && messages.length === 0 && !briefLoading && (
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: TEXT,
+                    lineHeight: 1.65,
+                    margin: '0 0 10px',
+                  }}
+                >
+                  {stripMarkdown(brief)}
+                </p>
+              )}
+              {briefLoading && messages.length === 0 && (
+                <p style={{ fontSize: 13, color: TEXT_MUTED, margin: '0 0 10px' }}>
+                  Loading…
+                </p>
+              )}
+              {messages.length === 0 && !briefLoading && quickPrompts.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {quickPrompts.map((qp, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => void sendMessage(qp)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        border: '0.5px solid rgba(29,158,117,.25)',
+                        background: 'rgba(255,255,255,.6)',
+                        fontSize: 12,
+                        color: TEAL_DARK,
+                        cursor: 'pointer',
+                        fontFamily: 'Arial, sans-serif',
+                        backdropFilter: 'blur(4px)',
+                      }}
+                    >
+                      {qp}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {showMessagesPane && (
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
               overflowY: 'auto',
-              padding: '0 16px 12px',
-              background: 'rgba(255,255,255,.35)',
-              borderTop: '0.5px solid rgba(255,255,255,.45)',
+              padding: '12px 18px',
               display: 'flex',
               flexDirection: 'column',
               gap: 8,
+              background: '#ffffff',
+              borderTop: `0.5px solid ${BORDER}`,
             }}
           >
             {messages.map((message, index) => (
@@ -597,6 +778,26 @@ export default function UniversalVia({ role }: { role: Role }) {
                     ))}
                   </div>
                 )}
+
+                {message.suggestSchools &&
+                  message.suggestSchools.schools?.length > 0 && (
+                    <div style={{ width: '100%' }}>
+                      <ViaSchoolSuggestionsCard
+                        schools={message.suggestSchools.schools}
+                        readOnly
+                      />
+                      <p
+                        style={{
+                          fontSize: 10,
+                          color: TEXT_SEC,
+                          margin: '6px 0 0',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        Via suggested — coach verify in recruiting profile
+                      </p>
+                    </div>
+                  )}
 
                 {message.showRecruiting && (
                   <Link
@@ -782,20 +983,85 @@ export default function UniversalVia({ role }: { role: Role }) {
 
         <div
           style={{
-            padding: '12px 20px 14px',
+            padding: '10px 16px',
+            borderTop: `0.5px solid ${BORDER}`,
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
             background: 'rgba(255,255,255,.6)',
-            borderTop: '0.5px solid rgba(29,158,117,.1)',
+            flexShrink: 0,
           }}
         >
+            {role === 'player' && reelContext && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: 10,
+                    background: TEAL,
+                    border: 'none',
+                    color: 'white',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    marginBottom: 8,
+                    fontFamily: 'Arial, sans-serif',
+                  }}
+                >
+                  Upload video to analyze
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/*"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) reelContext.onUploadVideo(file)
+                  }}
+                />
+              </>
+            )}
+            {role === 'player' && reelContext && input.trim() && (
+              <button
+                type="button"
+                onClick={() => {
+                  reelContext.onTextReel(input.trim())
+                  setInput('')
+                }}
+                style={{
+                  width: '100%',
+                  padding: '7px',
+                  marginBottom: 8,
+                  borderRadius: 8,
+                  background: WARM_BG,
+                  border: `0.5px solid ${BORDER}`,
+                  color: TEXT_SEC,
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  fontFamily: 'Arial, sans-serif',
+                }}
+              >
+                Log as new text reel →
+              </button>
+            )}
             <ViaPanelInput
               value={input}
               onChange={setInput}
               onSend={() => void sendMessage()}
               disabled={loading}
               mode="light"
-              placeholder="Ask Via about your roster..."
+              placeholder={
+                role === 'player' && reelContext
+                  ? reelContext.selectedSession
+                    ? 'Ask about this reel...'
+                    : 'Ask Via or describe a session...'
+                  : 'Ask Via about your roster...'
+              }
             />
-        </div>
         </div>
       </div>
     </div>

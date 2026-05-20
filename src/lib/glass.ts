@@ -109,12 +109,11 @@ export const glass = {
     },
     playerHome: {
       position: 'relative' as const,
-      background: 'rgba(4,20,14,.55)',
-      backdropFilter: 'blur(28px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(28px) saturate(160%)',
-      border: '1px solid rgba(255,255,255,.10)',
+      background: '#ffffff',
+      border: '0.5px solid hsl(30,10%,88%)',
       borderRadius: 20,
       overflow: 'hidden' as const,
+      boxShadow: '0 2px 12px rgba(29,158,117,.06)',
     },
     blobFrame: {
       background: 'rgba(255,255,255,.28)',
@@ -149,13 +148,6 @@ export const glass = {
     },
   },
 
-  pageBg: {
-    coach:
-      'linear-gradient(145deg, #d4ede4 0%, #dce8f4 40%, #e6ddf4 70%, #d0e8e0 100%)',
-    player:
-      'linear-gradient(150deg, #1a3d2e 0%, #0d2640 40%, #1a1535 70%, #0d2a1e 100%)',
-  },
-
   button: {
     primary: {
       background: 'linear-gradient(135deg, #1D9E75, #085041)',
@@ -182,19 +174,17 @@ export const glass = {
       color: 'rgba(4,52,44,.60)',
     },
     playerBottom: {
-      background: 'rgba(4,20,14,.72)',
-      backdropFilter: 'blur(24px)',
-      WebkitBackdropFilter: 'blur(24px)',
-      borderTop: '1px solid rgba(255,255,255,.09)',
+      background: 'hsl(0,0%,100%)',
+      borderTop: '0.5px solid hsl(30,10%,88%)',
     },
     playerNavActive: {
-      background: 'rgba(29,158,117,.18)',
-      border: '0.5px solid rgba(29,158,117,.28)',
+      background: 'rgba(29,158,117,.14)',
+      border: '0.5px solid rgba(29,158,117,.24)',
       borderRadius: 10,
-      color: 'rgba(93,202,165,.92)',
+      color: 'rgba(4,52,44,.88)',
     },
     playerNavInactive: {
-      color: 'rgba(255,255,255,.42)',
+      color: 'rgba(4,52,44,.60)',
     },
     playerNavSpecular: {
       position: 'absolute' as const,
