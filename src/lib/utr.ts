@@ -334,36 +334,43 @@ export async function runPlayerUTRSync(
     })
     .eq('id', playerId)
 
-  const { data: profile } = await supabase
+  const { data: existingProfile } = await supabase
     .from('recruiting_profiles')
     .select('id')
     .eq('player_id', playerId)
     .maybeSingle()
 
-  if (profile) {
-    await supabase
-      .from('recruiting_profiles')
-      .update({
-        utr_singles: playerData.singlesUtr,
-        utr_doubles: playerData.doublesUtr,
-        utr_status: playerData.ratingStatus,
-        utr_player_id: utrPlayerId,
-        utr_player_id_v4: utrPlayerId,
-        utr_display_name: playerData.displayName,
-        grad_year: Number.isFinite(gradYearParsed) ? gradYearParsed : null,
-        schedule_strength_score: scheduleStrength.score,
-        schedule_avg_opponent_utr: scheduleStrength.avgOpponentUtr,
-        schedule_highest_utr_beaten: scheduleStrength.highestUtrBeaten,
-        schedule_quality_wins: scheduleStrength.qualityWins,
-        schedule_win_rate_vs_higher: scheduleStrength.winRateVsHigher,
-        schedule_sanctioned_pct: scheduleStrength.sanctionedPct,
-        schedule_total_matches: scheduleStrength.totalMatches,
-        schedule_summary: scheduleStrength.summary,
-        schedule_last_calculated: new Date().toISOString(),
-        last_synced_at: new Date().toISOString(),
-      })
-      .eq('id', profile.id)
+  if (!existingProfile) {
+    await supabase.from('recruiting_profiles').insert({
+      player_id: playerId,
+      wizard_completed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
   }
+
+  await supabase
+    .from('recruiting_profiles')
+    .update({
+      utr_player_id: utrPlayerId,
+      utr_singles: playerData.singlesUtr,
+      utr_doubles: playerData.doublesUtr,
+      utr_status: playerData.ratingStatus,
+      utr_player_id_v4: utrPlayerId,
+      utr_display_name: playerData.displayName,
+      grad_year: Number.isFinite(gradYearParsed) ? gradYearParsed : null,
+      schedule_strength_score: scheduleStrength.score,
+      schedule_avg_opponent_utr: scheduleStrength.avgOpponentUtr,
+      schedule_highest_utr_beaten: scheduleStrength.highestUtrBeaten,
+      schedule_quality_wins: scheduleStrength.qualityWins,
+      schedule_win_rate_vs_higher: scheduleStrength.winRateVsHigher,
+      schedule_sanctioned_pct: scheduleStrength.sanctionedPct,
+      schedule_total_matches: scheduleStrength.totalMatches,
+      schedule_summary: scheduleStrength.summary,
+      schedule_last_calculated: new Date().toISOString(),
+      last_synced_at: new Date().toISOString(),
+    })
+    .eq('player_id', playerId)
 
   return {
     utr: {

@@ -2,11 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BarChart3, GraduationCap, Home, LogOut, Megaphone, Menu, NotebookTabs, Video } from 'lucide-react'
+import { Dumbbell, Home, LogOut, Menu, PlayCircle, TrendingUp, UserRound } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
+import PlayerBottomNav from '@/components/player/PlayerBottomNav'
 import { createClient } from '@/lib/supabase'
 import { glass } from '@/lib/glass'
-import { cn } from '@/lib/utils'
 
 type PlayerForChat = {
   id: string
@@ -18,7 +18,6 @@ type PlayerForChat = {
 interface Props {
   children: React.ReactNode
   player: PlayerForChat | null
-  showRecruitingNav?: boolean
 }
 
 type NavItem = {
@@ -28,19 +27,13 @@ type NavItem = {
   exact?: boolean
 }
 
-const baseNavItems: NavItem[] = [
-  { href: '/player', label: 'Dashboard', icon: Home, exact: true },
-  { href: '/player/reels', label: 'Reels', icon: Video },
-  { href: '/player/progress', label: 'Progress', icon: BarChart3 },
-  { href: '/player/lessons', label: 'Lessons', icon: NotebookTabs },
-  { href: '/player/bulletin', label: 'Bulletin', icon: Megaphone },
+const playerNavItems: NavItem[] = [
+  { href: '/player', label: 'Home', icon: Home, exact: true },
+  { href: '/player/journey', label: 'Journey', icon: TrendingUp },
+  { href: '/player/training', label: 'Training', icon: Dumbbell },
+  { href: '/player/reels', label: 'Reels', icon: PlayCircle },
+  { href: '/player/coach', label: 'Coach', icon: UserRound },
 ]
-
-const recruitingNavItem: NavItem = {
-  href: '/player/recruiting',
-  label: 'Recruiting',
-  icon: GraduationCap,
-}
 
 function playerNavStyle(active: boolean) {
   return active
@@ -48,14 +41,11 @@ function playerNavStyle(active: boolean) {
     : { ...glass.nav.coachNavInactive, background: 'transparent', border: 'none' }
 }
 
-export default function PlayerLayoutClient({ children, showRecruitingNav = false }: Props) {
+export default function PlayerLayoutClient({ children }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  const navItems = showRecruitingNav
-    ? [baseNavItems[0], baseNavItems[1], recruitingNavItem, ...baseNavItems.slice(2)]
-    : baseNavItems
-  const mobileCols = navItems.length
+  const navItems = playerNavItems
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -108,31 +98,13 @@ export default function PlayerLayoutClient({ children, showRecruitingNav = false
           <Menu className="size-5 text-muted-foreground" />
         </div>
 
-        <main className="flex-1 overflow-auto pb-20 pt-14 md:pb-0 md:pt-0">
+        <main className="flex-1 overflow-auto pb-24 pt-14 md:pb-0 md:pt-0">
           <div className="mx-auto max-w-4xl p-4 md:p-8">{children}</div>
         </main>
 
-        <nav
-          className="fixed inset-x-0 bottom-0 z-50 grid border-t border-border bg-card px-1 py-2 md:hidden"
-          style={{ gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))` }}
-        >
-          {navItems.map(({ href, label, icon: Icon, exact }) => {
-            const active = isActive(href, exact)
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  'flex flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-semibold transition-colors',
-                )}
-                style={playerNavStyle(active)}
-              >
-                <Icon className="size-4" />
-                <span className="truncate">{label}</span>
-              </Link>
-            )
-          })}
-        </nav>
+        <div className="md:hidden">
+          <PlayerBottomNav />
+        </div>
       </div>
     </div>
   )

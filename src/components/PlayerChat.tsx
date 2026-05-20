@@ -114,11 +114,27 @@ const PAGE_SUGGESTIONS: Record<string, string[]> = {
     'What should I feel when I do this right?',
     'Is there a simpler version of this drill?',
   ],
+  '/player/training': [
+    'What did my coach say about my last session?',
+    'Book a new training session',
+    'What should I prepare for my next session?',
+    'How often should I train with my coach?',
+  ],
   '/player/lessons': [
     'What did my coach say about my last session?',
-    'Book a new lesson',
-    'What should I prepare for my next lesson?',
-    'How often should I be having lessons?',
+    'Book a new training session',
+    'What should I prepare for my next session?',
+    'How often should I train with my coach?',
+  ],
+  '/player/journey': [
+    'What schools fit me?',
+    'How do I improve schedule strength?',
+    'What should I film for recruiting?',
+  ],
+  '/player/coach': [
+    'What should I work on before our next session?',
+    'Can you review my latest reel?',
+    'How do I prepare for a college showcase?',
   ],
 }
 
@@ -126,7 +142,7 @@ const DEFAULT_SUGGESTIONS = [
   'How am I improving?',
   'What should I practice this week?',
   'What is my biggest weakness right now?',
-  'Book a lesson with my coach',
+  'Book a training session with my coach',
 ]
 
 const sportEmoji: Record<string, string> = {
@@ -339,7 +355,7 @@ export default function PlayerChat({ playerId, playerName, sport, skillLevel }: 
   function executeAction(action: PlayerAction) {
     switch (action.type) {
       case 'bookLesson':
-        router.push('/player/lessons')
+        router.push('/player/training')
         break
       case 'analyze':
         router.push('/player/reels')
@@ -351,7 +367,7 @@ export default function PlayerChat({ playerId, playerName, sport, skillLevel }: 
         router.push('/player/drills')
         break
       case 'viewLesson':
-        router.push('/player/lessons')
+        router.push('/player/training')
         break
     }
     setOpen(false)

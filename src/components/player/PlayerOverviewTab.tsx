@@ -48,6 +48,8 @@ interface Props {
   utrSingles?: number | null
   utrLastSynced?: string | null
   onLinkUTR?: () => void
+  onRelinkUTR?: () => void
+  onUnlinkUTR?: () => void | Promise<void>
   onSyncUTR?: () => void | Promise<void>
 }
 
@@ -213,6 +215,8 @@ export default function PlayerOverviewTab({
   utrSingles,
   utrLastSynced,
   onLinkUTR,
+  onRelinkUTR,
+  onUnlinkUTR,
   onSyncUTR,
 }: Props) {
   const router = useRouter()
@@ -324,22 +328,62 @@ export default function PlayerOverviewTab({
           )}
         </div>
         {utrLinked ? (
-          <button
-            type="button"
-            onClick={() => void onSyncUTR?.()}
+          <div
             style={{
-              padding: '6px 12px',
-              borderRadius: 8,
-              border: '0.5px solid #9FE1CB',
-              background: 'white',
-              fontSize: 11,
-              color: GREEN_TEXT,
-              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
               flexShrink: 0,
             }}
           >
-            Sync
-          </button>
+            <button
+              type="button"
+              onClick={() => void onSyncUTR?.()}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 8,
+                border: '0.5px solid #9FE1CB',
+                background: 'white',
+                fontSize: 11,
+                color: GREEN_TEXT,
+                cursor: 'pointer',
+              }}
+            >
+              Sync
+            </button>
+            <button
+              type="button"
+              onClick={onRelinkUTR}
+              style={{
+                fontSize: 11,
+                color: TEXT_SEC,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px 6px',
+                borderRadius: 6,
+              }}
+              title="Re-link UTR account"
+            >
+              Re-link
+            </button>
+            <button
+              type="button"
+              onClick={() => void onUnlinkUTR?.()}
+              style={{
+                fontSize: 11,
+                color: '#A32D2D',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px 6px',
+                borderRadius: 6,
+              }}
+              title="Unlink UTR account"
+            >
+              Unlink
+            </button>
+          </div>
         ) : (
           <button
             type="button"

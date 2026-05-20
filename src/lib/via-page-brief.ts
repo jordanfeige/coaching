@@ -10,6 +10,9 @@ export type ViaPageId =
   | 'player-reel-detail'
   | 'player-progress'
   | 'player-recruiting'
+  | 'player-journey'
+  | 'player-training'
+  | 'player-coach'
   | 'pulse'
 
 export type PageContext = {
@@ -27,6 +30,7 @@ export type PageContext = {
   latestScore?: number
   targetDivision?: string
   utrSingles?: number
+  coachAssessment?: string
   reelDate?: string
   fixedCount?: number
   totalGain?: number
@@ -296,7 +300,7 @@ export function generatePageBrief(
           'Add a reel',
           'How am I improving?',
           'Show my drills',
-          "When's my next lesson?",
+          "When's my next training session?",
         ],
       }
     }
@@ -350,6 +354,46 @@ export function generatePageBrief(
             ? `How long to fix ${pageContext.activeIssue}?`
             : 'What should I focus on?',
           'Show my best session',
+        ],
+      }
+    }
+
+    case 'player-journey': {
+      const brief = pageContext.utrSingles
+        ? `Readiness path — UTR ${pageContext.utrSingles}. ` +
+          (pageContext.targetDivision
+            ? `Targeting ${pageContext.targetDivision}.`
+            : 'Complete quests to raise your score.')
+        : 'Your recruiting journey — tap a quest or ask about schools.'
+      return {
+        brief,
+        prompts: [
+          'What schools fit me?',
+          'How do I improve schedule strength?',
+          'What should I film for recruiting?',
+          'When should I contact coaches?',
+        ],
+      }
+    }
+
+    case 'player-training': {
+      return {
+        brief: 'Training hub — sessions, drills, and prep with your coach.',
+        prompts: [
+          'What did my coach say last session?',
+          'How should I prepare for my next session?',
+          'Explain my assigned drills',
+        ],
+      }
+    }
+
+    case 'player-coach': {
+      return {
+        brief: 'Message your coach through Via — prep, reels, and recruiting questions.',
+        prompts: [
+          'What should I work on before our next session?',
+          'Can you review my latest reel?',
+          'How do I prepare for a college showcase?',
         ],
       }
     }

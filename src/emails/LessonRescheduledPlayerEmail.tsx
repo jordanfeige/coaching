@@ -35,8 +35,8 @@ function RescheduleBlock({ oldDate, oldTime, newDate, newTime }: Pick<LessonResc
 
 export function LessonRescheduledPlayerEmail(props: LessonRescheduledPlayerEmailProps) {
   return (
-    <EmailLayout preview={`Your ${props.sport} lesson has been moved to ${props.newDate} at ${props.newTime}`}>
-      <Heading style={{ fontSize: 26, margin: '0 0 12px', color: emailStyles.text }}>Lesson rescheduled</Heading>
+    <EmailLayout preview={`Your ${props.sport} training session has been moved to ${props.newDate} at ${props.newTime}`}>
+      <Heading style={{ fontSize: 26, margin: '0 0 12px', color: emailStyles.text }}>Training rescheduled</Heading>
       <div style={{ display: 'inline-block', background: '#FEF3C7', color: '#B45309', borderRadius: 999, padding: '5px 10px', fontSize: 12, fontWeight: 700 }}>
         Rescheduled
       </div>
@@ -46,7 +46,7 @@ export function LessonRescheduledPlayerEmail(props: LessonRescheduledPlayerEmail
         <EmailInfoRow label="Coach" value={props.coachName} />
         <EmailInfoRow label="Sport" value={props.sport} />
       </div>
-      <EmailButton href={props.lessonUrl}>View updated lesson →</EmailButton>
+      <EmailButton href={props.lessonUrl}>View updated training →</EmailButton>
     </EmailLayout>
   )
 }

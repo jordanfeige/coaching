@@ -87,7 +87,7 @@ export default function PlayerVideosPage() {
           <div>
             <h1 className="font-heading text-xl font-bold text-foreground md:text-2xl">My Videos</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Videos, images, and AI analysis from published lesson recaps.
+              Videos, images, and AI analysis from published training recaps.
             </p>
           </div>
         </div>
@@ -119,7 +119,7 @@ export default function PlayerVideosPage() {
         ) : filteredVideos.length === 0 ? (
           <div className="py-16 text-center text-muted-foreground">
             <Video size={40} className="mx-auto mb-3 opacity-25" />
-            <p className="text-sm">No published lesson media yet.</p>
+            <p className="text-sm">No published training media yet.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

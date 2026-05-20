@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import ViaBlob from '@/components/ViaBlob'
 import CoachVerifyPanel from '@/components/CoachVerifyPanel'
+import ReelScoreSheet, { buildCheckpoints } from '@/components/ReelScoreSheet'
 import type { JointMeasurement } from '@/lib/poseAnalysis'
 import { fonts, typography } from '@/lib/brand'
 import { GlassCard } from '@/components/GlassCard'
@@ -126,6 +127,7 @@ interface Props {
   poseMeasurements?: JointMeasurement[]
   sessionId?: string
   playerId?: string
+  session?: Record<string, unknown> | null
   progressHref?: string
   onSaved?: () => void
   onReanalyze?: () => void
@@ -300,6 +302,7 @@ function ScoreCard({
   issues,
   strengths,
   verdict,
+  session,
   onNext,
 }: {
   score: number
@@ -308,6 +311,7 @@ function ScoreCard({
   issues: StepperIssue[]
   strengths: StepperStrength[]
   verdict: string
+  session?: Record<string, unknown> | null
   onNext: () => void
 }) {
   const criticalCount = issues.filter(i => i.severity === 'critical').length
@@ -350,26 +354,38 @@ function ScoreCard({
         <div style={{ position: 'relative' }}>
           <div
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 10px',
-              borderRadius: 999,
-              background: 'rgba(29,158,117,.18)',
-              border: '0.5px solid rgba(29,158,117,.3)',
-              marginBottom: 12,
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              marginBottom: 8,
             }}
           >
-            <ViaBlob size={22} />
-            <span
+            <div
               style={{
-                fontSize: 11,
-                color: '#5DCAA5',
-                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 999,
+                background: 'rgba(29,158,117,.18)',
+                border: '0.5px solid rgba(29,158,117,.3)',
               }}
             >
-              Via · your analysis
-            </span>
+              <ViaBlob size={22} />
+              <span
+                style={{
+                  fontSize: 11,
+                  color: '#5DCAA5',
+                  fontWeight: 600,
+                }}
+              >
+                Via · your analysis
+              </span>
+            </div>
+            <ReelScoreSheet
+              session={session ?? null}
+              checkpoints={buildCheckpoints(session)}
+            />
           </div>
 
           <div
@@ -1246,6 +1262,7 @@ export default function AnalysisResultStepper({
   poseMeasurements,
   sessionId,
   playerId,
+  session,
   progressHref = '/player/progress',
   onSaved,
   onReanalyze,
@@ -1323,6 +1340,7 @@ export default function AnalysisResultStepper({
             issues={sortedIssues}
             strengths={strengths}
             verdict={verdict}
+            session={session}
             onNext={goNext}
           />
         )}

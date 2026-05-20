@@ -44,16 +44,38 @@ export function parseRecruitingOutlook(
       : []
     const snapshot = String(o.snapshot || '').trim()
     if (!snapshot && factors.length === 0 && actions.length === 0) return null
+    const nestedConf = o.confidence
+    const level =
+      typeof nestedConf === 'object' && nestedConf !== null
+        ? ((nestedConf as { level?: string }).level as RecruitingOutlook['confidence'])
+        : (nestedConf as RecruitingOutlook['confidence'])
+    const note =
+      typeof nestedConf === 'object' && nestedConf !== null
+        ? String((nestedConf as { reason?: string }).reason || o.confidence_note || '')
+        : o.confidence_note
+          ? String(o.confidence_note)
+          : undefined
+
     return {
       snapshot,
-      confidence: o.confidence as RecruitingOutlook['confidence'],
-      confidence_note: o.confidence_note
-        ? String(o.confidence_note)
-        : undefined,
+      confidence: level,
+      confidence_note: note,
       factors,
       actions,
     }
   }
+
+  const confObj = p.confidence
+  const parsedConfidence =
+    typeof confObj === 'object' && confObj !== null
+      ? ((confObj as { level?: string }).level as RecruitingOutlook['confidence'])
+      : (p.confidence as RecruitingOutlook['confidence'])
+  const parsedConfidenceNote =
+    typeof confObj === 'object' && confObj !== null
+      ? String((confObj as { reason?: string }).reason || p.confidence_note || '')
+      : p.confidence_note
+        ? String(p.confidence_note)
+        : undefined
 
   const legacySummary = String(
     p.overall_assessment || p.via_family_summary || '',
@@ -72,10 +94,8 @@ export function parseRecruitingOutlook(
 
   return {
     snapshot: legacySummary,
-    confidence: p.confidence as RecruitingOutlook['confidence'],
-    confidence_note: p.confidence_note
-      ? String(p.confidence_note)
-      : undefined,
+    confidence: parsedConfidence,
+    confidence_note: parsedConfidenceNote,
     factors: [],
     actions: legacyActions,
   }

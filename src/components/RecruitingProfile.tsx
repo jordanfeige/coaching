@@ -164,6 +164,11 @@ export default function RecruitingProfile({
   const [geoPreference, setGeoPreference] = useState('')
   const [coachAssessment, setCoachAssessment] =
     useState('')
+  const [proInterest, setProInterest] = useState('')
+  const [scholarshipNeed, setScholarshipNeed] = useState('')
+  const [campusSize, setCampusSize] = useState('')
+  const [intendedMajor, setIntendedMajor] = useState('')
+  const [satScore, setSatScore] = useState('')
   const [gender, setGender] = useState('male')
   const [sportInput, setSportInput] = useState(sport)
   const [isMobile, setIsMobile] = useState(false)
@@ -236,34 +241,82 @@ export default function RecruitingProfile({
   }, [playerId])
 
   async function loadProfile() {
-    const { data } = await supabase
+    const { data: profile } = await supabase
       .from('recruiting_profiles')
       .select('*')
       .eq('player_id', playerId)
       .maybeSingle()
 
-    if (data) {
-      setProfile(data)
-      setProfileId(data.id)
-      setUaId(data.usta_uaid || '')
-      setUtrSinglesInput(data.utr_singles?.toString() || '')
-      setTargetDivision(data.target_division || 'D1')
-      setGpa(data.gpa?.toString() || '')
-      setGradYear(data.grad_year?.toString() || '')
-      setGeoPreference(data.geographic_preference || '')
-      setCoachAssessment(data.coach_assessment || '')
-      setGender(data.gender || 'male')
-      setWtnSinglesInput(data.wtn_singles?.toString() || '')
-      setNationalRankInput(data.usta_national_rank?.toString() || '')
-      setSectionRankInput(data.usta_section_rank?.toString() || '')
-      if (data.usta_win_record != null && data.usta_loss_record != null) {
+    const { data: playerRow } = await supabase
+      .from('players')
+      .select(
+        'utr_player_id, utr_singles, utr_doubles, utr_status, utr_last_synced',
+      )
+      .eq('id', playerId)
+      .maybeSingle()
+
+    let merged = profile
+
+    if (profile && playerRow && !profile.utr_singles && playerRow.utr_singles) {
+      await supabase
+        .from('recruiting_profiles')
+        .update({
+          utr_player_id: playerRow.utr_player_id,
+          utr_singles: playerRow.utr_singles,
+          utr_doubles: playerRow.utr_doubles,
+          utr_status: playerRow.utr_status,
+          last_synced_at: playerRow.utr_last_synced,
+        })
+        .eq('player_id', playerId)
+
+      merged = {
+        ...profile,
+        utr_player_id: playerRow.utr_player_id,
+        utr_singles: playerRow.utr_singles,
+        utr_doubles: playerRow.utr_doubles,
+        utr_status: playerRow.utr_status,
+      }
+    }
+
+    if (merged) {
+      setProfile(merged)
+      setProfileId(merged.id)
+      setUaId(merged.usta_uaid || '')
+      setUtrSinglesInput(
+        merged.utr_singles?.toString() ||
+          playerRow?.utr_singles?.toString() ||
+          '',
+      )
+      setTargetDivision(merged.target_division || 'D1')
+      setGpa(merged.gpa?.toString() || '')
+      setGradYear(merged.grad_year?.toString() || '')
+      setGeoPreference(merged.geographic_preference || '')
+      setCoachAssessment(merged.coach_assessment || '')
+      setProInterest(merged.pro_interest || '')
+      setScholarshipNeed(merged.scholarship_need || '')
+      setCampusSize(merged.campus_size || '')
+      setIntendedMajor(merged.intended_major || '')
+      setSatScore(
+        merged.sat_score != null ? String(merged.sat_score) : '',
+      )
+      setGender(merged.gender || 'male')
+      setWtnSinglesInput(merged.wtn_singles?.toString() || '')
+      setNationalRankInput(merged.usta_national_rank?.toString() || '')
+      setSectionRankInput(merged.usta_section_rank?.toString() || '')
+      if (
+        merged.usta_win_record != null &&
+        merged.usta_loss_record != null
+      ) {
         setWinLossInput(
-          `${data.usta_win_record}/${data.usta_loss_record}`,
+          `${merged.usta_win_record}/${merged.usta_loss_record}`,
         )
       } else {
         setWinLossInput('')
       }
+    } else if (playerRow?.utr_singles) {
+      setUtrSinglesInput(playerRow.utr_singles.toString())
     }
+
     setLoading(false)
   }
 
@@ -303,6 +356,11 @@ export default function RecruitingProfile({
         grad_year: gradYear ? parseInt(gradYear, 10) : null,
         geographic_preference: geoPreference || null,
         coach_assessment: coachAssessment || null,
+        pro_interest: proInterest || null,
+        scholarship_need: scholarshipNeed || null,
+        campus_size: campusSize || null,
+        intended_major: intendedMajor || null,
+        sat_score: satScore ? parseInt(satScore, 10) : null,
         gender,
         updated_at: new Date().toISOString(),
       }
@@ -449,6 +507,7 @@ export default function RecruitingProfile({
           playerName,
           sport: sportInput || sport,
           gender,
+          // Route reads profile + players from DB; body is fallback only
           gradYear: gradYear ? parseInt(gradYear, 10) : null,
           gpa: gpa ? parseFloat(gpa) : null,
           wtnSingles: wtnSinglesInput
@@ -475,6 +534,7 @@ export default function RecruitingProfile({
           targetDivision,
           geographicPreference: geoPreference || null,
           coachAssessment: coachAssessment || null,
+          proInterest: proInterest || null,
           techniqueScore:
             analysisSessions?.[analysisSessions.length - 1]?.overall_score ||
             null,
@@ -1469,6 +1529,104 @@ export default function RecruitingProfile({
         )}
       </div>
 
+      {profile?.wizard_completed && (
+        <div
+          style={{
+            background: '#E1F5EE',
+            border: '0.5px solid #9FE1CB',
+            borderRadius: 14,
+            padding: '14px 16px',
+            marginBottom: 14,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#085041',
+              marginBottom: 10,
+            }}
+          >
+            {firstName}&apos;s profile — filled by player ✓
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 8,
+              fontSize: 12,
+              color: '#04342C',
+            }}
+          >
+            {[
+              ['Target', profile.target_division],
+              ['Pro interest', profile.pro_interest],
+              ['GPA', profile.gpa],
+              ['SAT', profile.sat_score],
+              ['Major', profile.intended_major],
+              ['Geography', profile.geographic_preference],
+            ].map(([label, value]) => (
+              <div key={String(label)}>
+                <span style={{ color: TEXT_MUTED, fontSize: 10 }}>
+                  {label}
+                </span>
+                <div style={{ fontWeight: 500 }}>
+                  {value != null && value !== ''
+                    ? String(value)
+                    : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div
+        style={{
+          ...CARD,
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ ...sectionLabel, marginBottom: 10 }}>
+          Setup checklist
+        </div>
+        {[
+          {
+            label: 'Link UTR',
+            done: !!profile?.utr_singles,
+          },
+          {
+            label: 'Player wizard',
+            done: !!profile?.wizard_completed,
+          },
+          {
+            label: 'Projection',
+            done: !!profile?.via_projection,
+          },
+          {
+            label: 'School targets',
+            done: schools.length > 0,
+          },
+        ].map(item => (
+          <div
+            key={item.label}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 0',
+              fontSize: 12,
+              color: item.done ? '#085041' : TEXT_MUTED,
+            }}
+          >
+            <span>{item.done ? '✓' : '○'}</span>
+            <span style={{ fontWeight: item.done ? 500 : 400 }}>
+              {item.label}
+            </span>
+          </div>
+        ))}
+      </div>
+
       {techniqueStats && (
         <div style={{
           display: 'flex',
@@ -1810,6 +1968,67 @@ export default function RecruitingProfile({
             </div>
           </div>
 
+          {/* Player wizard preferences */}
+          {profile?.wizard_completed && (
+            <div style={CARD}>
+              <div style={{ ...sectionLabel, marginBottom: 10 }}>
+                Player preferences (from wizard)
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 8,
+                }}
+              >
+                {[
+                  {
+                    label: 'Pro interest',
+                    value: proInterest,
+                    set: setProInterest,
+                  },
+                  {
+                    label: 'Scholarship',
+                    value: scholarshipNeed,
+                    set: setScholarshipNeed,
+                  },
+                  {
+                    label: 'Campus size',
+                    value: campusSize,
+                    set: setCampusSize,
+                  },
+                  {
+                    label: 'Major',
+                    value: intendedMajor,
+                    set: setIntendedMajor,
+                  },
+                  {
+                    label: 'SAT',
+                    value: satScore,
+                    set: setSatScore,
+                  },
+                ].map(f => (
+                  <div key={f.label}>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: TEXT_MUTED,
+                        marginBottom: 3,
+                      }}
+                    >
+                      {f.label}
+                    </div>
+                    <input
+                      value={f.value}
+                      onChange={e => f.set(e.target.value)}
+                      style={fieldInput}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Coach assessment */}
           <div style={CARD}>
             <div style={{ ...sectionLabel, marginBottom: 8 }}>
@@ -1868,19 +2087,55 @@ export default function RecruitingProfile({
                   outlook={outlook}
                   title="Via projection"
                   generatedAt={
-                    profile?.via_generated_at
+                    profile?.projection_generated_at
                       ? format(
-                          new Date(profile.via_generated_at),
+                          new Date(profile.projection_generated_at),
                           'MMM d',
                         )
-                      : profile?.updated_at
+                      : profile?.via_generated_at
                         ? format(
-                            new Date(profile.updated_at),
+                            new Date(profile.via_generated_at),
                             'MMM d',
                           )
                         : null
                   }
                 />
+                {(profile?.projection_generated_at ||
+                  profile?.via_generated_at) && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: TEXT_MUTED,
+                      marginTop: 6,
+                    }}
+                  >
+                    Generated{' '}
+                    {format(
+                      new Date(
+                        (profile.projection_generated_at ||
+                          profile.via_generated_at) as string,
+                      ),
+                      'MMM d',
+                    )}
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => void generateProjection()}
+                      disabled={generating}
+                      style={{
+                        fontSize: 10,
+                        color: TEAL,
+                        background: 'none',
+                        border: 'none',
+                        cursor: generating ? 'default' : 'pointer',
+                        padding: 0,
+                        fontFamily: 'Arial, sans-serif',
+                      }}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{

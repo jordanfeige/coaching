@@ -554,7 +554,7 @@ export default function PlayerHome() {
               marginBottom: 8,
             }}
           >
-            Next lesson
+            Next training
           </div>
           {nextLesson && nextLessonDate ? (
             <>
@@ -591,7 +591,7 @@ export default function PlayerHome() {
                   marginBottom: 3,
                 }}
               >
-                No lesson scheduled
+                No training scheduled
               </div>
               <div
                 style={{
@@ -606,7 +606,7 @@ export default function PlayerHome() {
           )}
           <button
             type="button"
-            onClick={() => router.push('/player/lessons')}
+            onClick={() => router.push('/player/training')}
             style={{
               padding: '8px 0',
               borderRadius: 9,
@@ -620,7 +620,7 @@ export default function PlayerHome() {
               width: '100%',
             }}
           >
-            {nextLesson ? 'View lesson →' : 'Book lesson →'}
+            {nextLesson ? 'View training →' : 'Book training →'}
           </button>
         </div>
       </div>

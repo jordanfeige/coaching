@@ -8,7 +8,7 @@ import { CalendarDays, LineChart, LogOut, Video } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 
 const nav = [
-  { href: '/player', label: 'Lessons', icon: CalendarDays },
+  { href: '/player', label: 'Home', icon: CalendarDays },
   { href: '/player/reels', label: 'Reels', icon: Video },
   { href: '/analyze/progress', label: 'Progress', icon: LineChart },
 ]

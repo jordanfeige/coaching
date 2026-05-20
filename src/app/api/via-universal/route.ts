@@ -1,8 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { parseViaUniversalOutput } from '@/lib/via-universal-parse'
+import { formatContextForPrompt } from '@/lib/via-anchor-context'
 
 export const maxDuration = 30
+
+function formatContext(context: string | undefined) {
+  return formatContextForPrompt(context)
+}
 
 const COACH_SYSTEM_PROMPT = `You are Via,
 a coaching assistant inside Playvia.
@@ -146,12 +151,13 @@ export async function POST(req: NextRequest) {
     history?: ChatMessage[]
     rosterContext?: unknown
     playerContext?: unknown
-    context?: unknown
+    context?: string
     pageContext?: {
       page?: string
       playerName?: string
       activeIssue?: string
       techniqueScore?: number
+      coachAssessment?: string
     }
     currentPath?: string
     role?: 'coach' | 'player'
@@ -169,7 +175,8 @@ export async function POST(req: NextRequest) {
     role = 'coach',
   } = body
 
-  const contextData = rosterContext ?? playerContext ?? context
+  const anchorContext = typeof context === 'string' ? context : undefined
+  const contextData = rosterContext ?? playerContext
   const contextSummary = JSON.stringify(contextData ?? {}, null, 2)
 
   let apiMessages: ChatMessage[]
@@ -223,7 +230,15 @@ export async function POST(req: NextRequest) {
     ? `\nPAGE CONTEXT:\n${JSON.stringify(pageContext, null, 2)}`
     : ''
 
-  const systemPrompt = `${basePrompt}\n\n${contextBlock}${pageBlock}`
+  const recruitingPage =
+    pageContext?.page === 'player-recruiting' ||
+    pageContext?.page === 'player-profile-recruiting'
+  const coachAssessmentBlock =
+    recruitingPage && pageContext?.coachAssessment?.trim()
+      ? `\nCOACH ASSESSMENT: ${pageContext.coachAssessment.trim()}\n`
+      : ''
+
+  const systemPrompt = `${basePrompt}\n\n${contextBlock}${pageBlock}${coachAssessmentBlock}${formatContext(anchorContext)}`
 
   try {
     const response = await client.messages.create({

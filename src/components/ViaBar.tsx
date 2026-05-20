@@ -111,7 +111,10 @@ const PLAYER_SUGGESTIONS: Record<string, string[]> = {
   '/player/reels': ['What should I film for my next reel?', 'Explain my last session', 'What was my top issue?'],
   '/player/progress': ['What is my biggest improvement?', 'Am I improving fast enough?', 'What should I focus on next?'],
   '/player/drills': ['Explain how to do this drill', 'How many times per week?', 'What should I feel when I do this right?'],
-  '/player/lessons': ['What did my coach say last session?', 'How should I prepare for my next lesson?', 'Book a new lesson'],
+  '/player/training': ['What did my coach say last session?', 'How should I prepare for my next session?', 'Explain my assigned drills'],
+  '/player/lessons': ['What did my coach say last session?', 'How should I prepare for my next session?', 'Explain my assigned drills'],
+  '/player/journey': ['What schools fit me?', 'How do I improve schedule strength?', 'What should I film for recruiting?'],
+  '/player/coach': ['What should I work on before our next session?', 'Can you review my latest reel?', 'How do I prepare for a showcase?'],
   '/player/bulletin': ['Find tournaments near me', 'What events are good for my level?', 'Find camps this summer'],
 }
 
@@ -381,7 +384,7 @@ export default function ViaBar({ role, playerContext }: Props) {
         setExpanded(false)
         break
       case 'bookLesson':
-        router.push('/player/lessons')
+        router.push('/player/training')
         setExpanded(false)
         break
       case 'analyze':
@@ -565,7 +568,7 @@ export default function ViaBar({ role, playerContext }: Props) {
                 >
                   {role === 'coach'
                     ? "Hey Coach! I'm Via. I know your roster and can help with events, lessons, drill plans, and player priorities."
-                    : `Hey ${playerFirstName || 'there'}! I'm Via. I know your training history and can help you improve, find events, and prepare for lessons.`}
+                    : `Hey ${playerFirstName || 'there'}! I'm Via. I know your training history and can help you improve, find events, and prepare for sessions.`}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                   {suggestions.map(question => (

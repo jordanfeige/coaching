@@ -11,7 +11,9 @@
     "seed": "ts-node --transpile-only --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\"}' scripts/seed.ts",
     "seed:players": "npx tsx scripts/seed-players.ts",
     "seed:players:clean": "npx tsx scripts/seed-players-clean.ts",
-    "seed:player-lessons": "npx tsx scripts/seed-player-lessons.ts"
+    "seed:player-lessons": "npx tsx scripts/seed-player-lessons.ts",
+    "seed:benchmarks": "npx tsx scripts/seed-journey-benchmarks.ts",
+    "seed:journey-inputs": "npx tsx scripts/seed-journey-inputs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",

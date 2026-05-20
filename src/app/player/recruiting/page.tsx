@@ -7,8 +7,10 @@ import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import RecruitingWizard from '@/components/RecruitingWizard'
 import UniversalVia from '@/components/UniversalVia'
 import ViaBlob from '@/components/ViaBlob'
+import RecruitingDataSheet from '@/components/RecruitingDataSheet'
 import ViaRecruitingOutlookCard from '@/components/ViaRecruitingOutlookCard'
 import { parseRecruitingOutlook } from '@/lib/recruiting-outlook'
+import { format, formatDistanceToNow } from 'date-fns'
 
 const TEAL = '#1D9E75'
 const TEAL_DARK = '#085041'
@@ -59,6 +61,7 @@ export default function PlayerRecruitingPage() {
   } | null>(null)
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null)
   const [view, setView] = useState<'wizard' | 'roadmap'>('wizard')
+  const [generatingProjection, setGeneratingProjection] = useState(false)
 
   useEffect(() => {
     void loadData()
@@ -92,9 +95,68 @@ export default function PlayerRecruitingPage() {
       .eq('player_id', playerRow.id)
       .maybeSingle()
 
-    setProfile(recruiting as Record<string, unknown> | null)
-    setView(recruiting?.wizard_completed ? 'roadmap' : 'wizard')
+    if (recruiting) {
+      const needsUtrMerge =
+        !recruiting.utr_singles && playerRow.utr_singles
+
+      if (needsUtrMerge) {
+        await supabase
+          .from('recruiting_profiles')
+          .update({
+            utr_player_id: playerRow.utr_player_id,
+            utr_singles: playerRow.utr_singles,
+            utr_doubles: playerRow.utr_doubles,
+            utr_status: playerRow.utr_status,
+            last_synced_at: playerRow.utr_last_synced,
+          })
+          .eq('player_id', playerRow.id)
+
+        setProfile({
+          ...(recruiting as Record<string, unknown>),
+          utr_player_id: playerRow.utr_player_id,
+          utr_singles: playerRow.utr_singles,
+          utr_doubles: playerRow.utr_doubles,
+          utr_status: playerRow.utr_status,
+        })
+      } else {
+        setProfile(recruiting as Record<string, unknown>)
+      }
+    } else {
+      setProfile(null)
+    }
+
+    if (!recruiting?.wizard_completed) {
+      setView('wizard')
+    } else {
+      setView('roadmap')
+    }
+
     setLoading(false)
+  }
+
+  async function handleWizardComplete() {
+    setGeneratingProjection(true)
+    await loadData()
+    setGeneratingProjection(false)
+  }
+
+  function projectionConfidenceLevel(
+    projection: unknown,
+  ): 'low' | 'medium' | 'high' | null {
+    const outlook = parseRecruitingOutlook(projection)
+    if (outlook?.confidence) return outlook.confidence
+    if (!projection || typeof projection !== 'object') return null
+    const conf = (projection as Record<string, unknown>).confidence
+    if (typeof conf === 'object' && conf !== null) {
+      const level = (conf as { level?: string }).level
+      if (level === 'low' || level === 'medium' || level === 'high') {
+        return level
+      }
+    }
+    if (conf === 'low' || conf === 'medium' || conf === 'high') {
+      return conf
+    }
+    return null
   }
 
   if (loading) {
@@ -150,7 +212,7 @@ export default function PlayerRecruitingPage() {
             playerName={player.name}
             sport={player.sport || 'tennis'}
             onComplete={() => {
-              void loadData()
+              void handleWizardComplete()
             }}
           />
         </div>
@@ -161,6 +223,15 @@ export default function PlayerRecruitingPage() {
   const outlook = parseRecruitingOutlook(profile?.via_projection)
   const summary = projectionSummary(profile?.via_projection)
   const steps = roadmapItems(profile)
+  const confLevel = projectionConfidenceLevel(profile?.via_projection)
+  const utrSyncedAt =
+    (profile?.utr_last_updated as string) ||
+    (profile?.last_synced_at as string) ||
+    null
+  const projectionAt =
+    (profile?.projection_generated_at as string) ||
+    (profile?.via_generated_at as string) ||
+    null
 
   return (
     <div
@@ -185,6 +256,10 @@ export default function PlayerRecruitingPage() {
             typeof profile?.target_division === 'string'
               ? profile.target_division
               : undefined,
+          coachAssessment:
+            (profile?.last_reel_assessment as string) ||
+            (profile?.coach_assessment as string) ||
+            undefined,
         }}
       />
 
@@ -304,6 +379,14 @@ export default function PlayerRecruitingPage() {
             >
               UTR Singles
             </div>
+            {utrSyncedAt && (
+              <div style={{ fontSize: 10, color: TEXT_MUTED, marginTop: 4 }}>
+                Synced{' '}
+                {formatDistanceToNow(new Date(utrSyncedAt), {
+                  addSuffix: true,
+                })}
+              </div>
+            )}
           </div>
           <div
             style={{
@@ -336,6 +419,28 @@ export default function PlayerRecruitingPage() {
             outlook={outlook}
             title="Via — your outlook"
             compact
+            generatedAt={
+              projectionAt
+                ? format(new Date(projectionAt), 'MMM d')
+                : null
+            }
+          />
+          {projectionAt && (
+            <div
+              style={{
+                fontSize: 10,
+                color: TEXT_MUTED,
+                marginTop: 6,
+                marginBottom: 8,
+              }}
+            >
+              Generated {format(new Date(projectionAt), 'MMM d')}
+              {generatingProjection ? ' · Updating...' : ''}
+            </div>
+          )}
+          <RecruitingDataSheet
+            profile={profile}
+            onUpdatePreferences={() => setView('wizard')}
           />
         </div>
       ) : summary ? (
@@ -360,6 +465,34 @@ export default function PlayerRecruitingPage() {
             <span style={{ fontSize: 12, fontWeight: 500, color: TEAL_DARK }}>
               Via — your outlook
             </span>
+            {confLevel && (
+              <span
+                style={{
+                  fontSize: 10,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  marginLeft: 'auto',
+                  background:
+                    confLevel === 'high'
+                      ? '#E1F5EE'
+                      : confLevel === 'medium'
+                        ? '#FAEEDA'
+                        : '#FCEBEB',
+                  color:
+                    confLevel === 'high'
+                      ? '#085041'
+                      : confLevel === 'medium'
+                        ? '#633806'
+                        : '#A32D2D',
+                }}
+              >
+                {confLevel === 'high'
+                  ? 'High confidence'
+                  : confLevel === 'medium'
+                    ? 'Medium confidence'
+                    : 'Low confidence — needs UTR'}
+              </span>
+            )}
           </div>
           <p
             style={{
@@ -371,6 +504,10 @@ export default function PlayerRecruitingPage() {
           >
             {summary}
           </p>
+          <RecruitingDataSheet
+            profile={profile}
+            onUpdatePreferences={() => setView('wizard')}
+          />
         </div>
       ) : (
         <div
@@ -502,9 +639,11 @@ function ProfileStatusCard({
     label: string,
     value: string | null | undefined,
     isLast: boolean,
+    itemKey: string,
   ) {
     return (
       <div
+        key={itemKey}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -623,12 +762,12 @@ function ProfileStatusCard({
 
       <SectionHeader label="Goals" />
       {goals.map((item, i) =>
-        row(item.label, item.value, i === goals.length - 1),
+        row(item.label, item.value, i === goals.length - 1, item.label),
       )}
 
       <SectionHeader label="Academic" topBorder />
       {academic.map((item, i) =>
-        row(item.label, item.value, i === academic.length - 1),
+        row(item.label, item.value, i === academic.length - 1, item.label),
       )}
     </div>
   )

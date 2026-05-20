@@ -1,4 +1,6 @@
+import { format } from 'date-fns'
 import { NextRequest, NextResponse } from 'next/server'
+import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 
 export async function POST(req: NextRequest) {
@@ -23,8 +25,10 @@ export async function POST(req: NextRequest) {
 
   const {
     sessionId,
+    playerId,
     overrides,
     coachNote,
+    recruitingNote,
     scoreOverride,
     publish,
   } = await req.json()
@@ -51,6 +55,36 @@ export async function POST(req: NextRequest) {
   if (error) {
     console.error('Coach verify error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  const note =
+    typeof recruitingNote === 'string' ? recruitingNote.trim() : ''
+  if (note && playerId) {
+    const admin = createSupabaseAdminClient()
+    const { data: recruitingProfile } = await admin
+      .from('recruiting_profiles')
+      .select('id, coach_assessment')
+      .eq('player_id', playerId)
+      .maybeSingle()
+
+    if (recruitingProfile?.id) {
+      const existingNotes = recruitingProfile.coach_assessment || ''
+      const newNote = `[${format(new Date(), 'MMM d')} reel assessment] ${note}`
+      const updatedNotes = existingNotes
+        ? `${existingNotes}\n\n${newNote}`
+        : newNote
+
+      await admin
+        .from('recruiting_profiles')
+        .update({
+          coach_assessment: updatedNotes,
+          last_reel_assessment: note,
+          last_reel_assessment_date: new Date().toISOString(),
+          last_reel_assessment_session_id: sessionId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', recruitingProfile.id)
+    }
   }
 
   return NextResponse.json({ ok: true })

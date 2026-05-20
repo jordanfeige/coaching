@@ -137,6 +137,8 @@ export default function PlayerDetailPage() {
     updated_at?: string
     utr_singles?: number | null
     target_division?: string | null
+    coach_assessment?: string | null
+    last_reel_assessment?: string | null
   } | null>(null)
   const [showUTRLink, setShowUTRLink] = useState(false)
   const [utrSearchQuery, setUtrSearchQuery] = useState('')
@@ -209,6 +211,33 @@ export default function PlayerDetailPage() {
     setLessons(l || [])
     setVideos(v || [])
     setPlayerSessions(s || [])
+  }
+
+  function openUTRLinkModal() {
+    setUtrSearchQuery(player?.name || '')
+    setUtrSearchResults([])
+    setUtrSearchError('')
+    setShowUTRLink(true)
+  }
+
+  async function unlinkUTR() {
+    if (!player) return
+    if (
+      !confirm(
+        `Unlink UTR account for ${player.name}? This will remove their UTR rating and schedule strength data.`,
+      )
+    ) {
+      return
+    }
+    await fetch('/api/utr-player-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'unlink',
+        playerId: player.id,
+      }),
+    })
+    loadAll()
   }
 
   async function doUTRSearch() {
@@ -523,34 +552,76 @@ export default function PlayerDetailPage() {
               <Badge variant="outline" className="capitalize">
                 {(normalizeSportKey(player.sport || 'tennis')).replace(/^./, c => c.toUpperCase())}
               </Badge>
-              <button
-                type="button"
-                onClick={() => {
-                  if (player.utr_player_id) {
-                    setTab('recruiting')
-                  } else {
-                    setUtrSearchQuery(player.name || '')
-                    setUtrSearchResults([])
-                    setUtrSearchError('')
-                    setShowUTRLink(true)
-                  }
-                }}
-                className="inline-flex"
-              >
-                <Badge
-                  variant={player.utr_player_id ? 'default' : 'outline'}
-                  className={cn(
-                    'cursor-pointer',
-                    player.utr_player_id
-                      ? 'bg-[#085041] hover:bg-[#0F6E56]'
-                      : 'text-amber-700 border-amber-300 bg-amber-50 hover:bg-amber-100',
-                  )}
+              {player.utr_player_id ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
                 >
-                  {player.utr_player_id
-                    ? `UTR linked${player.utr_singles != null ? ` · ${Number(player.utr_singles).toFixed(2)}` : ''}`
-                    : 'UTR not linked'}
-                </Badge>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setTab('recruiting')}
+                    className="inline-flex"
+                  >
+                    <Badge
+                      variant="default"
+                      className="cursor-pointer bg-[#085041] hover:bg-[#0F6E56]"
+                    >
+                      UTR{' '}
+                      {player.utr_singles != null
+                        ? Number(player.utr_singles).toFixed(2)
+                        : 'linked'}
+                    </Badge>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openUTRLinkModal}
+                    style={{
+                      fontSize: 11,
+                      color: 'hsl(220,10%,55%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '2px 6px',
+                      borderRadius: 6,
+                    }}
+                    title="Re-link UTR account"
+                  >
+                    Re-link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void unlinkUTR()}
+                    style={{
+                      fontSize: 11,
+                      color: '#A32D2D',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '2px 6px',
+                      borderRadius: 6,
+                    }}
+                    title="Unlink UTR account"
+                  >
+                    Unlink
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={openUTRLinkModal}
+                  className="inline-flex"
+                >
+                  <Badge
+                    variant="outline"
+                    className="cursor-pointer text-amber-700 border-amber-300 bg-amber-50 hover:bg-amber-100"
+                  >
+                    UTR not linked
+                  </Badge>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -583,6 +654,10 @@ export default function PlayerDetailPage() {
                 : undefined,
           targetDivision:
             recruitingProfile?.target_division || undefined,
+          coachAssessment:
+            recruitingProfile?.last_reel_assessment ||
+            recruitingProfile?.coach_assessment ||
+            undefined,
         }}
       />
 
@@ -619,12 +694,9 @@ export default function PlayerDetailPage() {
           utrLinked={!!player.utr_player_id}
           utrSingles={player.utr_singles}
           utrLastSynced={player.utr_last_synced}
-          onLinkUTR={() => {
-            setUtrSearchQuery(player.name || '')
-            setUtrSearchResults([])
-            setUtrSearchError('')
-            setShowUTRLink(true)
-          }}
+          onLinkUTR={openUTRLinkModal}
+          onRelinkUTR={openUTRLinkModal}
+          onUnlinkUTR={() => void unlinkUTR()}
           onSyncUTR={async () => {
             await fetch('/api/utr-player-sync', {
               method: 'POST',

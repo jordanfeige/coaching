@@ -1,0 +1,91 @@
+export type Severity = 'critical' | 'important' | 'minor' | 'done'
+export type Difficulty = 1 | 2 | 3
+
+export type CategoryKey = 'tennis' | 'academics' | 'exposure' | 'coachability'
+
+export interface JourneyCategory {
+  key: CategoryKey
+  label: string
+  shortLabel: string
+  weight: number
+  score: number
+  pct: number
+  icon: string
+  tagline: string
+  gap: string
+  isStrength?: boolean
+  viaPrompts: string[]
+  inputs: {
+    name: string
+    value: string
+    source: string
+    verified: boolean
+    date: string
+  }[]
+}
+
+export interface JourneyQuest {
+  id: string
+  icon: string
+  title: string
+  severity: Severity
+  reward: number
+  earned?: number
+  difficulty: Difficulty
+  timeWindow: string
+  desc: string
+  affects: string
+  affectsKey: CategoryKey
+  progress: number
+  probability: string
+  viaPrompts: string[]
+  completedAt?: string
+}
+
+export interface JourneyMilestone {
+  label: string
+  status: 'done' | 'active' | 'locked'
+  detail: string
+  completedAt?: string
+  progress?: number
+  pointsToUnlock?: number
+  viaPrompts?: string[]
+}
+
+export interface JourneyEvent {
+  date: string
+  label: string
+  change: string
+  delta: string
+  category: CategoryKey | 'tier'
+}
+
+export type JourneyPlayerCard = {
+  name: string
+  sport: string
+  classYear: string
+  tier: string
+  nextTier: string
+  tierProgress: number
+  journeyRating: number
+  ratingDelta: number
+  pointsToNextTier: number
+}
+
+export type JourneyMomentum = {
+  fastestMover: { name: string; delta: string; window: string }
+  utrPercentile: number
+  statement: string
+}
+
+export type JourneyPageViewModel = {
+  player: JourneyPlayerCard
+  categories: JourneyCategory[]
+  milestones: JourneyMilestone[]
+  quests: JourneyQuest[]
+  events: JourneyEvent[]
+  momentum: JourneyMomentum
+  weightsVersion: string
+  isEmpty: boolean
+  utrSingles: number | null
+}

@@ -16,8 +16,8 @@ type LessonCancelledPlayerEmailProps = {
 
 export function LessonCancelledPlayerEmail({ coachName, date, time, sport, reason, bookingUrl }: LessonCancelledPlayerEmailProps) {
   return (
-    <EmailLayout preview={`Your ${sport} lesson on ${date} has been cancelled`}>
-      <Heading style={{ fontSize: 26, margin: '0 0 12px', color: emailStyles.text }}>Lesson cancelled</Heading>
+    <EmailLayout preview={`Your ${sport} training session on ${date} has been cancelled`}>
+      <Heading style={{ fontSize: 26, margin: '0 0 12px', color: emailStyles.text }}>Training cancelled</Heading>
       <Text style={{ display: 'inline-block', background: '#FEE2E2', color: '#B91C1C', borderRadius: 999, padding: '5px 10px', fontSize: 12, fontWeight: 700 }}>
         Cancelled
       </Text>
@@ -31,7 +31,7 @@ export function LessonCancelledPlayerEmail({ coachName, date, time, sport, reaso
       <Text style={{ fontSize: 15, lineHeight: 1.6, color: emailStyles.textSecondary }}>
         We&apos;re sorry for the inconvenience. Book a new time that works for you.
       </Text>
-      <EmailButton href={bookingUrl}>Book a new lesson →</EmailButton>
+      <EmailButton href={bookingUrl}>Book new training →</EmailButton>
     </EmailLayout>
   )
 }

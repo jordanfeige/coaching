@@ -81,6 +81,85 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (action === 'unlink') {
+    if (!playerId) {
+      return NextResponse.json(
+        { error: 'playerId required' },
+        { status: 400 },
+      )
+    }
+
+    try {
+      const { error: playerError } = await admin
+        .from('players')
+        .update({
+          utr_player_id: null,
+          utr_singles: null,
+          utr_doubles: null,
+          utr_status: null,
+          utr_last_synced: null,
+        })
+        .eq('id', playerId)
+
+      if (playerError) {
+        return NextResponse.json(
+          { success: false, error: playerError.message },
+          { status: 500 },
+        )
+      }
+
+      const { data: profile } = await admin
+        .from('recruiting_profiles')
+        .select('id')
+        .eq('player_id', playerId)
+        .maybeSingle()
+
+      if (profile?.id) {
+        const { error: profileError } = await admin
+          .from('recruiting_profiles')
+          .update({
+            utr_player_id: null,
+            utr_singles: null,
+            utr_doubles: null,
+            utr_status: null,
+            utr_display_name: null,
+            schedule_strength_score: null,
+            schedule_avg_opponent_utr: null,
+            schedule_highest_utr_beaten: null,
+            schedule_quality_wins: null,
+            schedule_win_rate_vs_higher: null,
+            schedule_sanctioned_pct: null,
+            schedule_total_matches: null,
+            schedule_summary: null,
+            schedule_last_calculated: null,
+            last_synced_at: null,
+          })
+          .eq('id', profile.id)
+
+        if (profileError) {
+          return NextResponse.json(
+            { success: false, error: profileError.message },
+            { status: 500 },
+          )
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        unlinked: true,
+      })
+    } catch (e) {
+      console.error('[utr-player-sync] unlink failed:', e)
+      return NextResponse.json(
+        {
+          success: false,
+          error: e instanceof Error ? e.message : 'UTR unlink failed',
+        },
+        { status: 500 },
+      )
+    }
+  }
+
   if (action === 'sync') {
     if (!playerId) {
       return NextResponse.json(

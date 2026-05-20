@@ -44,6 +44,7 @@ interface Props {
 export default function CoachVerifyPanel({
   sessionId,
   lessonId,
+  playerId,
   playerName,
   score,
   issues,
@@ -63,6 +64,7 @@ export default function CoachVerifyPanel({
     'critical' | 'moderate' | 'minor'
   >('moderate')
   const [coachNote, setCoachNote] = useState('')
+  const [recruitingNote, setRecruitingNote] = useState('')
   const [scoreOverride, setScoreOverride] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [verified, setVerified] = useState(alreadyVerified)
@@ -139,8 +141,10 @@ export default function CoachVerifyPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
+          playerId,
           overrides: Object.values(overrides),
           coachNote: coachNote || null,
+          recruitingNote: recruitingNote.trim() || null,
           scoreOverride,
           publish: andPublish,
         }),
@@ -740,6 +744,59 @@ export default function CoachVerifyPanel({
             }}
           />
         </div>
+
+        {playerId && (
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 14,
+              borderTop: `0.5px solid ${BORDER}`,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: TEXT_MUTED,
+                textTransform: 'uppercase',
+                letterSpacing: '.07em',
+                marginBottom: 6,
+              }}
+            >
+              Recruiting note (optional)
+            </div>
+            <p
+              style={{
+                fontSize: 11,
+                color: TEXT_MUTED,
+                marginBottom: 8,
+                lineHeight: 1.55,
+              }}
+            >
+              Add a note about how this reel affects recruiting. It will appear
+              on {firstName}&apos;s recruiting profile.
+            </p>
+            <textarea
+              value={recruitingNote}
+              onChange={e => setRecruitingNote(e.target.value)}
+              placeholder={`e.g. "${firstName}'s footwork improved significantly — ready to start contacting D1 coaches."`}
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '9px 12px',
+                borderRadius: 9,
+                border: `0.5px solid ${BORDER}`,
+                background: WARM_BG,
+                fontSize: 12,
+                color: TEXT,
+                lineHeight: 1.55,
+                resize: 'none',
+                fontFamily: 'Arial, sans-serif',
+                outline: 'none',
+              }}
+            />
+          </div>
+        )}
 
         {!verified ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

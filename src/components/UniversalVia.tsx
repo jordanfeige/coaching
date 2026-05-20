@@ -38,6 +38,8 @@ import {
   type CoachBriefContext,
   type PageContext,
 } from '@/lib/via-page-brief'
+import { useViaContextOptional } from '@/components/via/UniversalViaContext'
+import { formatContextChipLabel } from '@/lib/via-anchor-context'
 
 export type { PageContext }
 
@@ -199,6 +201,27 @@ export default function UniversalVia({
   const inputRef = useRef<HTMLInputElement>(null)
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
+  const viaCtx = useViaContextOptional()
+  const [isPrefilled, setIsPrefilled] = useState(false)
+  const pendingAnchorContextRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const prompt = viaCtx?.prefilledPrompt
+    if (!prompt) return
+    setInput(prompt)
+    setIsPrefilled(true)
+    pendingAnchorContextRef.current = viaCtx.prefilledContext
+    if (isMobile && !embedded) setMobileExpanded(true)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }, [viaCtx?.prefilledPrompt, viaCtx?.prefilledContext, isMobile, embedded])
+
+  function handleInputChange(value: string) {
+    setInput(value)
+    if (isPrefilled) {
+      setIsPrefilled(false)
+      viaCtx?.clearPrefill()
+    }
+  }
 
   const loadCoachContext = useCallback(async () => {
     const {
@@ -467,6 +490,13 @@ export default function UniversalVia({
 
     if (isMobile && !embedded) setMobileExpanded(true)
 
+    const anchorContext = pendingAnchorContextRef.current
+    if (isPrefilled) {
+      setIsPrefilled(false)
+      viaCtx?.clearPrefill()
+    }
+    pendingAnchorContextRef.current = null
+
     setInput('')
     const userMsg: Message = { role: 'user', content: msg }
     const newMessages = [...messages, userMsg]
@@ -479,6 +509,7 @@ export default function UniversalVia({
         body: JSON.stringify({
           role,
           message: msg,
+          context: anchorContext ?? undefined,
           pageContext,
           currentPath: pathname,
           rosterContext:
@@ -1141,7 +1172,63 @@ export default function UniversalVia({
               : undefined,
           }}
         >
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {isPrefilled && viaCtx?.prefilledContext && (
+            <div
+              style={{
+                fontFamily: 'Arial, sans-serif',
+                fontSize: 10,
+                fontWeight: 600,
+                color: TEAL_DARK,
+                padding: '4px 10px',
+                borderRadius: 999,
+                background: TEAL_LIGHT,
+                border: `0.5px solid rgba(45,155,127,0.35)`,
+                width: 'fit-content',
+              }}
+            >
+              {formatContextChipLabel(viaCtx.prefilledContext)}
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              position: 'relative',
+              borderRadius: 12,
+              border: isPrefilled ? '2px solid #2D9B7F' : 'none',
+              boxShadow: isPrefilled
+                ? '0 0 0 3px rgba(45,155,127,0.18), 0 4px 16px rgba(45,155,127,0.12)'
+                : 'none',
+              padding: isPrefilled ? 4 : 0,
+              transition: 'border 0.2s, box-shadow 0.2s',
+            }}
+          >
+            {isPrefilled && (
+              <>
+                <style>{`
+                  @keyframes viaPrefillPulse {
+                    0%, 100% { opacity: 0.5; transform: scale(0.92); }
+                    50% { opacity: 1; transform: scale(1); }
+                  }
+                `}</style>
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    background: '#22C55E',
+                    boxShadow: '0 0 0 2px white',
+                    animation: 'viaPrefillPulse 1.4s infinite',
+                    zIndex: 2,
+                  }}
+                />
+              </>
+            )}
             {role === 'player' && reelContext && (
               <>
                 <button
@@ -1201,7 +1288,7 @@ export default function UniversalVia({
             <input
               ref={inputRef}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => handleInputChange(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()

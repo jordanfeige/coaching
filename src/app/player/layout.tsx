@@ -1,4 +1,5 @@
 import PlayerLayoutClient from './PlayerLayoutClient'
+import PlayerLayoutProviders from './PlayerLayoutProviders'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { getLinkedPlayersForUser } from '@/lib/linked-player'
 
@@ -16,8 +17,6 @@ export default async function PlayerLayout({ children }: { children: React.React
   } = await supabase.auth.getUser()
 
   let player: PlayerForChat | null = null
-  let showRecruitingNav = false
-
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -56,17 +55,9 @@ export default async function PlayerLayout({ children }: { children: React.React
     }
   }
 
-  if (player) {
-    const sport = (player.sport || 'tennis').toLowerCase()
-    showRecruitingNav =
-      sport === 'tennis' ||
-      sport === 'pickleball' ||
-      sport === 'baseball'
-  }
-
   return (
-    <PlayerLayoutClient player={player} showRecruitingNav={showRecruitingNav}>
-      {children}
-    </PlayerLayoutClient>
+    <PlayerLayoutProviders>
+      <PlayerLayoutClient player={player}>{children}</PlayerLayoutClient>
+    </PlayerLayoutProviders>
   )
 }

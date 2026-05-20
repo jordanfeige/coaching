@@ -300,6 +300,7 @@ function NewReelPageContent() {
           )}
           strengths={mapAnalysisStrengths(analysis.strengths)}
           poseMeasurements={poseResult?.measurements}
+          session={analysis as Record<string, unknown>}
           sessionId={savedSessionId ?? analysis.sessionId ?? analysis.session_id ?? undefined}
           playerId={playerId ?? undefined}
           progressHref="/player/progress"

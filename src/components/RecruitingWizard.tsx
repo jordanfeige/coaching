@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
+import type { UTRSearchPlayer } from '@/lib/utr'
 import ViaBlob from '@/components/ViaBlob'
 
 const TEAL = '#1D9E75'
@@ -15,6 +16,7 @@ interface WizardMessage {
   content: string
   chips?: string[]
   field?: string
+  isUtrSearch?: boolean
 }
 
 export interface WizardData {
@@ -29,22 +31,26 @@ export interface WizardData {
   act_score?: string
   tournament_circuit?: string
   career_goal?: string
+  utr_player_id?: string
+}
+
+type WizardQuestion = {
+  field: keyof WizardData
+  message: (name: string, sport: string, data: WizardData) => string
+  chips: string[]
+  freeText?: boolean
+  isUtrStep?: boolean
 }
 
 interface Props {
   playerId: string
   playerName: string
   sport: string
-  onComplete: () => void
+  onComplete: (profileId?: string) => void
   isCoach?: boolean
 }
 
-const QUESTIONS: Array<{
-  field: keyof WizardData
-  message: (name: string, sport: string, data: WizardData) => string
-  chips: string[]
-  freeText?: boolean
-}> = [
+const QUESTIONS: WizardQuestion[] = [
   {
     field: 'target_division',
     message: (name, sport) =>
@@ -131,6 +137,13 @@ const QUESTIONS: Array<{
     ],
   },
   {
+    field: 'utr_player_id',
+    message: () =>
+      `One more thing — do you have a UTR account? Linking it lets Via show you specific schools and real gaps. You can also skip this and your coach can link it for you.`,
+    chips: ['I have a UTR account', 'Skip for now'],
+    isUtrStep: true,
+  },
+  {
     field: 'campus_size',
     message: () => 'Last one — what kind of campus feels right?',
     chips: [
@@ -142,16 +155,18 @@ const QUESTIONS: Array<{
   },
 ]
 
-function parseGpa(value?: string): number | null {
-  if (!value || value === 'Not sure yet') return null
-  const n = parseFloat(value.replace(/[^\d.]/g, ''))
-  return Number.isFinite(n) ? n : null
-}
-
-function parseSat(value?: string): number | null {
-  if (!value || value === 'Not yet') return null
-  const match = value.match(/\d+/)
-  return match ? parseInt(match[0], 10) : null
+function formatSaveError(e: unknown): string {
+  if (e instanceof Error) return e.message
+  if (e && typeof e === 'object') {
+    const err = e as {
+      message?: string
+      details?: string
+      hint?: string
+    }
+    if (err.message) return err.message
+    if (err.details) return err.details
+  }
+  return 'Save failed. Please try again.'
 }
 
 export default function RecruitingWizard({
@@ -161,29 +176,55 @@ export default function RecruitingWizard({
   onComplete,
 }: Props) {
   const supabase = createClient()
-  const [messages, setMessages] = useState<WizardMessage[]>([])
+  const firstName = playerName.split(' ')[0]
+  const displaySport = sport || 'tennis'
+
+  const [messages, setMessages] = useState<WizardMessage[]>(() => [
+    {
+      role: 'via',
+      content: QUESTIONS[0].message(firstName, displaySport, {}),
+      chips: QUESTIONS[0].chips,
+      field: QUESTIONS[0].field,
+    },
+  ])
   const [input, setInput] = useState('')
   const [step, setStep] = useState(0)
   const [data, setData] = useState<WizardData>({})
   const [saving, setSaving] = useState(false)
+  const [generatingMessage, setGeneratingMessage] = useState('')
   const [done, setDone] = useState(false)
+  const [showUtrSearch, setShowUtrSearch] = useState(false)
+  const [utrSearchQuery, setUtrSearchQuery] = useState('')
+  const [utrSearchResults, setUtrSearchResults] = useState<UTRSearchPlayer[]>(
+    [],
+  )
+  const [utrSearching, setUtrSearching] = useState(false)
+  const [utrLinked, setUtrLinked] = useState(false)
+  const [linkedUtrPlayer, setLinkedUtrPlayer] =
+    useState<UTRSearchPlayer | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const dataRef = useRef<WizardData>({})
-
-  const firstName = playerName.split(' ')[0]
-  const displaySport = sport || 'tennis'
 
   useEffect(() => {
     dataRef.current = data
   }, [data])
 
   useEffect(() => {
-    addViaMessage(0, {})
-  }, [])
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (showUtrSearch && !utrLinked) {
+      const name = playerName.trim()
+      if (name) {
+        setUtrSearchQuery(name)
+        const timer = setTimeout(() => {
+          void searchUTRWithQuery(name)
+        }, 300)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [showUtrSearch, utrLinked, playerName])
 
   function addViaMessage(stepIndex: number, snapshot: WizardData) {
     if (stepIndex >= QUESTIONS.length) {
@@ -214,7 +255,7 @@ export default function RecruitingWizard({
     void saveWizardData()
   }
 
-  function handleAnswer(value: string, field: string) {
+  function advanceWizard(value: string, field: string) {
     setMessages(prev => [...prev, { role: 'player', content: value }])
 
     const newData = { ...dataRef.current, [field]: value } as WizardData
@@ -223,10 +264,97 @@ export default function RecruitingWizard({
 
     const nextStep = step + 1
     setStep(nextStep)
+    setShowUtrSearch(false)
 
     setTimeout(() => {
       addViaMessage(nextStep, newData)
     }, 400)
+  }
+
+  function handleAnswer(
+    value: string,
+    field: string,
+    isUtrStep?: boolean,
+  ) {
+    if (isUtrStep) {
+      if (value === 'I have a UTR account') {
+        setShowUtrSearch(true)
+        setMessages(prev => [
+          ...prev,
+          { role: 'player', content: value },
+          {
+            role: 'via',
+            content: 'Search for your name on UTR and pick your profile.',
+            isUtrSearch: true,
+          },
+        ])
+        return
+      }
+      advanceWizard(value, field)
+      return
+    }
+
+    advanceWizard(value, field)
+  }
+
+  async function searchUTRWithQuery(query: string) {
+    if (!query.trim()) return
+    setUtrSearching(true)
+    setUtrSearchResults([])
+    try {
+      const res = await fetch('/api/utr-player-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'search',
+          query: query.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setUtrSearchResults(data.players || [])
+      } else {
+        console.error('UTR search failed:', data.error)
+      }
+    } catch (e) {
+      console.error('UTR search error:', e)
+    }
+    setUtrSearching(false)
+  }
+
+  async function searchUTR() {
+    await searchUTRWithQuery(utrSearchQuery)
+  }
+
+  async function linkUTRFromWizard(utrPlayer: UTRSearchPlayer) {
+    try {
+      const res = await fetch('/api/utr-player-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'link',
+          utrPlayerId: utrPlayer.id.toString(),
+          playerId,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setUtrLinked(true)
+        setLinkedUtrPlayer(utrPlayer)
+        setUtrSearchResults([])
+        const newData = {
+          ...dataRef.current,
+          utr_player_id: utrPlayer.id.toString(),
+        }
+        dataRef.current = newData
+        setData(newData)
+        setTimeout(() => {
+          advanceWizard(utrPlayer.name, 'utr_player_id')
+        }, 1200)
+      }
+    } catch (e) {
+      console.error('UTR link:', e)
+    }
   }
 
   function handleTextSubmit() {
@@ -239,54 +367,134 @@ export default function RecruitingWizard({
 
   async function saveWizardData() {
     setSaving(true)
-    try {
-      const { data: existing } = await supabase
-        .from('recruiting_profiles')
-        .select('id')
-        .eq('player_id', playerId)
-        .maybeSingle()
+    setGeneratingMessage('Saving your profile...')
 
-      const profileData = {
-        player_id: playerId,
+    function parseGpaRange(val: string): number | null {
+      if (!val) return null
+      const num = parseFloat(val)
+      if (!Number.isNaN(num)) return num
+      const parts = val
+        .split(/[–\-]/)
+        .map(s => parseFloat(s.trim()))
+        .filter(n => !Number.isNaN(n))
+      if (parts.length === 2) {
+        return (parts[0] + parts[1]) / 2
+      }
+      return null
+    }
+
+    function parseSatRange(val: string): number | null {
+      if (!val || val === 'Not yet') return null
+      const num = parseInt(val, 10)
+      if (!Number.isNaN(num)) return num
+      const parts = val
+        .split(/[–\-]/)
+        .map(s => parseInt(s.trim(), 10))
+        .filter(n => !Number.isNaN(n))
+      if (parts.length === 2) {
+        return Math.round((parts[0] + parts[1]) / 2)
+      }
+      return null
+    }
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        setSaving(false)
+        setGeneratingMessage('')
+        return
+      }
+
+      setGeneratingMessage('Saving your answers...')
+
+      const profile = {
         target_division: dataRef.current.target_division || null,
         pro_interest: dataRef.current.pro_interest || null,
         geographic_preference: dataRef.current.geographic_preference || null,
         scholarship_need: dataRef.current.scholarship_need || null,
         campus_size: dataRef.current.campus_size || null,
         intended_major: dataRef.current.intended_major || null,
-        gpa: parseGpa(dataRef.current.gpa),
-        sat_score: parseSat(dataRef.current.sat_score),
-        wizard_completed: true,
-        wizard_completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        gpa: parseGpaRange(dataRef.current.gpa || ''),
+        sat_score: parseSatRange(dataRef.current.sat_score || ''),
       }
 
-      if (existing?.id) {
-        await supabase
-          .from('recruiting_profiles')
-          .update(profileData)
-          .eq('id', existing.id)
-      } else {
-        await supabase.from('recruiting_profiles').insert(profileData)
+      setGeneratingMessage('Matching you to schools...')
+
+      const res = await fetch('/api/recruiting-wizard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, profile }),
+      })
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string
+        profileId?: string
       }
 
-      setTimeout(() => {
-        onComplete()
-      }, 1500)
-    } catch (e) {
-      console.error('Wizard save error:', e)
+      if (!res.ok) {
+        throw new Error(json.error || `Save failed (${res.status})`)
+      }
+
+      setGeneratingMessage('Building your roadmap...')
+
+      const finalProfileId = json.profileId
+      if (finalProfileId) {
+        const gpaVal = parseGpaRange(dataRef.current.gpa || '')
+        const satVal = parseSatRange(dataRef.current.sat_score || '')
+        await fetch('/api/recruiting-projection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            profileId: finalProfileId,
+            playerId,
+            playerName,
+            sport: displaySport,
+            targetDivision: dataRef.current.target_division || null,
+            gpa: gpaVal,
+            sat: satVal,
+            major: dataRef.current.intended_major || null,
+            geo: dataRef.current.geographic_preference || null,
+            scholarship: dataRef.current.scholarship_need || null,
+            campusSize: dataRef.current.campus_size || null,
+            proInterest: dataRef.current.pro_interest || null,
+          }),
+        })
+      }
+
+      await new Promise(r => setTimeout(r, 800))
+
+      onComplete(finalProfileId)
+    } catch (e: unknown) {
+      console.error('Wizard save:', formatSaveError(e), e)
+      setSaving(false)
+      setGeneratingMessage('')
+      setDone(false)
+      const detail = formatSaveError(e)
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'via',
+          content:
+            detail === 'Save failed. Please try again.'
+              ? 'Something went wrong saving your profile. Please try again.'
+              : `Something went wrong saving your profile: ${detail}`,
+        },
+      ])
     }
-    setSaving(false)
   }
 
   return (
     <div
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
-        minHeight: 500,
+        height: 580,
+        maxHeight: '80vh',
         fontFamily: 'Arial, sans-serif',
+        overflow: 'hidden',
       }}
     >
       <div
@@ -302,7 +510,7 @@ export default function RecruitingWizard({
         <ViaBlob size={26} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 500, color: TEXT }}>
-            Via — recruiting setup
+            Setup your recruiting profile
           </div>
         </div>
         <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
@@ -325,13 +533,22 @@ export default function RecruitingWizard({
         style={{
           flex: 1,
           overflowY: 'auto',
+          minHeight: 0,
+          maxHeight: 460,
           padding: '14px 16px',
           display: 'flex',
           flexDirection: 'column',
           gap: 10,
         }}
       >
-        {messages.map((msg, i) => (
+        {messages.map((msg, i) => {
+          const q = msg.field
+            ? QUESTIONS.find(question => question.field === msg.field)
+            : undefined
+          const isLastVia =
+            msg.role === 'via' && i === messages.length - 1 && !done
+
+          return (
           <div key={i}>
             {msg.role === 'via' ? (
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -347,12 +564,198 @@ export default function RecruitingWizard({
                       fontSize: 13,
                       color: TEXT,
                       lineHeight: 1.65,
-                      marginBottom: msg.chips?.length ? 8 : 0,
+                      marginBottom:
+                        msg.chips?.length || msg.isUtrSearch ? 8 : 0,
                     }}
                   >
                     {msg.content}
                   </div>
-                  {msg.chips && i === messages.length - 1 && !done && (
+
+                  {msg.isUtrSearch && (
+                    <div style={{ marginTop: 8 }}>
+                      {!utrLinked ? (
+                        <>
+                          <div
+                            style={{
+                              display: 'flex',
+                              gap: 7,
+                              marginBottom: 8,
+                            }}
+                          >
+                            <input
+                              value={utrSearchQuery}
+                              onChange={e =>
+                                setUtrSearchQuery(e.target.value)
+                              }
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') void searchUTR()
+                              }}
+                              placeholder="Search your name..."
+                              style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                borderRadius: 9,
+                                border: `0.5px solid ${BORDER}`,
+                                background: WARM_BG,
+                                fontSize: 13,
+                                color: TEXT,
+                                outline: 'none',
+                                fontFamily: 'Arial, sans-serif',
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void searchUTR()}
+                              disabled={
+                                utrSearching || !utrSearchQuery.trim()
+                              }
+                              style={{
+                                padding: '8px 14px',
+                                borderRadius: 9,
+                                background: utrSearching ? BORDER : TEAL,
+                                border: 'none',
+                                color: 'white',
+                                fontSize: 12,
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                fontFamily: 'Arial, sans-serif',
+                              }}
+                            >
+                              {utrSearching ? '...' : 'Search'}
+                            </button>
+                          </div>
+
+                          {utrSearchResults.length > 0 && (
+                            <div
+                              style={{
+                                border: `0.5px solid ${BORDER}`,
+                                borderRadius: 10,
+                                overflow: 'hidden',
+                                marginBottom: 8,
+                              }}
+                            >
+                              {utrSearchResults.map((p, ri) => (
+                                <div
+                                  key={p.id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 10,
+                                    padding: '9px 12px',
+                                    borderTop:
+                                      ri > 0
+                                        ? `0.5px solid ${BORDER}`
+                                        : 'none',
+                                    background:
+                                      ri % 2 === 0 ? 'white' : WARM_BG,
+                                  }}
+                                >
+                                  <div style={{ flex: 1 }}>
+                                    <div
+                                      style={{
+                                        fontSize: 12,
+                                        fontWeight: 500,
+                                        color: TEXT,
+                                      }}
+                                    >
+                                      {p.name}
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        color: TEXT_MUTED,
+                                      }}
+                                    >
+                                      UTR {p.singlesUtr || '—'}
+                                      {p.location ? ` · ${p.location}` : ''}
+                                      {p.ageRange ? ` · ${p.ageRange}` : ''}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void linkUTRFromWizard(p)
+                                    }
+                                    style={{
+                                      padding: '5px 11px',
+                                      borderRadius: 7,
+                                      background: TEAL,
+                                      border: 'none',
+                                      color: 'white',
+                                      fontSize: 11,
+                                      fontWeight: 500,
+                                      cursor: 'pointer',
+                                      flexShrink: 0,
+                                      fontFamily: 'Arial, sans-serif',
+                                    }}
+                                  >
+                                    That&apos;s me →
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowUtrSearch(false)
+                              advanceWizard('Skipped', 'utr_player_id')
+                            }}
+                            style={{
+                              fontSize: 11,
+                              color: TEXT_MUTED,
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: 0,
+                              fontFamily: 'Arial, sans-serif',
+                            }}
+                          >
+                            Skip for now
+                          </button>
+                        </>
+                      ) : (
+                        <div
+                          style={{
+                            padding: '8px 12px',
+                            background: '#E1F5EE',
+                            borderRadius: 9,
+                            border: '0.5px solid #9FE1CB',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <i
+                            className="ti ti-check"
+                            style={{ fontSize: 16, color: '#1D9E75' }}
+                            aria-hidden="true"
+                          />
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 500,
+                                color: '#085041',
+                              }}
+                            >
+                              {linkedUtrPlayer?.name} linked
+                            </div>
+                            <div style={{ fontSize: 11, color: '#0F6E56' }}>
+                              UTR {linkedUtrPlayer?.singlesUtr} · syncing
+                              automatically
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {msg.chips &&
+                    isLastVia &&
+                    !showUtrSearch &&
+                    !msg.isUtrSearch && (
                     <div
                       style={{
                         display: 'flex',
@@ -364,7 +767,13 @@ export default function RecruitingWizard({
                         <button
                           key={chip}
                           type="button"
-                          onClick={() => handleAnswer(chip, msg.field!)}
+                          onClick={() =>
+                            handleAnswer(
+                              chip,
+                              msg.field!,
+                              q?.isUtrStep,
+                            )
+                          }
                           style={{
                             padding: '7px 14px',
                             borderRadius: 999,
@@ -401,23 +810,79 @@ export default function RecruitingWizard({
               </div>
             )}
           </div>
-        ))}
-
-        {saving && (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '12px',
-              fontSize: 12,
-              color: TEXT_MUTED,
-            }}
-          >
-            Building your roadmap...
-          </div>
-        )}
+          )
+        })}
 
         <div ref={messagesEndRef} />
       </div>
+
+      {saving && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'white',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 16,
+            zIndex: 10,
+            borderRadius: 'inherit',
+          }}
+        >
+          <ViaBlob size={48} thinking />
+          <div style={{ textAlign: 'center' }}>
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 500,
+                color: TEXT,
+                marginBottom: 6,
+              }}
+            >
+              Building your roadmap
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: TEXT_MUTED,
+                lineHeight: 1.6,
+              }}
+            >
+              {generatingMessage || 'Saving your profile...'}
+            </div>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              marginTop: 4,
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+            }}
+          >
+            {['Saving profile', 'Matching schools', 'Building roadmap'].map(
+              (step, i) => (
+                <div
+                  key={step}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 999,
+                    background: '#E1F5EE',
+                    border: '0.5px solid #9FE1CB',
+                    fontSize: 11,
+                    color: '#085041',
+                    animation: `fadeIn 0.4s ease ${i * 0.5}s both`,
+                  }}
+                >
+                  {step}
+                </div>
+              ),
+            )}
+          </div>
+        </div>
+      )}
 
       {!done && QUESTIONS[step]?.freeText && (
         <div
