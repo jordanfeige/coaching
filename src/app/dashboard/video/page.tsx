@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Video, Upload, Circle, Square, Trash2, Play } from 'lucide-react'
 import { format } from 'date-fns'
-import ViaBar from '@/components/ViaBar'
+import UniversalVia from '@/components/UniversalVia'
 import { isImageMediaPath } from '@/lib/video-frames'
 import { generateMediaThumbnailDataUrl, titleInitials } from '@/lib/video-thumbnails'
 
@@ -28,6 +28,7 @@ export default function VideoPage() {
   const [uploadForm, setUploadForm] = useState<{ player_id: string | null, title: string, file: File | null }>({ player_id: '', title: '', file: null })
   const [recordForm, setRecordForm] = useState<{ player_id: string | null, title: string }>({ player_id: '', title: '' })
   const [recordingTime, setRecordingTime] = useState(0)
+  const [unverifiedCount, setUnverifiedCount] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const playbackRef = useRef<HTMLVideoElement>(null)
   const timerRef = useRef<any>(null)
@@ -41,8 +42,13 @@ export default function VideoPage() {
       .select('*, players(name)')
       .order('recorded_at', { ascending: false })
     const { data: p } = await supabase.from('players').select('*').order('name')
+    const { count } = await supabase
+      .from('analysis_sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('coach_verified', false)
     setVideos(v || [])
     setPlayers(p || [])
+    setUnverifiedCount(count ?? 0)
   }
 
   async function handleUpload() {
@@ -135,7 +141,13 @@ export default function VideoPage() {
 
   return (
     <div className="space-y-6">
-      <ViaBar role="coach" />
+      <UniversalVia
+        role="coach"
+        pageContext={{
+          page: 'reels-coach',
+          unverifiedCount,
+        }}
+      />
 
       <div className="flex items-center justify-between">
         <div>

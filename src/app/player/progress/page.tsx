@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import { differenceInDays, format } from 'date-fns'
+import UniversalVia from '@/components/UniversalVia'
 import ViaBlob from '@/components/ViaBlob'
 import {
   PLAYER_VISIBLE_SESSIONS_FILTER,
@@ -661,6 +662,18 @@ function ProgressPageContent() {
       }}
     >
       <style>{CSS}</style>
+
+      <UniversalVia
+        role="player"
+        playerId={player?.id}
+        playerName={player?.name || undefined}
+        pageContext={{
+          page: 'player-progress',
+          totalGain: totalGain || undefined,
+          fixedCount: fixedIssues.length,
+          activeIssue: activeIssues[0]?.issue || undefined,
+        }}
+      />
 
       <div
         style={{

@@ -727,7 +727,10 @@ export default function ReelsPage() {
 
   const [loading, setLoading] = useState(true)
   const [sessions, setSessions] = useState<Session[]>([])
-  const [player, setPlayer] = useState<{ name?: string | null } | null>(null)
+  const [player, setPlayer] = useState<{
+    id?: string
+    name?: string | null
+  } | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [selected, setSelected] = useState<Session | null>(null)
 
@@ -781,7 +784,7 @@ export default function ReelsPage() {
       if (prof?.player_id) {
         const { data: p } = await supabase
           .from('players')
-          .select('name')
+          .select('id, name')
           .eq('id', prof.player_id)
           .single()
         setPlayer(p)
@@ -902,7 +905,34 @@ export default function ReelsPage() {
         </div>
       </div>
 
-      <UniversalVia role="player" embedded reelContext={reelContext} />
+      <UniversalVia
+        role="player"
+        embedded
+        reelContext={reelContext}
+        playerId={player?.id}
+        playerName={player?.name || undefined}
+        pageContext={
+          selected
+            ? {
+                page: 'player-reel-detail',
+                techniqueScore: selected.overall_score ?? undefined,
+                activeIssue: selected.top_issue || undefined,
+                reelDate: selected.analyzed_at
+                  ? format(new Date(selected.analyzed_at), 'MMM d')
+                  : undefined,
+              }
+            : {
+                page: 'player-reels',
+                sessionCount: sessions.length,
+                latestScore:
+                  [...sessions].sort(
+                    (a, b) =>
+                      new Date(String(b.analyzed_at)).getTime() -
+                      new Date(String(a.analyzed_at)).getTime(),
+                  )[0]?.overall_score ?? undefined,
+              }
+        }
+      />
 
       <div
         style={{

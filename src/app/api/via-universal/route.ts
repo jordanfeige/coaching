@@ -75,7 +75,13 @@ load, Taylor's footwork is the focus."
 
 Coach asks vague question
 Good: Ask ONE clarifying question in plain
-text, no bullet options.`
+text, no bullet options.
+
+When PAGE TYPE is player-profile and FOCUSED ON is set, all responses should
+be about that specific player only.
+Don't mention other players unless asked.
+Quick context: if the coach is on a player
+profile, they want help with THAT player.`
 
 const PLAYER_SYSTEM_PROMPT = `You are Via,
 a coaching assistant inside Playvia.
@@ -122,7 +128,11 @@ Good: One short clarifying question.
 
 When the player is on the reels page with a selected session,
 reference that reel's score, top issue, and shot type.
-Help them understand the reel or decide what to work on next.`
+Help them understand the reel or decide what to work on next.
+
+When PAGE TYPE is player-reel-detail,
+the player is looking at a specific reel.
+Respond with context about that session.`
 
 type ChatMessage = {
   role: 'user' | 'assistant'
@@ -131,16 +141,63 @@ type ChatMessage = {
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
+    message?: string
     messages?: ChatMessage[]
+    history?: ChatMessage[]
     rosterContext?: unknown
     playerContext?: unknown
+    context?: unknown
+    pageContext?: {
+      page?: string
+      playerName?: string
+      activeIssue?: string
+      techniqueScore?: number
+    }
+    currentPath?: string
     role?: 'coach' | 'player'
   }
 
-  const { messages, rosterContext, playerContext, role = 'coach' } = body
+  const {
+    message,
+    messages: legacyMessages,
+    history,
+    rosterContext,
+    playerContext,
+    context,
+    pageContext,
+    currentPath,
+    role = 'coach',
+  } = body
 
-  if (!Array.isArray(messages)) {
-    return NextResponse.json({ error: 'Messages are required' }, { status: 400 })
+  const contextData = rosterContext ?? playerContext ?? context
+  const contextSummary = JSON.stringify(contextData ?? {}, null, 2)
+
+  let apiMessages: ChatMessage[]
+
+  if (Array.isArray(legacyMessages) && legacyMessages.length > 0) {
+    apiMessages = legacyMessages
+  } else if (message?.trim()) {
+    const userContent =
+      `CURRENT PAGE: ${currentPath || ''}\n` +
+      `PAGE TYPE: ${pageContext?.page || 'unknown'}\n` +
+      (pageContext?.playerName
+        ? `FOCUSED ON: ${pageContext.playerName}\n`
+        : '') +
+      (pageContext?.activeIssue
+        ? `ACTIVE ISSUE: ${pageContext.activeIssue}\n`
+        : '') +
+      (pageContext?.techniqueScore != null
+        ? `SCORE: ${pageContext.techniqueScore}\n`
+        : '') +
+      `\nCONTEXT:\n${contextSummary}\n\n` +
+      `MESSAGE: ${message.trim()}`
+
+    apiMessages = [
+      ...(history || []).slice(-8),
+      { role: 'user', content: userContent },
+    ]
+  } else {
+    return NextResponse.json({ error: 'Message is required' }, { status: 400 })
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -159,17 +216,21 @@ export async function POST(req: NextRequest) {
   const basePrompt = role === 'player' ? PLAYER_SYSTEM_PROMPT : COACH_SYSTEM_PROMPT
   const contextBlock =
     role === 'player'
-      ? `PLAYER CONTEXT:\n${JSON.stringify(playerContext, null, 2)}`
-      : `ROSTER CONTEXT:\n${JSON.stringify(rosterContext, null, 2)}`
+      ? `PLAYER CONTEXT:\n${contextSummary}`
+      : `ROSTER CONTEXT:\n${contextSummary}`
 
-  const systemPrompt = `${basePrompt}\n\n${contextBlock}`
+  const pageBlock = pageContext?.page
+    ? `\nPAGE CONTEXT:\n${JSON.stringify(pageContext, null, 2)}`
+    : ''
+
+  const systemPrompt = `${basePrompt}\n\n${contextBlock}${pageBlock}`
 
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 500,
       system: systemPrompt,
-      messages: messages.map(message => ({
+      messages: apiMessages.map(message => ({
         role: message.role,
         content: message.content,
       })),

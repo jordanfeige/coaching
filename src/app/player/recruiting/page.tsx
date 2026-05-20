@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import RecruitingWizard from '@/components/RecruitingWizard'
+import UniversalVia from '@/components/UniversalVia'
 import ViaBlob from '@/components/ViaBlob'
 import ViaRecruitingOutlookCard from '@/components/ViaRecruitingOutlookCard'
 import { parseRecruitingOutlook } from '@/lib/recruiting-outlook'
@@ -170,6 +171,23 @@ export default function PlayerRecruitingPage() {
         fontFamily: 'Arial, sans-serif',
       }}
     >
+      <UniversalVia
+        role="player"
+        playerId={player.id}
+        playerName={player.name}
+        pageContext={{
+          page: 'player-recruiting',
+          utrSingles:
+            profile?.utr_singles != null
+              ? Number(profile.utr_singles)
+              : undefined,
+          targetDivision:
+            typeof profile?.target_division === 'string'
+              ? profile.target_division
+              : undefined,
+        }}
+      />
+
       <div
         style={{
           background: 'white',

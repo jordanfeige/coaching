@@ -1,19 +1,12 @@
 'use client'
 
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import { differenceInDays, format } from 'date-fns'
-import ViaBlob from '@/components/ViaBlob'
+import UniversalVia from '@/components/UniversalVia'
 import { typography } from '@/lib/brand'
-import {
-  ViaPanel,
-  ViaPanelBrief,
-  ViaPanelInput,
-  ViaPanelStyles,
-  ViaPanelTitleRow,
-} from '@/components/ViaPanel'
 import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
 
 const CSS = `
@@ -68,16 +61,6 @@ export default function PlayerHome() {
   const [drills, setDrills] = useState<Array<Record<string, unknown>>>([])
   const [lessons, setLessons] = useState<Array<Record<string, unknown>>>([])
   const [loading, setLoading] = useState(true)
-
-  const [brief, setBrief] = useState('')
-  const [briefLoading, setBriefLoading] = useState(true)
-  const [chatInput, setChatInput] = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
-  const [chatMessages, setChatMessages] = useState<
-    { role: 'user' | 'assistant'; content: string }[]
-  >([])
-  const [showChat, setShowChat] = useState(false)
-  const chatEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     async function load() {
@@ -194,181 +177,6 @@ export default function PlayerHome() {
   })
   const consecutiveClean = cleanStreak === -1 ? last3.length : cleanStreak
 
-  const quickPrompts = [
-    'What improved most?',
-    'What should I focus on next?',
-    currentScore
-      ? `How does ${currentScore} compare to others?`
-      : 'When will I improve?',
-  ]
-
-  useEffect(() => {
-    if (loading || !player) return
-
-    async function genBrief() {
-      if (!player) return
-      const latestSession = sortedSessions[sortedSessions.length - 1]
-      const prevSession = sortedSessions[sortedSessions.length - 2]
-      const firstSession = sortedSessions[0]
-
-      const scoreDelta =
-        latestSession &&
-        prevSession &&
-        typeof latestSession.overall_score === 'number' &&
-        typeof prevSession.overall_score === 'number'
-          ? latestSession.overall_score - prevSession.overall_score
-          : null
-
-      try {
-        const playerContext = {
-          name: firstName,
-          sport: player.sport || 'tennis',
-          latestScore:
-            typeof latestSession?.overall_score === 'number'
-              ? latestSession.overall_score
-              : null,
-          previousScore:
-            typeof prevSession?.overall_score === 'number'
-              ? prevSession.overall_score
-              : null,
-          delta: scoreDelta,
-          totalGain:
-            latestSession &&
-            firstSession &&
-            latestSession.id !== firstSession.id &&
-            typeof latestSession.overall_score === 'number' &&
-            typeof firstSession.overall_score === 'number'
-              ? latestSession.overall_score - firstSession.overall_score
-              : 0,
-          topIssue:
-            typeof latestSession?.top_issue === 'string'
-              ? latestSession.top_issue
-              : null,
-          sessionCount: sortedSessions.length,
-          strengths:
-            (latestSession?.full_result as { strengths?: unknown[] })
-              ?.strengths || [],
-          issues:
-            (latestSession?.full_result as { areas_to_improve?: unknown[] })
-              ?.areas_to_improve || [],
-          poseMeasurements: latestSession?.pose_measurements ?? null,
-          daysSinceLast: latestSession
-            ? differenceInDays(
-                new Date(),
-                new Date(String(latestSession.analyzed_at)),
-              )
-            : null,
-          hasUpcomingLesson: lessons.length > 0,
-          recentDrill:
-            typeof drills[0]?.title === 'string' ? drills[0].title : null,
-        }
-
-        const res = await fetch('/api/player-summary', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerContext }),
-        })
-        const data = await res.json()
-        setBrief(data.summary || '')
-      } catch {
-        if (latestSession) {
-          setBrief(
-            scoreDelta && scoreDelta > 0
-              ? `${firstName}, your score went up ${scoreDelta} points this week. ${typeof latestSession.top_issue === 'string' && latestSession.top_issue ? `Keep working on ${latestSession.top_issue}.` : 'Keep the momentum going.'}`
-              : `${firstName}, let's keep building. ${typeof latestSession.top_issue === 'string' && latestSession.top_issue ? `Focus on ${latestSession.top_issue} this week.` : 'Stay consistent and the score will follow.'}`,
-          )
-        } else {
-          setBrief(
-            "Welcome! Upload your first video and I'll give you a full technique breakdown.",
-          )
-        }
-      }
-      setBriefLoading(false)
-    }
-
-    void genBrief()
-  }, [loading, player, sortedSessions, firstName])
-
-  const sendChat = useCallback(
-    async (overrideMsg?: string) => {
-      const msg = (overrideMsg ?? chatInput).trim()
-      if (!msg || chatLoading) return
-      setChatInput('')
-      setShowChat(true)
-
-      const latestSession = sortedSessions[sortedSessions.length - 1]
-      const prevSession = sortedSessions[sortedSessions.length - 2]
-
-      const newMessages = [
-        ...chatMessages,
-        { role: 'user' as const, content: msg },
-      ]
-      setChatMessages(newMessages)
-      setChatLoading(true)
-
-      try {
-        const res = await fetch('/api/player-chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: newMessages,
-            playerContext: {
-              name: firstName,
-              sport: player?.sport,
-              latestScore: latestSession?.overall_score,
-              delta:
-                latestSession &&
-                prevSession &&
-                typeof latestSession.overall_score === 'number' &&
-                typeof prevSession.overall_score === 'number'
-                  ? latestSession.overall_score - prevSession.overall_score
-                  : null,
-              topIssue: latestSession?.top_issue,
-              poseMeasurements: latestSession?.pose_measurements,
-              strengths:
-                (latestSession?.full_result as { strengths?: unknown[] })
-                  ?.strengths || [],
-              issues:
-                (latestSession?.full_result as { areas_to_improve?: unknown[] })
-                  ?.areas_to_improve || [],
-            },
-          }),
-        })
-        const data = await res.json()
-        setChatMessages(prev => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: data.response || data.message || '',
-          },
-        ])
-      } catch {
-        setChatMessages(prev => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: 'Something went wrong. Try again.',
-          },
-        ])
-      }
-
-      setChatLoading(false)
-    },
-    [
-      chatInput,
-      chatLoading,
-      chatMessages,
-      firstName,
-      player?.sport,
-      sortedSessions,
-    ],
-  )
-
-  useEffect(() => {
-    if (!showChat) return
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatMessages, chatLoading, showChat])
-
   if (loading) {
     return (
       <div
@@ -424,230 +232,77 @@ export default function PlayerHome() {
     >
       <style>{CSS}</style>
 
-      <ViaPanelStyles />
-      <ViaPanel mode="playerVia" style={{ overflow: 'hidden', marginBottom: 14 }}>
-        <div style={{ padding: '18px 20px 16px' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              marginBottom: 12,
-              gap: 12,
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <ViaBlob size={36} thinking={chatLoading} />
-              <ViaPanelTitleRow role="player" mode="playerVia" />
-            </div>
+      <UniversalVia
+        role="player"
+        playerId={player.id}
+        playerName={player.name || undefined}
+        pageContext={{
+          page: 'player-home',
+          techniqueScore: currentScore ?? undefined,
+          scoreDelta: delta ?? undefined,
+          activeIssue:
+            typeof latest?.top_issue === 'string'
+              ? latest.top_issue
+              : undefined,
+          sessionCount: sortedSessions.length,
+        }}
+      />
 
-            {currentScore !== null && (
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div
-                  style={{
-                    fontSize: 36,
-                    fontWeight: 900,
-                    color: TEAL,
-                    lineHeight: 1,
-                    letterSpacing: '-1.5px',
-                  }}
-                >
-                  {currentScore}
-                </div>
-                {delta !== null && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: delta > 0 ? GREEN : delta < 0 ? RED : TEXT_MUTED,
-                      marginTop: 1,
-                    }}
-                  >
-                    {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
-                    {delta !== 0 ? ` ${Math.abs(delta)} this week` : ' no change'}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <ViaPanelBrief loading={briefLoading} loadingLabel="Via is writing your debrief..." mode="playerVia">
-            {brief}
-          </ViaPanelBrief>
-
-          {currentScore !== null && (
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: 5,
-                }}
-              >
-                <span style={{ fontSize: 10, color: TEXT_MUTED }}>
-                  Progress
-                  {totalGain > 0 ? ` · +${totalGain} pts all time` : ''}
-                </span>
-                <span style={{ fontSize: 10, color: TEAL, fontWeight: 600 }}>
-                  {currentScore} / 100
-                </span>
-              </div>
-              <div
-                style={{
-                  height: 6,
-                  background: 'rgba(29,158,117,.12)',
-                  borderRadius: 3,
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  style={{
-                    height: 6,
-                    background: TEAL,
-                    borderRadius: 3,
-                    width: `${currentScore}%`,
-                    boxShadow: '0 0 6px rgba(29,158,117,.3)',
-                    transition: 'width 0.8s ease',
-                  }}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
+      {currentScore !== null && (
         <div
           style={{
-            padding: '12px 20px 14px',
-            background: 'rgba(255,255,255,.6)',
-            borderTop: '0.5px solid rgba(29,158,117,.1)',
+            background: 'white',
+            border: `0.5px solid ${BORDER}`,
+            borderRadius: 12,
+            padding: '12px 16px',
+            marginBottom: 14,
           }}
         >
           <div
             style={{
-              fontSize: 10,
-              color: TEAL_DARK,
-              fontWeight: 600,
-              marginBottom: 7,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 8,
             }}
           >
-            ↩ Reply to Via
+            <span style={{ fontSize: 11, color: TEXT_MUTED }}>Technique score</span>
+            <span style={{ fontSize: 28, fontWeight: 800, color: TEAL, lineHeight: 1 }}>
+              {currentScore}
+              {delta !== null && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    marginLeft: 8,
+                    color: delta > 0 ? GREEN : delta < 0 ? RED : TEXT_MUTED,
+                  }}
+                >
+                  {delta > 0 ? '↑' : delta < 0 ? '↓' : ''}
+                  {delta !== 0 ? ` ${Math.abs(delta)}` : ''}
+                </span>
+              )}
+            </span>
           </div>
-
-          <ViaPanelInput
-            value={chatInput}
-            onChange={setChatInput}
-            onSend={() => void sendChat()}
-            disabled={chatLoading}
-            placeholder="Ask Via about your progress..."
-          />
-
           <div
             style={{
-              display: 'flex',
-              gap: 5,
-              flexWrap: 'wrap',
+              height: 6,
+              background: 'rgba(29,158,117,.12)',
+              borderRadius: 3,
+              overflow: 'hidden',
             }}
           >
-            {quickPrompts.map(prompt => (
-              <button
-                key={prompt}
-                type="button"
-                onClick={() => void sendChat(prompt)}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 999,
-                  background: 'rgba(29,158,117,.08)',
-                  border: '0.5px solid rgba(29,158,117,.18)',
-                  fontSize: 10,
-                  color: TEAL_DARK,
-                  cursor: 'pointer',
-                  fontFamily: 'Arial, sans-serif',
-                }}
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-
-          {showChat && chatMessages.length > 0 && (
             <div
               style={{
-                marginTop: 12,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 7,
-                maxHeight: 240,
-                overflowY: 'auto',
+                height: 6,
+                background: TEAL,
+                borderRadius: 3,
+                width: `${currentScore}%`,
               }}
-            >
-              {chatMessages.map((m, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
-                  }}
-                >
-                  <div
-                    style={{
-                      maxWidth: '85%',
-                      padding: '8px 12px',
-                      borderRadius:
-                        m.role === 'user'
-                          ? '10px 10px 3px 10px'
-                          : '10px 10px 10px 3px',
-                      background: m.role === 'user' ? TEAL : 'rgba(255,255,255,.9)',
-                      color: m.role === 'user' ? 'white' : TEXT,
-                      fontSize: 12,
-                      lineHeight: 1.55,
-                      border:
-                        m.role === 'assistant'
-                          ? '0.5px solid rgba(29,158,117,.15)'
-                          : 'none',
-                    }}
-                  >
-                    {m.content}
-                  </div>
-                </div>
-              ))}
-              {chatLoading && (
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 4,
-                    padding: '6px 10px',
-                    background: 'rgba(255,255,255,.8)',
-                    borderRadius: 10,
-                    width: 'fit-content',
-                    border: '0.5px solid rgba(29,158,117,.15)',
-                  }}
-                >
-                  {[0, 1, 2].map(i => (
-                    <div
-                      key={i}
-                      style={{
-                        width: 5,
-                        height: 5,
-                        borderRadius: '50%',
-                        background: TEAL,
-                        opacity: 0.5,
-                        animation: `viaRing 1.2s ease-in-out ${i * 0.2}s infinite`,
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-          )}
+            />
+          </div>
         </div>
-      </ViaPanel>
+      )}
 
       {(pose?.length || currentScore !== null) && (
         <div style={{ marginBottom: 14 }}>

@@ -134,7 +134,10 @@ export default function DashboardHome() {
         </h1>
       </div>
 
-      <UniversalVia role="coach" />
+      <UniversalVia
+        role="coach"
+        pageContext={{ page: 'dashboard-home' }}
+      />
 
       <div
         style={{

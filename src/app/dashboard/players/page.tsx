@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { GlassCard } from '@/components/GlassCard'
+import UniversalVia from '@/components/UniversalVia'
 import { glass } from '@/lib/glass'
 
 const TEAL = '#1D9E75'
@@ -885,6 +886,8 @@ export default function PlayersPage() {
       padding: '0 0 40px',
       fontFamily: 'Arial, sans-serif',
     }}>
+
+      <UniversalVia role="coach" pageContext={{ page: 'players-list' }} />
 
       {/* Header */}
       <div style={{

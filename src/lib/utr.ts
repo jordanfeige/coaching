@@ -79,15 +79,21 @@ export async function searchUTRPlayers(
   if (!raw.trim()) {
     throw new Error('UTR search returned an empty response')
   }
-  let data: { players?: { hits?: unknown[] } }
+  type UTRSearchHit = {
+    source?: Record<string, unknown>
+    id?: string
+  }
+  type UTRSearchResponse = {
+    players?: { hits?: UTRSearchHit[] }
+  }
+  let data: UTRSearchResponse
   try {
-    data = JSON.parse(raw) as { players?: { hits?: unknown[] } }
+    data = JSON.parse(raw) as UTRSearchResponse
   } catch {
     throw new Error('UTR search returned invalid JSON')
   }
-  return (data.players?.hits || []).map(
-    (h: { source?: Record<string, unknown>; id?: string }) => {
-      const source = h.source || {}
+  return (data.players?.hits ?? []).map(h => {
+    const source = h.source || {}
       const location = source.location as { display?: string } | undefined
       return {
         id: String(source.id ?? h.id ?? ''),
@@ -106,8 +112,7 @@ export async function searchUTRPlayers(
         ratingStatus: String(source.ratingStatusSingles || ''),
         nationality: String(source.nationality || ''),
       }
-    },
-  )
+    })
 }
 
 export async function fetchUTRPlayer(

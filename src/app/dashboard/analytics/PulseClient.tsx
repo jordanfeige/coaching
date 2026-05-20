@@ -6,14 +6,7 @@ import { differenceInDays, format } from 'date-fns'
 import { Send, X } from 'lucide-react'
 import ViaBlob from '@/components/ViaBlob'
 import ViaDrillSaveCard from '@/components/ViaDrillSaveCard'
-import {
-  ViaPanel,
-  ViaPanelBrief,
-  ViaPanelInput,
-  ViaPanelRow,
-  ViaPanelStyles,
-  ViaPanelTitleRow,
-} from '@/components/ViaPanel'
+import UniversalVia from '@/components/UniversalVia'
 import type { ViaCreateDrill } from '@/lib/via-drill'
 
 const TEAL = 'hsl(168,62%,36%)'
@@ -471,21 +464,7 @@ export default function PulseClient({
         )}
       </div>
 
-      <ViaPanelStyles />
-      <ViaPanel style={{ padding: '18px 20px', marginBottom: 18 }}>
-        <ViaPanelRow blobSize={36}>
-          <ViaPanelTitleRow role="coach" />
-          <ViaPanelBrief loading={briefLoading}>{brief}</ViaPanelBrief>
-          <ViaPanelInput
-            value={chatInput}
-            onChange={setChatInput}
-            onSend={() => void sendChat()}
-            disabled={chatLoading}
-            placeholder="Ask Via about your roster..."
-            maxWidth={480}
-          />
-        </ViaPanelRow>
-      </ViaPanel>
+      <UniversalVia role="coach" pageContext={{ page: 'pulse' }} />
 
       <div
         style={{

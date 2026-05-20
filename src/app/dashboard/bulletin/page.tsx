@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { ExternalLink, Plus, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
-import ViaBar from '@/components/ViaBar'
+import UniversalVia from '@/components/UniversalVia'
 
 const TEAL = 'hsl(168,62%,36%)'
 const BORDER = 'hsl(30,10%,88%)'
@@ -195,7 +195,7 @@ export default function CoachBulletinPage() {
 
   return (
     <div style={{ color: TEXT, fontFamily: 'Arial, sans-serif' }}>
-      <ViaBar role="coach" />
+      <UniversalVia role="coach" pageContext={{ page: 'dashboard-home' }} />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <div>

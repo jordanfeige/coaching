@@ -22,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import ViaBar from '@/components/ViaBar'
+import UniversalVia from '@/components/UniversalVia'
+import { formatLessonTime } from '@/lib/via-page-brief'
 import { cn } from '@/lib/utils'
 import { BOOKING_TIERS, bookingTierConfig, bookingTierLabel, type BookingTier } from '@/lib/booking'
 
@@ -49,6 +50,10 @@ export default function SchedulePage() {
   const [lessonForm, setLessonForm] = useState<LessonForm>({ player_ids: [], duration_mins: '60', notes: '', booking_tier: 'private' })
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [nextUpcoming, setNextUpcoming] = useState<{
+    starts_at: string
+    players?: { name?: string | null } | { name?: string | null }[] | null
+  } | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -78,9 +83,17 @@ export default function SchedulePage() {
       .lte('starts_at', weekEnd.toISOString())
       .order('starts_at')
     const { data: p } = await supabase.from('players').select('*').order('name')
+    const { data: upcoming } = await supabase
+      .from('lessons')
+      .select('starts_at, players(name)')
+      .gte('starts_at', new Date().toISOString())
+      .eq('status', 'scheduled')
+      .order('starts_at', { ascending: true })
+      .limit(1)
     setLessons(l || [])
     setAvailability(a || [])
     setPlayers(p || [])
+    setNextUpcoming(upcoming?.[0] || null)
   }
 
   function handleCellClick(e: React.MouseEvent, day: Date, hour: number) {
@@ -180,7 +193,20 @@ export default function SchedulePage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <ViaBar role="coach" />
+      <UniversalVia
+        role="coach"
+        pageContext={{
+          page: 'schedule',
+          nextLessonPlayerName: (() => {
+            const p = nextUpcoming?.players
+            const name = Array.isArray(p) ? p[0]?.name : p?.name
+            return name?.split(' ')[0] || undefined
+          })(),
+          nextLessonDate: nextUpcoming?.starts_at
+            ? formatLessonTime(nextUpcoming.starts_at)
+            : undefined,
+        }}
+      />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>

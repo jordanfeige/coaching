@@ -9,12 +9,12 @@ import {
   type CSSProperties,
 } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ArrowRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import ViaDrillSaveCard from '@/components/ViaDrillSaveCard'
-import { ViaPanelInput, ViaPanelStyles } from '@/components/ViaPanel'
+import { ViaPanelStyles } from '@/components/ViaPanel'
 import { glass } from '@/lib/glass'
 import {
   VIA_BORDER,
@@ -32,6 +32,14 @@ import type {
   ViaShowRecruitingPayload,
   ViaSuggestSchoolsPayload,
 } from '@/lib/via-universal-parse'
+import {
+  generatePageBrief,
+  generatePlayerPageBrief,
+  type CoachBriefContext,
+  type PageContext,
+} from '@/lib/via-page-brief'
+
+export type { PageContext }
 
 const TEAL = VIA_TEAL
 const TEAL_DARK = '#085041'
@@ -41,26 +49,7 @@ const TEXT = VIA_TEXT
 const TEXT_SEC = VIA_TEXT_SEC
 const TEXT_MUTED = VIA_TEXT_MUTED
 const WARM_BG = VIA_WARM_BG
-const VIA_CARD_MAX_HEIGHT = 520
-
-const COACH_QUICK_PROMPTS = [
-  'Who needs my attention today?',
-  'Find tournaments near me',
-  'Schedule a lesson',
-  'Build a session plan',
-]
-
-const REEL_QUICK_PROMPTS = [
-  'What should I work on next?',
-  'Explain my top issue',
-  'How do I add a new reel?',
-]
-
-const REEL_SELECTED_PROMPTS = [
-  'What stands out in this reel?',
-  'How do I fix my top issue?',
-  'Compare this to my last session',
-]
+const VIA_CARD_MAX_HEIGHT = 480
 
 type Role = 'coach' | 'player'
 
@@ -84,6 +73,9 @@ export type UniversalViaReelContext = {
 
 type UniversalViaProps = {
   role: Role
+  playerId?: string
+  playerName?: string
+  pageContext?: PageContext
   embedded?: boolean
   reelContext?: UniversalViaReelContext
 }
@@ -172,41 +164,17 @@ function parseAction(response: string): { text: string; action: ViaAction | null
   }
 }
 
-function buildFallbackBrief(context: {
-  totalPlayers: number
-  needsAttentionCount: number
-  upcomingCount: number
-  firstAttentionName?: string | null
-  nextLesson?: { playerName: string; when: string } | null
-}) {
-  const parts: string[] = []
-  if (context.totalPlayers === 0) {
-    return 'Add your first player to start building your roster — Via can help you schedule lessons and plan sessions.'
-  }
-  parts.push(`You have ${context.totalPlayers} player${context.totalPlayers === 1 ? '' : 's'}`)
-  if (context.upcomingCount > 0 && context.nextLesson) {
-    parts.push(
-      `${context.upcomingCount} upcoming lesson${context.upcomingCount === 1 ? '' : 's'} (next: ${context.nextLesson.playerName}, ${context.nextLesson.when})`,
-    )
-  } else {
-    parts.push('no lessons on the calendar yet')
-  }
-  if (context.needsAttentionCount > 0 && context.firstAttentionName) {
-    parts.push(
-      `${context.needsAttentionCount} need${context.needsAttentionCount === 1 ? 's' : ''} attention — start with ${context.firstAttentionName}`,
-    )
-  } else {
-    parts.push('your roster looks on track')
-  }
-  return `${parts[0]}, ${parts[1]}, and ${parts[2]}.`
-}
-
 export default function UniversalVia({
   role,
+  playerId,
+  playerName,
+  pageContext,
   embedded = false,
   reelContext,
 }: UniversalViaProps) {
+  const pathname = usePathname()
   const [brief, setBrief] = useState('')
+  const [quickPrompts, setQuickPrompts] = useState<string[]>([])
   const [briefLoading, setBriefLoading] = useState(true)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -218,6 +186,8 @@ export default function UniversalVia({
   const [selectedEvent, setSelectedEvent] = useState<EventListing | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const [mobileExpanded, setMobileExpanded] = useState(false)
+  const [coachBriefCtx, setCoachBriefCtx] = useState<CoachBriefContext | null>(null)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -226,15 +196,9 @@ export default function UniversalVia({
     return () => window.removeEventListener('resize', check)
   }, [])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
-
-  const quickPrompts =
-    role === 'player' && reelContext
-      ? reelContext.selectedSession
-        ? REEL_SELECTED_PROMPTS
-        : REEL_QUICK_PROMPTS
-      : COACH_QUICK_PROMPTS
 
   const loadCoachContext = useCallback(async () => {
     const {
@@ -245,20 +209,26 @@ export default function UniversalVia({
       return
     }
 
-    const [{ data: players }, { data: sessions }, { data: lessons }] = await Promise.all([
-      supabase.from('players').select('id, name, sport, skill_level, email').order('name'),
-      supabase
-        .from('analysis_sessions')
-        .select('player_id, overall_score, analyzed_at, top_issue')
-        .order('analyzed_at', { ascending: false })
-        .limit(50),
-      supabase
-        .from('lessons')
-        .select('id, starts_at, status, players(name)')
-        .gte('starts_at', new Date().toISOString())
-        .order('starts_at', { ascending: true })
-        .limit(5),
-    ])
+    const [{ data: players }, { data: sessions }, { data: lessons }, { data: unverified }] =
+      await Promise.all([
+        supabase.from('players').select('id, name, sport, skill_level, email').order('name'),
+        supabase
+          .from('analysis_sessions')
+          .select('player_id, overall_score, analyzed_at, top_issue')
+          .order('analyzed_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('lessons')
+          .select('id, starts_at, status, players(name)')
+          .gte('starts_at', new Date().toISOString())
+          .order('starts_at', { ascending: true })
+          .limit(5),
+        supabase
+          .from('analysis_sessions')
+          .select('id')
+          .eq('coach_verified', false)
+          .limit(100),
+      ])
 
     const safePlayers = (players || []) as PlayerOption[]
     const safeSessions = (sessions || []) as AnalysisSession[]
@@ -306,48 +276,42 @@ export default function UniversalVia({
 
     setPlayerList(safePlayers)
     setRosterContext(context)
-
-    const nextLesson = safeLessons[0]
-    const fallback = buildFallbackBrief({
-      totalPlayers: safePlayers.length,
-      needsAttentionCount: needsAttention.length,
-      upcomingCount: safeLessons.length,
-      firstAttentionName: needsAttention[0]?.name,
-      nextLesson: nextLesson
-        ? {
-            playerName: nextLesson.players?.name || 'a player',
-            when: format(new Date(nextLesson.starts_at), 'EEE h:mm a'),
-          }
-        : null,
+    setCoachBriefCtx({
+      players: safePlayers.map(p => ({
+        id: p.id,
+        name: p.name || 'Player',
+      })),
+      recentSessions: safeSessions.filter(
+        (s): s is AnalysisSession & { player_id: string } =>
+          Boolean(s.player_id),
+      ),
+      upcomingLessons: safeLessons,
+      unverifiedAnalyses: unverified || [],
     })
-
-    if (safePlayers.length === 0) {
-      setBrief(fallback)
-      setBriefLoading(false)
-      return
-    }
-
-    try {
-      const res = await fetch('/api/coaching-brief', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context }),
-      })
-      const data = (await res.json()) as { brief?: string }
-      setBrief(data.brief?.trim() || fallback)
-    } catch {
-      setBrief(fallback)
-    } finally {
-      setBriefLoading(false)
-    }
+    setBriefLoading(false)
   }, [supabase])
 
   useEffect(() => {
     if (role === 'coach') {
       void loadCoachContext()
+    }
+  }, [loadCoachContext, role])
+
+  useEffect(() => {
+    if (role === 'coach' && coachBriefCtx) {
+      const { brief: b, prompts } = generatePageBrief(coachBriefCtx, pageContext)
+      setBrief(b)
+      setQuickPrompts(prompts)
       return
     }
-    if (role === 'player' && reelContext) {
+    if (role === 'player' && pageContext) {
+      const { brief: b, prompts } = generatePlayerPageBrief(pageContext)
+      setBrief(b)
+      setQuickPrompts(prompts)
+      setBriefLoading(false)
+      return
+    }
+    if (role === 'player' && reelContext && !pageContext) {
       setBriefLoading(false)
       const sel = reelContext.selectedSession
       if (sel) {
@@ -358,18 +322,31 @@ export default function UniversalVia({
               ? ` Top issue: ${sel.top_issue}. Ask me anything about it.`
               : ' Ask me what to work on next.'),
         )
+        setQuickPrompts([
+          'What stands out in this reel?',
+          'How do I fix my top issue?',
+          'Compare this to my last session',
+        ])
       } else {
         setBrief(
           reelContext.sessionCount > 0
             ? `You have ${reelContext.sessionCount} reel${reelContext.sessionCount === 1 ? '' : 's'}. Select one to get specific feedback, or upload a new session.`
             : 'Upload a video or describe a session — Via will analyze your technique.',
         )
+        setQuickPrompts([
+          'What should I work on next?',
+          'Explain my top issue',
+          'How do I add a new reel?',
+        ])
       }
       return
     }
-    setBriefLoading(false)
-    setBrief('Ask Via anything about your training.')
-  }, [loadCoachContext, role, reelContext])
+    if (role === 'player') {
+      setBriefLoading(false)
+      setBrief('Ask Via anything about your training.')
+      setQuickPrompts(['How am I improving?', 'Add a reel', 'Show my drills'])
+    }
+  }, [role, coachBriefCtx, pageContext, reelContext])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -484,11 +461,12 @@ export default function UniversalVia({
   async function sendMessage(text?: string) {
     const msg = (text ?? input).trim()
     if (!msg || loading) return
-    if (role === 'coach' || (role === 'player' && reelContext)) {
-      // continue
-    } else {
-      return
-    }
+    const canChat =
+      role === 'coach' || (role === 'player' && (pageContext || reelContext))
+    if (!canChat) return
+
+    if (isMobile && !embedded) setMobileExpanded(true)
+
     setInput('')
     const userMsg: Message = { role: 'user', content: msg }
     const newMessages = [...messages, userMsg]
@@ -500,20 +478,28 @@ export default function UniversalVia({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           role,
-          messages: newMessages,
+          message: msg,
+          pageContext,
+          currentPath: pathname,
           rosterContext:
             role === 'coach'
-              ? { ...rosterContext, currentPage: '/dashboard' }
+              ? { ...(rosterContext || {}), currentPage: pathname }
               : undefined,
           playerContext:
-            role === 'player' && reelContext
+            role === 'player'
               ? {
-                  page: '/player/reels',
-                  playerName: reelContext.playerName,
-                  sessionCount: reelContext.sessionCount,
-                  selectedSession: reelContext.selectedSession,
+                  playerId,
+                  playerName: playerName || reelContext?.playerName,
+                  page: pathname,
+                  sessionCount: reelContext?.sessionCount,
+                  selectedSession: reelContext?.selectedSession,
+                  ...pageContext,
                 }
               : undefined,
+          history: messages.slice(-8).map(m => ({
+            role: m.role,
+            content: m.content,
+          })),
         }),
       })
       const data = (await response.json()) as {
@@ -551,12 +537,15 @@ export default function UniversalVia({
     }
   }
 
-  if (role !== 'coach' && !(role === 'player' && embedded && reelContext)) {
-    return null
-  }
+  const canRender =
+    role === 'coach' ||
+    (role === 'player' && (pageContext || (embedded && reelContext)))
 
-  const mobileFullscreen = embedded && isMobile
+  if (!canRender) return null
+
+  const mobileFullscreen = isMobile && (embedded || mobileExpanded)
   const showMessagesPane = messages.length > 0 || loading
+  const showCollapsedMobile = isMobile && !embedded && !mobileExpanded
 
   const cardStyle: CSSProperties = mobileFullscreen
     ? {
@@ -567,32 +556,179 @@ export default function UniversalVia({
         display: 'flex',
         flexDirection: 'column',
       }
-    : {
-        background: 'rgba(255,255,255,.52)',
-        backdropFilter: 'blur(24px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-        border: '1px solid rgba(255,255,255,.65)',
-        borderRadius: 16,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        maxHeight: VIA_CARD_MAX_HEIGHT,
-        boxShadow: '0 2px 12px rgba(29,158,117,.08)',
-      }
+    : showCollapsedMobile
+      ? {
+          background: 'rgba(255,255,255,.52)',
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,.65)',
+          borderRadius: 16,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          cursor: 'pointer',
+          boxShadow: '0 2px 16px rgba(29,158,117,.06)',
+        }
+      : {
+          position: 'relative',
+          background: 'rgba(255,255,255,.52)',
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,.65)',
+          borderRadius: 16,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: VIA_CARD_MAX_HEIGHT,
+          minHeight: messages.length > 0 ? 340 : undefined,
+          boxShadow:
+            '0 2px 16px rgba(29,158,117,.06), 0 1px 0 rgba(255,255,255,.8) inset',
+        }
+
+  if (showCollapsedMobile) {
+    return (
+      <div style={{ marginBottom: embedded ? 14 : 24 }}>
+        <ViaPanelStyles />
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setMobileExpanded(true)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') setMobileExpanded(true)
+          }}
+          style={cardStyle}
+        >
+          <div
+            style={{
+              padding: '14px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <ViaBlob size={30} thinking={briefLoading} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: TEXT }}>Via</div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: TEXT_MUTED,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {briefLoading ? 'Loading…' : brief || 'Tap to open Via'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ marginBottom: mobileFullscreen ? 0 : embedded ? 14 : 24 }}>
       <ViaPanelStyles />
       <div style={cardStyle}>
+        {mobileFullscreen && (
+          <div
+            style={{
+              background:
+                'linear-gradient(135deg,#E1F5EE 0%,#EEF0FE 55%,#F5EFFE 100%)',
+              padding: '12px 18px',
+              borderBottom: '0.5px solid rgba(29,158,117,.12)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexShrink: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <ViaBlob size={30} thinking={loading} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 500, color: TEXT }}>Via</div>
+              <div style={{ fontSize: 11, color: TEXT_MUTED }}>
+                {role === 'coach' ? 'coaching assistant' : 'your assistant'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileExpanded(false)}
+              aria-label="Close Via"
+              style={{
+                background: 'rgba(0,0,0,.06)',
+                border: 'none',
+                borderRadius: 8,
+                width: 32,
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={TEXT_SEC}
+                strokeWidth="2"
+              >
+                <polyline points="18 15 12 21 6 15" />
+              </svg>
+            </button>
+          </div>
+        )}
+        {mobileFullscreen && brief && messages.length === 0 && (
+          <div
+            style={{
+              padding: '12px 18px',
+              background: WARM_BG,
+              borderBottom: `0.5px solid ${BORDER}`,
+              flexShrink: 0,
+            }}
+          >
+            <p style={{ fontSize: 13, color: TEXT, lineHeight: 1.65, margin: '0 0 10px' }}>
+              {stripMarkdown(brief)}
+            </p>
+            {quickPrompts.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {quickPrompts.map((qp, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => void sendMessage(qp)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 8,
+                      border: `0.5px solid ${BORDER}`,
+                      background: 'white',
+                      fontSize: 12,
+                      color: TEXT,
+                      cursor: 'pointer',
+                      fontFamily: 'Arial, sans-serif',
+                    }}
+                  >
+                    {qp}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {!mobileFullscreen && (
         <div
           style={{
             background:
-              'linear-gradient(135deg,#E1F5EE 0%,#EEF0FE 55%,#F5EFFE 100%)',
+              'linear-gradient(135deg, rgba(29,158,117,.08) 0%, rgba(100,80,220,.04) 55%, rgba(120,60,200,.03) 100%)',
             padding: '16px 20px 14px',
             flexShrink: 0,
             overflow: 'hidden',
             position: 'relative',
-            borderBottom: '0.5px solid rgba(29,158,117,.12)',
+            zIndex: 1,
           }}
         >
           <div
@@ -627,7 +763,15 @@ export default function UniversalVia({
                   marginBottom: 6,
                 }}
               >
-                <span style={{ fontSize: 14, fontWeight: 500, color: TEXT }}>
+                <span
+                  style={{
+                    fontFamily:
+                      'var(--font-dm-serif), "DM Serif Display", Georgia, serif',
+                    fontStyle: 'italic',
+                    fontSize: 15,
+                    color: '#1D9E75',
+                  }}
+                >
                   Via
                 </span>
                 <span style={{ fontSize: 11, color: TEXT_MUTED }}>
@@ -678,8 +822,9 @@ export default function UniversalVia({
             </div>
           </div>
         </div>
+        )}
 
-        {showMessagesPane && (
+        {(showMessagesPane || mobileFullscreen) && (
           <div
             style={{
               flex: 1,
@@ -984,14 +1129,19 @@ export default function UniversalVia({
         <div
           style={{
             padding: '10px 16px',
-            borderTop: `0.5px solid ${BORDER}`,
+            borderTop:
+              messages.length > 0 ? `0.5px solid ${BORDER}` : mobileFullscreen ? 'none' : 'none',
             display: 'flex',
+            flexDirection: 'column',
             gap: 8,
-            alignItems: 'center',
-            background: 'rgba(255,255,255,.6)',
+            background: mobileFullscreen ? 'white' : 'rgba(255,255,255,.5)',
             flexShrink: 0,
+            paddingBottom: mobileFullscreen
+              ? 'calc(10px + env(safe-area-inset-bottom, 0px))'
+              : undefined,
           }}
         >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {role === 'player' && reelContext && (
               <>
                 <button
@@ -1048,20 +1198,70 @@ export default function UniversalVia({
                 Log as new text reel →
               </button>
             )}
-            <ViaPanelInput
+            <input
+              ref={inputRef}
               value={input}
-              onChange={setInput}
-              onSend={() => void sendMessage()}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void sendMessage()
+                }
+              }}
               disabled={loading}
-              mode="light"
               placeholder={
                 role === 'player' && reelContext
                   ? reelContext.selectedSession
                     ? 'Ask about this reel...'
                     : 'Ask Via or describe a session...'
-                  : 'Ask Via about your roster...'
+                  : role === 'coach'
+                    ? 'Ask Via about players, lessons, drills, recruiting...'
+                    : 'Ask Via anything...'
               }
+              style={{
+                flex: 1,
+                padding: '9px 14px',
+                borderRadius: 10,
+                border: '0.5px solid rgba(29,158,117,.25)',
+                background: 'rgba(255,255,255,.7)',
+                fontSize: 13,
+                color: TEXT,
+                fontFamily: 'Arial, sans-serif',
+                outline: 'none',
+              }}
             />
+            <button
+              type="button"
+              onClick={() => void sendMessage()}
+              disabled={!input.trim() || loading}
+              aria-label="Send message"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: input.trim() && !loading ? TEAL : 'rgba(29,158,117,.3)',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: input.trim() && !loading ? 'pointer' : 'default',
+                flexShrink: 0,
+                transition: 'background 0.15s',
+              }}
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2"
+              >
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>

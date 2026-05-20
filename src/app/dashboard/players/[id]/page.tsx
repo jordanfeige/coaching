@@ -35,7 +35,8 @@ import { cn } from '@/lib/utils'
 import { mimeTypeFromStoragePath } from '@/lib/video-frames'
 import { titleInitials } from '@/lib/video-thumbnails'
 import PlayerOverviewTab from '@/components/player/PlayerOverviewTab'
-import ViaBar from '@/components/ViaBar'
+import UniversalVia from '@/components/UniversalVia'
+import { formatLessonTime } from '@/lib/via-page-brief'
 import { typography } from '@/lib/brand'
 
 /** Legacy rows may still store `baseball`; treat as pickleball for focuses / AI. */
@@ -134,6 +135,8 @@ export default function PlayerDetailPage() {
   const [recruitingProfile, setRecruitingProfile] = useState<{
     wizard_completed?: boolean
     updated_at?: string
+    utr_singles?: number | null
+    target_division?: string | null
   } | null>(null)
   const [showUTRLink, setShowUTRLink] = useState(false)
   const [utrSearchQuery, setUtrSearchQuery] = useState('')
@@ -196,7 +199,7 @@ export default function PlayerDetailPage() {
     const { data: s } = await supabase.from('analysis_sessions').select('*').eq('player_id', id).order('analyzed_at', { ascending: true })
     const { data: recruiting } = await supabase
       .from('recruiting_profiles')
-      .select('wizard_completed, updated_at')
+      .select('wizard_completed, updated_at, utr_singles, target_division')
       .eq('player_id', id)
       .maybeSingle()
     setPlayer(p)
@@ -244,6 +247,12 @@ export default function PlayerDetailPage() {
     }
     setUtrSearching(false)
   }
+
+  useEffect(() => {
+    if (showUTRLink && utrSearchQuery.trim()) {
+      void doUTRSearch()
+    }
+  }, [showUTRLink])
 
   async function addEntry() {
     if (!newEntry.trim()) return
@@ -453,6 +462,13 @@ export default function PlayerDetailPage() {
       .filter((issue): issue is string => Boolean(issue))
     return [...new Set(past.filter(issue => issue !== latestIssue))]
   }, [sortedSessions, latestSession])
+  const scoreDelta = useMemo(() => {
+    const latest = sortedSessions[sortedSessions.length - 1]?.overall_score
+    const prev = sortedSessions[sortedSessions.length - 2]?.overall_score
+    if (typeof latest !== 'number' || typeof prev !== 'number') return undefined
+    return latest - prev
+  }, [sortedSessions])
+
   const nextLesson = useMemo(() => {
     const upcoming = lessons
       .filter(
@@ -509,7 +525,16 @@ export default function PlayerDetailPage() {
               </Badge>
               <button
                 type="button"
-                onClick={() => setTab('recruiting')}
+                onClick={() => {
+                  if (player.utr_player_id) {
+                    setTab('recruiting')
+                  } else {
+                    setUtrSearchQuery(player.name || '')
+                    setUtrSearchResults([])
+                    setUtrSearchError('')
+                    setShowUTRLink(true)
+                  }
+                }}
                 className="inline-flex"
               >
                 <Badge
@@ -531,7 +556,35 @@ export default function PlayerDetailPage() {
         </div>
       </div>
 
-      <ViaBar role="coach" />
+      <UniversalVia
+        role="coach"
+        playerId={String(id)}
+        playerName={player.name}
+        pageContext={{
+          page:
+            tab === 'recruiting'
+              ? 'player-profile-recruiting'
+              : 'player-profile',
+          playerId: String(id),
+          playerName: player.name,
+          playerFirstName: player.name.split(' ')[0],
+          activeIssue: latestSession?.top_issue || undefined,
+          techniqueScore: latestSession?.overall_score ?? undefined,
+          scoreDelta,
+          nextLessonDate: nextLesson?.starts_at
+            ? formatLessonTime(nextLesson.starts_at)
+            : undefined,
+          sessionCount: playerSessions.length,
+          utrSingles:
+            recruitingProfile?.utr_singles != null
+              ? Number(recruitingProfile.utr_singles)
+              : player.utr_singles != null
+                ? Number(player.utr_singles)
+                : undefined,
+          targetDivision:
+            recruitingProfile?.target_division || undefined,
+        }}
+      />
 
       {/* Tabs */}
       <div className="flex w-full gap-1 overflow-x-auto rounded-xl border border-border bg-muted/50 p-1 md:w-fit">
