@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import type { JourneyCategory, JourneyEvent } from '@/lib/journey-types'
 import { ViaAnchor } from './ViaAnchor'
 import { Bar } from './Bar'
+import { ExposureSignalsList } from './ExposureSignalsList'
 import { TOKENS, FONTS, CATEGORY_COLORS } from './JourneyTokens'
 
 type BreakdownData = {
@@ -246,6 +247,10 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
               >
                 {focusedCat.gap}
               </p>
+              {focusedCat.key === 'exposure' &&
+              focusedCat.exposureSignals?.length ? (
+                <ExposureSignalsList signals={focusedCat.exposureSignals} />
+              ) : null}
               <div
                 style={{
                   fontFamily: FONTS.sans,

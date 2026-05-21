@@ -9,6 +9,7 @@ import {
   type JourneyBenchmark,
   type JourneyBreakdown,
   type JourneyInput,
+  type MatchResult,
 } from './journey-score'
 
 type DbInputRow = {
@@ -103,10 +104,39 @@ export async function recalcJourneyRating(
     .eq('player_id', playerId)
     .maybeSingle()
 
-  const breakdown = calculateJourneyRating(inputs, benchmarks, {
-    targetAcademicTier: prefs?.target_academic_tier ?? null,
-    targetDivision: prefs?.target_division ?? null,
-  })
+  const matchCutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0]
+
+  const { data: matchRows, error: matchesErr } = await supabase
+    .from('match_results')
+    .select('match_date, event_id, event_level, opponent_utr_at_time, result')
+    .eq('player_id', playerId)
+    .gte('match_date', matchCutoff)
+    .order('match_date', { ascending: false })
+
+  if (matchesErr) throw matchesErr
+
+  const matches: MatchResult[] = (matchRows ?? []).map(row => ({
+    match_date: String(row.match_date),
+    event_id: row.event_id != null ? String(row.event_id) : null,
+    event_level: row.event_level != null ? String(row.event_level) : null,
+    opponent_utr_at_time:
+      row.opponent_utr_at_time != null
+        ? Number(row.opponent_utr_at_time)
+        : null,
+    result: row.result as 'W' | 'L',
+  }))
+
+  const breakdown = calculateJourneyRating(
+    inputs,
+    benchmarks,
+    matches,
+    {
+      targetAcademicTier: prefs?.target_academic_tier ?? null,
+      targetDivision: prefs?.target_division ?? null,
+    },
+  )
 
   const { error: insertErr } = await supabase.from('journey_ratings').insert({
     player_id: playerId,

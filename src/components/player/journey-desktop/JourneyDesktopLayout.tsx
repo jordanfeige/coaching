@@ -8,6 +8,7 @@ import { RoadToOffer } from '@/components/journey/RoadToOffer'
 import { QuestCard } from '@/components/journey/QuestCard'
 import { BreakdownSheet } from '@/components/journey/BreakdownSheet'
 import { Bar } from '@/components/journey/Bar'
+import { ExposureSignalsList } from '@/components/journey/ExposureSignalsList'
 import JourneyUtrSection from '@/components/journey/JourneyUtrSection'
 import AskViaAnchor from '@/components/player/AskViaAnchor'
 import { TOKENS, FONTS, CATEGORY_COLORS } from '@/components/journey/JourneyTokens'
@@ -166,6 +167,9 @@ function SubScoreGrid({
               >
                 {cat.gap}
               </div>
+              {cat.key === 'exposure' && cat.exposureSignals?.length ? (
+                <ExposureSignalsList signals={cat.exposureSignals} compact />
+              ) : null}
             </button>
           )
         })}

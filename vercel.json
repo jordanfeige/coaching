@@ -17,6 +17,14 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/sync-player-matches",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sync-college-rosters",
+      "schedule": "0 6 1 8 *"
+    },
+    {
       "path": "/api/cron/sync-rosters",
       "schedule": "0 8 1 */3 *"
     },

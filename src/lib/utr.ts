@@ -97,6 +97,203 @@ export type UTRMatchRow = {
   round: string
 }
 
+export type UtrMatchEventLevel =
+  | 'national'
+  | 'sectional'
+  | 'itf'
+  | 'utr_event'
+  | 'utr_flex'
+  | 'college'
+  | 'other'
+
+export interface UtrMatchResult {
+  matchId: string
+  date: string
+  eventId: string | null
+  eventName: string | null
+  eventLevel: UtrMatchEventLevel | null
+  opponentUtrId: string
+  opponentName: string
+  opponentUtr: number | null
+  result: 'W' | 'L'
+  score: string
+  round: string | null
+  sets: number
+}
+
+const UTR_MATCH_PACE_MS = 150
+
+function sleep(ms: number) {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+function mapSourceTypeToEventLevel(sourceType: string): UtrMatchEventLevel | null {
+  const s = sourceType.toLowerCase()
+  if (s.includes('college') || s.includes('ncaa')) return 'college'
+  if (s.includes('itf')) return 'itf'
+  if (s.includes('sectional')) return 'sectional'
+  if (s.includes('national') || s === 'sanctioned') return 'national'
+  if (s.includes('flex')) return 'utr_flex'
+  if (s.includes('utr')) return 'utr_event'
+  return s ? 'other' : null
+}
+
+function countSetsFromScore(score: string): number {
+  if (!score.trim()) return 0
+  const parts = score.split(/\s+/).filter(p => /\d/.test(p))
+  return parts.length > 0 ? parts.length : 0
+}
+
+function toIsoDate(raw: string): string {
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return raw.slice(0, 10)
+  return d.toISOString().slice(0, 10)
+}
+
+type UtrResultPlayer = {
+  id?: string | number
+  firstName?: string
+  lastName?: string
+  singlesUtr?: number
+}
+
+function opponentFromResult(
+  players: {
+    winner1?: UtrResultPlayer
+    winner2?: UtrResultPlayer
+    loser1?: UtrResultPlayer
+    loser2?: UtrResultPlayer
+  } | undefined,
+  pid: string,
+  isWinner: boolean,
+): UtrResultPlayer | null {
+  if (!players) return null
+  return isWinner
+    ? players.loser1 || players.loser2 || null
+    : players.winner1 || players.winner2 || null
+}
+
+function parseV4MatchResults(
+  data: Record<string, unknown>,
+  utrPlayerId: string,
+): UtrMatchResult[] {
+  const matches: UtrMatchResult[] = []
+  const pid = String(utrPlayerId)
+
+  const events = (data.events || []) as Array<{
+    id?: string | number
+    eventId?: string | number
+    name?: string
+    draws?: Array<{
+      results?: Array<{
+        id?: string | number
+        matchId?: string | number
+        outcome?: string
+        isRejected?: boolean
+        excludeFromRating?: boolean
+        players?: {
+          winner1?: UtrResultPlayer
+          winner2?: UtrResultPlayer
+          loser1?: UtrResultPlayer
+          loser2?: UtrResultPlayer
+        }
+        date?: string
+        sourceType?: string
+        score?: string
+        finalScore?: string
+        scoreString?: string
+        sets?: number
+        setCount?: number
+        round?: { name?: string }
+      }>
+    }>
+  }>
+
+  events.forEach(event => {
+    const eventId =
+      event.id != null
+        ? String(event.id)
+        : event.eventId != null
+          ? String(event.eventId)
+          : null
+    const eventName = event.name || null
+
+    ;(event.draws || []).forEach(draw => {
+      ;(draw.results || []).forEach(result => {
+        if (
+          result.outcome !== 'completed' ||
+          result.isRejected ||
+          result.excludeFromRating
+        ) {
+          return
+        }
+
+        const players = result.players
+        const isWinner =
+          String(players?.winner1?.id) === pid ||
+          String(players?.winner2?.id) === pid
+        const opponent = opponentFromResult(players, pid, isWinner)
+        if (!opponent) return
+
+        const opponentUtrId = String(opponent.id ?? '')
+        if (!opponentUtrId) return
+
+        const score = String(
+          result.score ?? result.finalScore ?? result.scoreString ?? '',
+        )
+        const sets =
+          typeof result.sets === 'number'
+            ? result.sets
+            : typeof result.setCount === 'number'
+              ? result.setCount
+              : countSetsFromScore(score)
+
+        const matchId = String(
+          result.id ??
+            result.matchId ??
+            `${eventId ?? 'ev'}:${result.date ?? ''}:${opponentUtrId}:${result.round?.name ?? ''}`,
+        )
+
+        matches.push({
+          matchId,
+          date: toIsoDate(result.date || ''),
+          eventId,
+          eventName,
+          eventLevel: mapSourceTypeToEventLevel(result.sourceType || ''),
+          opponentUtrId,
+          opponentName:
+            `${opponent.firstName || ''} ${opponent.lastName || ''}`.trim(),
+          opponentUtr:
+            opponent.singlesUtr != null && opponent.singlesUtr > 0
+              ? opponent.singlesUtr
+              : null,
+          result: isWinner ? 'W' : 'L',
+          score,
+          round: result.round?.name || null,
+          sets,
+        })
+      })
+    })
+  })
+
+  return matches.sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+  )
+}
+
+function utrMatchToLegacyRow(m: UtrMatchResult): UTRMatchRow {
+  return {
+    date: m.date,
+    tournamentName: m.eventName || '',
+    sourceType: m.eventLevel || 'other',
+    opponentUtr: m.opponentUtr ?? 0,
+    opponentName: m.opponentName,
+    playerWon: m.result === 'W',
+    round: m.round || '',
+  }
+}
+
 export type ScheduleStrengthResult = {
   score: number
   avgOpponentUtr: number
@@ -212,78 +409,48 @@ export async function fetchUTRPlayer(
   }
 }
 
-export async function fetchUTRResults(
+/**
+ * Full match history from UTR (last ~24 months per UTR `year=last` window).
+ */
+export async function getPlayerMatchHistory(
   utrPlayerId: string,
-): Promise<UTRMatchRow[]> {
+  options?: { since?: string },
+): Promise<UtrMatchResult[]> {
   const res = await fetch(
     `${UTR_BASE}/v4/player/${utrPlayerId}/results?type=s&year=last`,
     { headers: getHeaders() },
   )
-  if (!res.ok) return []
+  if (!res.ok) {
+    const detail = (await res.text()).slice(0, 200)
+    throw new Error(
+      `UTR match history failed: ${res.status}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
 
-  const data = await res.json()
-  const matches: UTRMatchRow[] = []
-  const pid = String(utrPlayerId)
+  const data = (await res.json()) as Record<string, unknown>
+  let matches = parseV4MatchResults(data, utrPlayerId)
 
-  const events = (data.events || []) as Array<{
-    name?: string
-    draws?: Array<{
-      results?: Array<{
-        outcome?: string
-        isRejected?: boolean
-        excludeFromRating?: boolean
-        players?: {
-          winner1?: { id?: string | number; firstName?: string; lastName?: string; singlesUtr?: number }
-          winner2?: { id?: string | number; firstName?: string; lastName?: string; singlesUtr?: number }
-          loser1?: { id?: string | number; firstName?: string; lastName?: string; singlesUtr?: number }
-          loser2?: { id?: string | number; firstName?: string; lastName?: string; singlesUtr?: number }
-        }
-        date?: string
-        sourceType?: string
-        round?: { name?: string }
-      }>
-    }>
-  }>
+  if (options?.since) {
+    const sinceMs = new Date(options.since).getTime()
+    if (Number.isFinite(sinceMs)) {
+      matches = matches.filter(m => new Date(m.date).getTime() >= sinceMs)
+    }
+  }
 
-  events.forEach(event => {
-    ;(event.draws || []).forEach(draw => {
-      ;(draw.results || []).forEach(result => {
-        if (
-          result.outcome !== 'completed' ||
-          result.isRejected ||
-          result.excludeFromRating
-        ) {
-          return
-        }
+  await sleep(UTR_MATCH_PACE_MS)
+  return matches
+}
 
-        const players = result.players
-        const isWinner =
-          String(players?.winner1?.id) === pid ||
-          String(players?.winner2?.id) === pid
-
-        const opponent = isWinner
-          ? players?.loser1 || players?.loser2
-          : players?.winner1 || players?.winner2
-
-        if (!opponent) return
-
-        matches.push({
-          date: result.date || '',
-          tournamentName: event.name || '',
-          sourceType: result.sourceType || '',
-          opponentUtr: opponent.singlesUtr || 0,
-          opponentName:
-            `${opponent.firstName || ''} ${opponent.lastName || ''}`.trim(),
-          playerWon: isWinner,
-          round: result.round?.name || '',
-        })
-      })
-    })
-  })
-
-  return matches.sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-  )
+/** @deprecated Prefer `getPlayerMatchHistory` — kept for schedule-strength callers. */
+export async function fetchUTRResults(
+  utrPlayerId: string,
+): Promise<UTRMatchRow[]> {
+  try {
+    const matches = await getPlayerMatchHistory(utrPlayerId)
+    return matches.map(utrMatchToLegacyRow)
+  } catch {
+    return []
+  }
 }
 
 export function calcScheduleStrength(

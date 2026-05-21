@@ -14,7 +14,9 @@
     "seed:player-lessons": "npx tsx scripts/seed-player-lessons.ts",
     "seed:benchmarks": "npx tsx scripts/seed-journey-benchmarks.ts",
     "seed:journey-inputs": "npx tsx scripts/seed-journey-inputs.ts",
+    "sync:player-matches": "npx tsx scripts/sync-player-matches.ts",
     "sync:rosters": "npx tsx scripts/sync-college-rosters.ts",
+    "sync:college-benchmarks": "npx tsx scripts/sync-college-benchmarks.ts",
     "sync:scorecard": "npx tsx scripts/sync-college-scorecard.ts",
     "compute:benchmarks": "npx tsx scripts/compute-academic-benchmarks.ts"
   },

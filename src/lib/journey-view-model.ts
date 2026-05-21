@@ -1,4 +1,8 @@
 import { CATEGORY_UI_META, inputDisplayName } from './journey-ui-meta'
+import {
+  hasMatchBasedExposureSignals,
+  parseExposureSignals,
+} from './journey-exposure-signals'
 import type { JourneyPageData } from './journey-fetch'
 import type {
   CategoryKey,
@@ -88,6 +92,11 @@ function buildCategories(data: JourneyPageData): JourneyCategory[] {
     const pct = raw ? Math.round(raw.raw_pct * 100) : 0
     const catInputs = inputsByCategory.get(key) ?? []
 
+    const exposureSignals =
+      key === 'exposure' && hasMatchBasedExposureSignals(raw?.inputs_used)
+        ? parseExposureSignals(raw?.inputs_used)
+        : undefined
+
     return {
       key,
       label: raw?.label ?? meta.shortLabel,
@@ -100,6 +109,7 @@ function buildCategories(data: JourneyPageData): JourneyCategory[] {
       gap: raw?.gap_statement ?? 'Add data to score this category',
       isStrength: (raw?.score ?? 0) >= maxScore && maxScore > 0,
       viaPrompts: meta.viaPrompts,
+      exposureSignals,
       inputs: catInputs.map(inp => ({
         name: inputDisplayName(inp.input_key),
         value: formatInputValue(

@@ -3,7 +3,7 @@
 // Pure calculation function. Takes inputs + benchmarks, returns a breakdown.
 // Versioned so old ratings stay calculable even if formulas change later.
 
-export const WEIGHTS_VERSION = 'v1.1'
+export const WEIGHTS_VERSION = 'v1.2'
 
 export const WEIGHTS = {
   tennis: 35,
@@ -46,6 +46,51 @@ export interface JourneyBenchmark {
 export interface ScoringContext {
   targetAcademicTier?: string | null
   targetDivision?: string | null
+}
+
+/** Row shape from `match_results` used by Exposure scoring. */
+export interface MatchResult {
+  match_date: string
+  event_id: string | null
+  event_level: string | null
+  opponent_utr_at_time: number | null
+  result: 'W' | 'L'
+}
+
+const DIVISION_UTR_DEFAULTS: Record<string, number> = {
+  d1_power: 13,
+  d1_mid_major: 11,
+  d2: 9,
+  d3: 7,
+  naia: 7,
+  juco: 6,
+}
+
+function getDivisionBenchmarkUtr(
+  benchmarks: JourneyBenchmark[],
+  division: string,
+): number {
+  const b =
+    benchmarks.find(
+      x =>
+        x.division === division &&
+        x.category === 'utr' &&
+        x.metric === 'avg',
+    ) ??
+    benchmarks.find(
+      x =>
+        x.division === division &&
+        x.category === 'tennis' &&
+        x.metric === 'avg',
+    )
+  return b?.value ?? DIVISION_UTR_DEFAULTS[division] ?? 8
+}
+
+function normalizeTargetDivision(
+  raw: string | null | undefined,
+): string {
+  if (!raw || raw === 'not_sure') return 'd1_mid_major'
+  return raw
 }
 
 const ACADEMIC_TIER_LABELS: Record<string, string> = {
@@ -206,7 +251,7 @@ function scoreAcademics(
   }
 }
 
-function scoreExposure(
+function scoreExposureLegacy(
   inputs: JourneyInput[],
   benchmarks: JourneyBenchmark[],
 ): CategoryScore {
@@ -242,6 +287,111 @@ function scoreExposure(
     inputs_used: used,
     benchmarks_used: benches,
     gap_statement: gap,
+  }
+}
+
+function scoreExposure(
+  inputs: JourneyInput[],
+  matches: MatchResult[],
+  benchmarks: JourneyBenchmark[],
+  context: ScoringContext,
+): CategoryScore {
+  const cutoff = new Date()
+  cutoff.setMonth(cutoff.getMonth() - 12)
+  const recentMatches = matches.filter(
+    m => new Date(m.match_date) >= cutoff,
+  )
+
+  const tournamentInput = findInput(
+    inputs,
+    'exposure',
+    'sanctioned_tournaments_12mo',
+  )
+  const tournamentCount = tournamentInput?.value_numeric ?? 0
+  const reels = findInput(inputs, 'exposure', 'verified_reels_count')
+
+  if (recentMatches.length === 0) {
+    const legacy = scoreExposureLegacy(inputs, benchmarks)
+    return {
+      ...legacy,
+      inputs_used: [
+        ...legacy.inputs_used,
+        `tournament_count_12mo:${tournamentCount}`,
+        'match_count_12mo:0',
+      ],
+    }
+  }
+
+  const targetDivision = normalizeTargetDivision(context.targetDivision)
+  const benchmarkUtr = getDivisionBenchmarkUtr(benchmarks, targetDivision)
+
+  const totalMatches = recentMatches.length
+  const wins = recentMatches.filter(m => m.result === 'W')
+  const winPct = totalMatches > 0 ? wins.length / totalMatches : 0
+
+  const qualityWins = wins.filter(
+    m =>
+      m.opponent_utr_at_time != null &&
+      m.opponent_utr_at_time >= benchmarkUtr,
+  ).length
+
+  const nationalEvents = new Set(
+    recentMatches
+      .filter(m =>
+        ['national', 'sectional', 'itf', 'college'].includes(
+          m.event_level ?? '',
+        ),
+      )
+      .map(m => m.event_id ?? m.match_date),
+  ).size
+
+  const volumeScore = Math.min(8, (totalMatches / 30) * 8)
+  const qualityScore = Math.min(10, (qualityWins / 5) * 10)
+  const eventScore = Math.min(4, (nationalEvents / 4) * 4)
+  const winPctScore = Math.min(3, Math.max(0, ((winPct - 0.4) / 0.2) * 3))
+
+  let matchPoints = volumeScore + qualityScore + eventScore + winPctScore
+
+  // Secondary: sanctioned tournament count (up to 2 pts when matches exist)
+  const tourBench = findBenchmark(benchmarks, 'd1_prospect', 'tournaments', 'avg')
+  if (tournamentCount > 0 && tourBench) {
+    matchPoints += Math.min(2, (tournamentCount / tourBench.value) * 2)
+  }
+
+  const total = Math.max(0, Math.min(25, matchPoints))
+  const raw_pct = total / 25
+
+  let gapStatement = ''
+  if (qualityScore < 5) {
+    const needed = Math.max(1, Math.ceil(5 - qualityWins))
+    gapStatement = `+${needed} win${needed > 1 ? 's' : ''} vs UTR ${benchmarkUtr.toFixed(1)}+ to close Exposure gap`
+  } else if (volumeScore < 6) {
+    gapStatement = `Play ${Math.ceil(30 - totalMatches)} more matches in next 12mo`
+  } else if (eventScore < 3) {
+    gapStatement = 'Enter 1 more national/sectional event'
+  } else {
+    gapStatement = `Maintain win rate vs UTR ${benchmarkUtr.toFixed(1)}+ opponents`
+  }
+
+  if (reels?.value_numeric === 0) {
+    gapStatement = 'Add verified match footage — +7 points'
+  }
+
+  const used = [
+    `match_count_12mo:${totalMatches}`,
+    `quality_wins_12mo:${qualityWins}`,
+    `national_events_12mo:${nationalEvents}`,
+    `win_pct_12mo:${Math.round(winPct * 100)}`,
+    `tournament_count_12mo:${tournamentCount}`,
+  ]
+  if (tournamentCount > 0) used.push('sanctioned_tournaments_12mo')
+  if (reels?.value_numeric != null) used.push('verified_reels_count')
+
+  return {
+    raw_pct,
+    inputs_used: used,
+    benchmarks_used: [`${targetDivision}:utr:avg`],
+    gap_statement: gapStatement,
   }
 }
 
@@ -288,12 +438,13 @@ function scoreCoachability(inputs: JourneyInput[]): CategoryScore {
 export function calculateJourneyRating(
   inputs: JourneyInput[],
   benchmarks: JourneyBenchmark[],
+  matches: MatchResult[] = [],
   context: ScoringContext = {},
   computedAt: Date = new Date(),
 ): JourneyBreakdown {
   const tennis = scoreTennis(inputs, benchmarks)
   const academics = scoreAcademics(inputs, benchmarks, context)
-  const exposure = scoreExposure(inputs, benchmarks)
+  const exposure = scoreExposure(inputs, matches, benchmarks, context)
   const coachability = scoreCoachability(inputs)
 
   const categories = [

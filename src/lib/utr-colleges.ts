@@ -50,6 +50,67 @@ export type CollegeSchoolRoster = {
   players: CollegeRosterPlayer[]
 }
 
+export interface UtrCollegeRoster {
+  schoolUtrId: string
+  schoolName: string
+  division: string | null
+  conference: string | null
+  rosterPlayers: {
+    utrId: string
+    name: string
+    utr: number
+    classYear: number | null
+    position: string | null
+  }[]
+  asOf: string
+}
+
+export type CollegeTeamSearchHit = {
+  schoolUtrId: string
+  name: string
+  division: string
+}
+
+function normalizeUtrDivisionLabel(
+  divisionName: string,
+  conferenceName: string,
+): string | null {
+  const journey = mapCollegeToJourneyDivision(divisionName, conferenceName)
+  if (!journey) return null
+  if (journey === 'd1_power' || journey === 'd1_mid_major') return 'd1'
+  return journey
+}
+
+function parseRosterPlayer(
+  p: Record<string, unknown>,
+): UtrCollegeRoster['rosterPlayers'][number] | null {
+  const utr = Number(p.singlesUtr) || 0
+  if (utr <= 0 || utr >= 17) return null
+  const utrId = String(p.id ?? p.playerId ?? '')
+  if (!utrId) return null
+  const name =
+    String(p.displayName || '') ||
+    `${p.firstName || ''} ${p.lastName || ''}`.trim()
+  if (!name) return null
+
+  const gradRaw = p.gradYear ?? p.graduationYear ?? p.classYear
+  const classYear =
+    gradRaw != null && Number.isFinite(Number(gradRaw))
+      ? Number(gradRaw)
+      : null
+
+  const positionRaw = p.position ?? p.lineupPosition ?? p.rosterPosition
+  const position = positionRaw ? String(positionRaw).toLowerCase() : null
+
+  return {
+    utrId,
+    name,
+    utr,
+    classYear,
+    position,
+  }
+}
+
 /** Paginated NCAA college tennis program search. */
 export async function listAllCollegeTeams(options?: {
   maxPages?: number
@@ -151,6 +212,124 @@ export async function getCollegeSchoolRoster(
   } catch {
     return null
   }
+}
+
+/**
+ * College team roster with player IDs and metadata for M4.5 persistence.
+ */
+export async function getCollegeRoster(
+  schoolUtrId: string,
+): Promise<UtrCollegeRoster> {
+  const res = await fetch(`${UTR_BASE}/v1/club/${schoolUtrId}/school`, {
+    headers: getHeaders(),
+  })
+  if (!res.ok) {
+    const detail = (await res.text()).slice(0, 200)
+    throw new Error(
+      `UTR college roster failed: ${res.status}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+
+  const data = (await res.json()) as Record<string, unknown>
+  const school = data.school as Record<string, unknown> | undefined
+  const conference = school?.conference as Record<string, unknown> | undefined
+  const division = conference?.division as Record<string, unknown> | undefined
+
+  const divisionName = String(
+    division?.divisionName || data.divisionName || '',
+  )
+  const conferenceName = String(
+    conference?.conferenceName || data.conferenceName || '',
+  )
+
+  const roster = (data.roster || []) as Array<Record<string, unknown>>
+  const rosterPlayers = roster
+    .map(parseRosterPlayer)
+    .filter((p): p is NonNullable<typeof p> => p != null)
+    .sort((a, b) => b.utr - a.utr)
+
+  if (rosterPlayers.length === 0) {
+    throw new Error(`No roster players found for UTR club ${schoolUtrId}`)
+  }
+
+  await new Promise(r => setTimeout(r, 200))
+
+  return {
+    schoolUtrId,
+    schoolName: String(data.name || school?.name || ''),
+    division: normalizeUtrDivisionLabel(divisionName, conferenceName),
+    conference: conferenceName || null,
+    rosterPlayers,
+    asOf: new Date().toISOString().slice(0, 10),
+  }
+}
+
+/** Search college tennis programs by name (men's singles teams). */
+export async function searchCollegeTeams(
+  query: string,
+): Promise<CollegeTeamSearchHit[]> {
+  const q = query.trim()
+  if (!q) return []
+
+  const res = await fetch(
+    `${UTR_BASE}/v2/search/colleges` +
+      `?query=${encodeURIComponent(q)}` +
+      `&top=25&skip=0` +
+      `&utrType=verified` +
+      `&utrTeamType=singles` +
+      `&schoolClubSearch=true` +
+      `&sort=name%3Aasc` +
+      `&searchOrigin=searchPage`,
+    { headers: getHeaders() },
+  )
+
+  if (!res.ok) {
+    const detail = (await res.text()).slice(0, 200)
+    throw new Error(
+      `UTR college search failed: ${res.status}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+
+  const data = await res.json()
+  const hits = (data.hits || []) as Array<{
+    source?: Record<string, unknown>
+    id?: string
+  }>
+
+  const results: CollegeTeamSearchHit[] = []
+
+  hits.forEach(h => {
+    const source = h.source || {}
+    const school = source.school as Record<string, unknown> | undefined
+    const conference = school?.conference as Record<string, unknown> | undefined
+    const division = conference?.division as Record<string, unknown> | undefined
+    const divisionName = String(
+      division?.divisionName || source.divisionName || '',
+    )
+    const conferenceName = String(
+      conference?.conferenceName || source.conferenceName || '',
+    )
+    const mapped = normalizeUtrDivisionLabel(divisionName, conferenceName)
+    if (!mapped) return
+
+    const gender = String(source.gender || '').toLowerCase()
+    if (
+      gender &&
+      gender !== 'male' &&
+      gender !== 'm' &&
+      !gender.includes('men')
+    ) {
+      return
+    }
+
+    results.push({
+      schoolUtrId: String(source.id || h.id || ''),
+      name: String(source.name || ''),
+      division: mapped,
+    })
+  })
+
+  return results.filter(r => r.schoolUtrId && r.name)
 }
 
 export type SchoolBenchmarks = {

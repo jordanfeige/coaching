@@ -3,6 +3,14 @@ export type Difficulty = 1 | 2 | 3
 
 export type CategoryKey = 'tennis' | 'academics' | 'exposure' | 'coachability'
 
+export type JourneyExposureSignal = {
+  key: string
+  label: string
+  value: string
+  verified: boolean
+  sourceLabel: string
+}
+
 export interface JourneyCategory {
   key: CategoryKey
   label: string
@@ -22,6 +30,8 @@ export interface JourneyCategory {
     verified: boolean
     date: string
   }[]
+  /** UTR match-history signals when Exposure uses match_results scoring */
+  exposureSignals?: JourneyExposureSignal[]
 }
 
 export interface JourneyQuest {
