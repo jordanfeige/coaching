@@ -43,6 +43,19 @@ export interface JourneyBenchmark {
   unit: string
 }
 
+export interface ScoringContext {
+  targetAcademicTier?: string | null
+  targetDivision?: string | null
+}
+
+const ACADEMIC_TIER_LABELS: Record<string, string> = {
+  ivy: 'Ivy League',
+  top_25_academic: 'Top-25 academic',
+  top_100_academic: 'Top-100 academic',
+  public_state: 'Public state',
+  d1: 'D1',
+}
+
 export interface JourneyBreakdown {
   total: number
   tier: string
@@ -105,12 +118,20 @@ function scoreTennis(
 ): CategoryScore {
   const utr = findInput(inputs, 'tennis', 'utr_rating')
   const bench = findBenchmark(benchmarks, 'd1_mid_major', 'utr', 'avg')
-  if (!utr?.value_numeric || !bench) {
+  if (!utr?.value_numeric || utr.value_numeric <= 0) {
     return {
       raw_pct: 0,
       inputs_used: [],
       benchmarks_used: [],
       gap_statement: 'No UTR rating on file',
+    }
+  }
+  if (!bench) {
+    return {
+      raw_pct: 0,
+      inputs_used: ['utr_rating'],
+      benchmarks_used: [],
+      gap_statement: 'UTR linked — benchmarks loading; refresh shortly',
     }
   }
   const pct = Math.min(1, utr.value_numeric / bench.value)
@@ -129,12 +150,20 @@ function scoreTennis(
 function scoreAcademics(
   inputs: JourneyInput[],
   benchmarks: JourneyBenchmark[],
+  context: ScoringContext,
 ): CategoryScore {
   const gpa = findInput(inputs, 'academics', 'gpa')
   const sat = findInput(inputs, 'academics', 'sat')
 
-  const gpaFloor = findBenchmark(benchmarks, 'd1', 'gpa', 'min')
-  const satFloor = findBenchmark(benchmarks, 'd1', 'sat', 'min')
+  const tierKey = context.targetAcademicTier ?? 'public_state'
+  const tierLabel = ACADEMIC_TIER_LABELS[tierKey] ?? tierKey
+
+  const gpaFloor =
+    findBenchmark(benchmarks, tierKey, 'gpa', 'min') ??
+    findBenchmark(benchmarks, 'd1', 'gpa', 'min')
+  const satFloor =
+    findBenchmark(benchmarks, tierKey, 'sat', 'min') ??
+    findBenchmark(benchmarks, 'd1', 'sat', 'min')
 
   let pct = 0
   const used: string[] = []
@@ -145,11 +174,11 @@ function scoreAcademics(
     const gpaPct = Math.min(1, gpa.value_numeric / 4.0)
     pct += gpaPct * 0.5
     used.push('gpa')
-    benches.push('d1:gpa:min')
+    benches.push(`${tierKey}:gpa:min`)
     if (gpa.value_numeric >= gpaFloor.value) {
-      gap = 'Clears D1 academic floor'
+      gap = `Clears ${tierLabel} academic floor`
     } else {
-      gap = `Need +${(gpaFloor.value - gpa.value_numeric).toFixed(2)} GPA to clear D1 floor`
+      gap = `Need +${(gpaFloor.value - gpa.value_numeric).toFixed(2)} GPA to clear ${tierLabel} floor`
     }
   }
 
@@ -157,7 +186,11 @@ function scoreAcademics(
     const satPct = Math.min(1, sat.value_numeric / 1600)
     pct += satPct * 0.5
     used.push('sat')
-    benches.push('d1:sat:min')
+    benches.push(`${tierKey}:sat:min`)
+    if (sat.value_numeric < satFloor.value) {
+      const need = Math.round(satFloor.value - sat.value_numeric)
+      gap = `Need +${need} SAT to clear ${tierLabel} floor (${Math.round(satFloor.value)})`
+    }
   }
 
   if (gpa && !gpa.verified) {
@@ -255,10 +288,11 @@ function scoreCoachability(inputs: JourneyInput[]): CategoryScore {
 export function calculateJourneyRating(
   inputs: JourneyInput[],
   benchmarks: JourneyBenchmark[],
+  context: ScoringContext = {},
   computedAt: Date = new Date(),
 ): JourneyBreakdown {
   const tennis = scoreTennis(inputs, benchmarks)
-  const academics = scoreAcademics(inputs, benchmarks)
+  const academics = scoreAcademics(inputs, benchmarks, context)
   const exposure = scoreExposure(inputs, benchmarks)
   const coachability = scoreCoachability(inputs)
 

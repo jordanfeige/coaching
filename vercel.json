@@ -15,6 +15,14 @@
     {
       "path": "/api/cron/journey-recalc",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-rosters",
+      "schedule": "0 8 1 */3 *"
+    },
+    {
+      "path": "/api/cron/sync-scorecard",
+      "schedule": "0 6 15 8 *"
     }
   ]
 }

@@ -137,6 +137,31 @@ button:not([disabled]) {
   }
 }
 
+/* Player layout: 64rem matches Tailwind v4 `lg` breakpoint */
+@media (min-width: 64rem) {
+  .player-bottom-nav,
+  .player-bottom-nav-slot {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  .player-journey-mobile {
+    display: none !important;
+  }
+  .player-tablet-sidebar {
+    display: none !important;
+  }
+}
+
+@media (max-width: 63.999rem) {
+  .player-journey-desktop {
+    display: none !important;
+  }
+  .player-desktop-sidebar {
+    display: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

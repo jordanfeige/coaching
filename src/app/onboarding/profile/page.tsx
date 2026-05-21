@@ -24,7 +24,7 @@ const inputClass =
 function ProgressDots() {
   return (
     <div className="flex items-center justify-center gap-2">
-      {[0, 1, 2].map(index => (
+      {[0, 1, 2, 3].map(index => (
         <span
           key={index}
           className="size-2.5 rounded-full"
@@ -120,7 +120,7 @@ export default function OnboardingProfilePage() {
     }
 
     localStorage.setItem('onboarding_role', role)
-    router.push('/onboarding/ready')
+    router.push(role === 'coach' ? '/onboarding/ready' : '/onboarding/goal')
   }
 
   return (
@@ -130,7 +130,7 @@ export default function OnboardingProfilePage() {
         <div className="mt-8">
           <ProgressDots />
           <p className="mt-3 text-center text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: brand.textMuted }}>
-            Step 2 of 3
+            Step 2 of 4
           </p>
         </div>
 

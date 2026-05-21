@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import type { JourneyCategory } from '@/lib/journey-types'
 import { ViaAnchor } from './ViaAnchor'
 import { Bar } from './Bar'
@@ -13,7 +14,7 @@ type Player = {
   nextTier: string
   tierProgress: number
   journeyRating: number
-  ratingDelta: number
+  ratingDelta: number | null
   pointsToNextTier: number
 }
 
@@ -21,9 +22,47 @@ type Props = {
   player: Player
   categories: JourneyCategory[]
   onTapScore: (key: string) => void
+  /** Desktop layout shows sub-scores in a separate grid */
+  hideSubScores?: boolean
 }
 
-export function PlayerCard({ player, categories, onTapScore }: Props) {
+export function PlayerCard({
+  player,
+  categories,
+  onTapScore,
+  hideSubScores = false,
+}: Props) {
+  const target = player.journeyRating
+  const [displayed, setDisplayed] = useState(target)
+  const [revealed, setRevealed] = useState(false)
+
+  useEffect(() => {
+    const isFirstReveal =
+      typeof window !== 'undefined' &&
+      sessionStorage.getItem('journey_first_reveal') === 'true'
+
+    if (!isFirstReveal) {
+      setDisplayed(target)
+      setRevealed(true)
+      return
+    }
+
+    sessionStorage.removeItem('journey_first_reveal')
+    const duration = 1500
+    const startedAt = performance.now()
+
+    function tick(now: number) {
+      const elapsed = now - startedAt
+      const t = Math.min(1, elapsed / duration)
+      const eased = 1 - Math.pow(1 - t, 3)
+      setDisplayed(Math.round(target * eased * 100) / 100)
+      if (t < 1) requestAnimationFrame(tick)
+      else setRevealed(true)
+    }
+
+    requestAnimationFrame(tick)
+  }, [target])
+
   return (
     <div
       style={{
@@ -122,18 +161,42 @@ export function PlayerCard({ player, categories, onTapScore }: Props) {
                 letterSpacing: '-2px',
               }}
             >
-              {player.journeyRating}
+              {displayed}
             </span>
-            <span
-              style={{
-                fontFamily: FONTS.sans,
-                fontSize: 14,
-                fontWeight: 700,
-                color: '#6EE7B7',
-              }}
-            >
-              +{player.ratingDelta}
-            </span>
+            {player.ratingDelta != null ? (
+              <span
+                style={{
+                  fontFamily: FONTS.sans,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color:
+                    player.ratingDelta > 0
+                      ? '#6EE7B7'
+                      : player.ratingDelta < 0
+                        ? '#FDA4AF'
+                        : 'rgba(255,255,255,0.7)',
+                }}
+              >
+                {player.ratingDelta > 0
+                  ? '↑'
+                  : player.ratingDelta < 0
+                    ? '↓'
+                    : '→'}{' '}
+                {player.ratingDelta > 0 ? '+' : ''}
+                {player.ratingDelta.toFixed(1)} this month
+              </span>
+            ) : (
+              <span
+                style={{
+                  fontFamily: FONTS.sans,
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.45)',
+                  fontStyle: 'italic',
+                }}
+              >
+                Tracking — check back next month
+              </span>
+            )}
           </div>
           <div
             style={{
@@ -182,6 +245,7 @@ export function PlayerCard({ player, categories, onTapScore }: Props) {
           />
         </div>
 
+        {!hideSubScores && (
         <div
           style={{
             display: 'grid',
@@ -189,7 +253,7 @@ export function PlayerCard({ player, categories, onTapScore }: Props) {
             gap: 8,
           }}
         >
-          {categories.map(cat => {
+          {categories.map((cat, i) => {
             const colors = CATEGORY_COLORS[cat.key]
             return (
               <button
@@ -204,6 +268,8 @@ export function PlayerCard({ player, categories, onTapScore }: Props) {
                   cursor: 'pointer',
                   textAlign: 'left',
                   position: 'relative',
+                  opacity: revealed ? 1 : 0,
+                  transition: `opacity 0.35s ease ${200 + i * 200}ms`,
                 }}
               >
                 {cat.isStrength && (
@@ -263,6 +329,7 @@ export function PlayerCard({ player, categories, onTapScore }: Props) {
             )
           })}
         </div>
+        )}
       </div>
     </div>
   )

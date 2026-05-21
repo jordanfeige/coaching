@@ -118,20 +118,29 @@ function buildCategories(data: JourneyPageData): JourneyCategory[] {
 function buildMomentum(
   categories: JourneyCategory[],
   classYear: string | null,
-  ratingDelta: number,
+  ratingDelta: number | null,
 ): JourneyMomentum {
   const top = [...categories].sort((a, b) => b.score - a.score)[0]
   const classLabel = classYear ?? 'your class'
 
+  const deltaLabel =
+    ratingDelta == null
+      ? '—'
+      : ratingDelta > 0
+        ? `+${ratingDelta.toFixed(1)}`
+        : ratingDelta < 0
+          ? String(ratingDelta)
+          : '0'
+
   return {
     fastestMover: {
       name: top?.shortLabel ?? 'Coachability',
-      delta: ratingDelta > 0 ? `+${ratingDelta.toFixed(1)}` : ratingDelta < 0 ? String(ratingDelta) : '—',
+      delta: deltaLabel,
       window: '30 days',
     },
     utrPercentile: 18,
     statement:
-      ratingDelta > 0
+      ratingDelta != null && ratingDelta > 0
         ? `Improving faster than most ${classLabel} prospects on Playvia`
         : `Track weekly inputs to build momentum vs ${classLabel} peers`,
   }

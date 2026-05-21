@@ -372,8 +372,9 @@ export default function UniversalVia({
   }, [role, coachBriefCtx, pageContext, reelContext])
 
   useEffect(() => {
+    if (embedded && messages.length === 0) return
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+  }, [messages, loading, embedded])
 
   useEffect(() => {
     function handleViaOpen(event: Event) {

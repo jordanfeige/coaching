@@ -23,7 +23,36 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    const { data: profile } = await supabase.from('profiles').select('role, player_id').eq('id', data.user.id).maybeSingle()
+    let { data: profile } = await supabase
+      .from('profiles')
+      .select('role, player_id')
+      .eq('id', data.user.id)
+      .maybeSingle()
+
+    if (!profile) {
+      await fetch('/api/onboarding/ensure-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: data.user.email,
+          full_name:
+            typeof data.user.user_metadata?.full_name === 'string'
+              ? data.user.user_metadata.full_name
+              : null,
+          role:
+            data.user.user_metadata?.role === 'coach' ||
+            data.user.user_metadata?.role === 'player'
+              ? data.user.user_metadata.role
+              : 'player',
+        }),
+      })
+      const refetch = await supabase
+        .from('profiles')
+        .select('role, player_id')
+        .eq('id', data.user.id)
+        .maybeSingle()
+      profile = refetch.data
+    }
 
     if (!profile?.role) {
       router.push('/onboarding/role')

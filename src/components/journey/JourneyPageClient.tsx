@@ -7,8 +7,10 @@ import { MomentumStrip } from '@/components/journey/MomentumStrip'
 import { RoadToOffer } from '@/components/journey/RoadToOffer'
 import { QuestCard } from '@/components/journey/QuestCard'
 import { BreakdownSheet } from '@/components/journey/BreakdownSheet'
+import JourneyUtrSection from '@/components/journey/JourneyUtrSection'
 import { TOKENS, FONTS } from '@/components/journey/JourneyTokens'
 import UniversalVia from '@/components/UniversalVia'
+import JourneyDesktopLayout from '@/components/player/journey-desktop/JourneyDesktopLayout'
 
 type Props = {
   data: JourneyPageViewModel
@@ -20,7 +22,12 @@ export default function JourneyPageClient({ data }: Props) {
 
   return (
     <>
+      <div className="player-journey-desktop hidden lg:block">
+        <JourneyDesktopLayout data={data} />
+      </div>
+
       <div
+        className="player-journey-mobile lg:hidden"
         style={{
           background: TOKENS.CREAM,
           minHeight: '100vh',
@@ -152,6 +159,8 @@ export default function JourneyPageClient({ data }: Props) {
             <br />
             Tap any chip to ask Via.
           </div>
+
+          <JourneyUtrSection />
         </div>
       </div>
 

@@ -17,7 +17,7 @@ export default function PlayerBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 mx-auto max-w-[520px] border-t bg-white px-1 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2"
+      className="player-bottom-nav fixed bottom-0 left-0 right-0 z-40 mx-auto max-w-[520px] border-t bg-white px-1 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 lg:hidden"
       style={{ borderColor: "#E5E7EB" }}
     >
       <div className="flex items-stretch justify-between">

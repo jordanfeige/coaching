@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { upsertProfileAdmin } from '@/lib/profile-upsert'
 
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
-}
-
-function isMissingColumnError(error: { message?: string } | null) {
-  return Boolean(
-    error?.message?.includes("Could not find the 'full_name' column") ||
-    error?.message?.includes('schema cache')
+    { auth: { autoRefreshToken: false, persistSession: false } },
   )
 }
 
@@ -42,7 +36,7 @@ export async function POST(req: NextRequest) {
       const alreadyRegistered = error.message.toLowerCase().includes('already')
       return NextResponse.json(
         { error: alreadyRegistered ? 'An account already exists for this email. Please sign in.' : error.message },
-        { status: alreadyRegistered ? 409 : 400 }
+        { status: alreadyRegistered ? 409 : 400 },
       )
     }
 
@@ -51,25 +45,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not create account' }, { status: 500 })
     }
 
-    const profilePayload = {
-      id: userId,
-      email: normalizedEmail,
-      full_name: String(fullName).trim() || null,
-      role: normalizedRole,
-      player_id: null,
-    }
-    let { error: profileError } = await supabaseAdmin.from('profiles').upsert(profilePayload)
-
-    if (isMissingColumnError(profileError)) {
-      const fallbackProfilePayload = {
-        id: profilePayload.id,
-        email: profilePayload.email,
-        role: profilePayload.role,
-        player_id: profilePayload.player_id,
-      }
-      const fallback = await supabaseAdmin.from('profiles').upsert(fallbackProfilePayload)
-      profileError = fallback.error
-    }
+    const hostname = req.headers.get('x-forwarded-host') ?? req.headers.get('host')
+    const { error: profileError } = await upsertProfileAdmin(
+      {
+        id: userId,
+        email: normalizedEmail,
+        full_name: String(fullName).trim() || null,
+        role: normalizedRole,
+        player_id: null,
+        analyses_used: 0,
+        is_subscribed: false,
+      },
+      { hostname },
+    )
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 500 })
@@ -79,7 +67,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Signup failed' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

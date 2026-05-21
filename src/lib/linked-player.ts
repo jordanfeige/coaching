@@ -61,3 +61,30 @@ export async function getLinkedPlayersForUser(
 
   return [...playersById.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
+
+/** Player self-serve, family account, legacy parent, or coach dashboard. */
+export async function userCanManagePlayer(
+  supabase: SupabaseClient,
+  userId: string,
+  playerId: string,
+): Promise<boolean> {
+  const linkedId = await getLinkedPlayerIdForUser(supabase, userId)
+  if (linkedId === playerId) return true
+
+  const { data: familyLink } = await supabase
+    .from('account_players')
+    .select('player_id')
+    .eq('account_id', userId)
+    .eq('player_id', playerId)
+    .maybeSingle()
+  if (familyLink?.player_id) return true
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle()
+  if (profile?.role === 'coach') return true
+
+  return false
+}

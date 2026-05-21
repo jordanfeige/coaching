@@ -19,6 +19,39 @@ export const brand = {
   redLight: 'hsl(0, 70%, 95%)',
   amber: 'hsl(38, 92%, 50%)',
   amberLight: 'hsl(38, 92%, 95%)',
+
+  // Desktop redesign (D1) — hex tokens for player cream nav + journey/home
+  tealHex: '#2D9B7F',
+  tealDarkHex: '#0F6E56',
+  tealDeep: '#063D31',
+  tealTint: '#E1F5EE',
+  tealGhost: '#7DDDB8',
+  tealGlaze: '#F0FAF6',
+  cream: '#F5F4F0',
+  paper: '#FAFAF7',
+  ink: '#111827',
+  sub: '#6B7280',
+  muted: '#9CA3AF',
+  line: '#E5E7EB',
+  lineSoft: '#F3F4F6',
+  warm: '#854F0B',
+  warmTint: '#FAEEDA',
+  blueHex: '#185FA5',
+  blueTint: '#E6F1FB',
+  plum: '#534AB7',
+  plumTint: '#EEEDFE',
+} as const
+
+/** Desktop player layout spacing (≥1024px / Tailwind `lg` = 64rem). */
+export const layout = {
+  /** px — keep in sync with `@media (min-width: 64rem)` in globals.css */
+  desktopMinWidth: 1024,
+  navWidth: 232,
+  contentMax: 760,
+  contentMaxHome: 820,
+  contentPaddingX: 36,
+  contentPaddingTop: 32,
+  contentPaddingBottom: 80,
 } as const
 
 export const fonts = {

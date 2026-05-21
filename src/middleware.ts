@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { isAdmin } from '@/lib/admin'
+import { isBetaGateEnabled } from '@/lib/beta-gate'
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -59,7 +60,10 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    if (!profile || profile.beta_status !== 'approved') {
+    if (
+      isBetaGateEnabled(request.nextUrl.hostname) &&
+      (!profile || profile.beta_status !== 'approved')
+    ) {
       return NextResponse.redirect(new URL('/pending', request.url))
     }
 

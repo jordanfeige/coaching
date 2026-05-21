@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     subject: 'Complete your Playvia recruiting profile',
     template: createElement(RecruitingReminderEmail, {
       firstName,
-      recruitingUrl: `${appUrl}/player/recruiting`,
+        recruitingUrl: `${appUrl}/player/journey`,
     }),
   })
 

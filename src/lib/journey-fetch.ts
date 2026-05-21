@@ -2,7 +2,55 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { TIERS, WEIGHTS_VERSION, type JourneyBreakdown } from './journey-score'
+import { recalcJourneyRating } from './journey-recalc'
 import type { JourneyMilestone } from './journey-types'
+
+function tennisCategoryStale(
+  categories: JourneyBreakdown['categories'] | undefined,
+  utrSingles: number | null,
+): boolean {
+  if (utrSingles == null || utrSingles <= 0) return false
+  const tennis = categories?.find(c => c.key === 'tennis')
+  if (!tennis) return true
+  if ((tennis.raw_pct ?? 0) > 0) return false
+  return true
+}
+
+async function ensureJourneyReflectsUtr(
+  playerId: string,
+  utrSingles: number,
+  hasUtrInput: boolean,
+): Promise<JourneyBreakdown | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !serviceKey) return null
+
+  if (!hasUtrInput) {
+    const { updateJourneyInput } = await import('./journey-inputs')
+    try {
+      await updateJourneyInput({
+        playerId,
+        category: 'tennis',
+        inputKey: 'utr_rating',
+        valueNumeric: utrSingles,
+        unit: 'utr_points',
+        source: 'utr_api',
+        verified: true,
+        actor: 'journey-fetch',
+        triggerRecalc: false,
+      })
+    } catch (e) {
+      console.error('[journey-fetch] utr input backfill failed:', e)
+    }
+  }
+
+  try {
+    return await recalcJourneyRating(playerId, url, serviceKey)
+  } catch (e) {
+    console.error('[journey-fetch] utr stale recalc failed:', e)
+    return null
+  }
+}
 
 export interface JourneyPageData {
   player: {
@@ -14,7 +62,7 @@ export interface JourneyPageData {
     nextTier: string | null
     tierProgress: number
     journeyRating: number
-    ratingDelta: number
+    ratingDelta: number | null
     pointsToNextTier: number
   }
   categories: JourneyBreakdown['categories']
@@ -81,7 +129,7 @@ export async function fetchJourneyPageData(
 ): Promise<JourneyPageData | null> {
   const { data: player } = await supabase
     .from('players')
-    .select('id, name, sport')
+    .select('id, name, sport, utr_singles')
     .eq('id', playerId)
     .single()
 
@@ -107,8 +155,11 @@ export async function fetchJourneyPageData(
   const utrRow = inputRows?.find(
     r => r.category === 'tennis' && r.input_key === 'utr_rating',
   )
-  const utrSingles =
+  const utrFromInput =
     utrRow?.value_numeric != null ? Number(utrRow.value_numeric) : null
+  const utrFromPlayer =
+    player?.utr_singles != null ? Number(player.utr_singles) : null
+  const utrSingles = utrFromInput ?? utrFromPlayer
 
   const { data: latestRating } = await supabase
     .from('journey_ratings')
@@ -131,7 +182,7 @@ export async function fetchJourneyPageData(
         nextTier: next?.label ?? null,
         tierProgress: 0,
         journeyRating: 0,
-        ratingDelta: 0,
+        ratingDelta: null,
         pointsToNextTier: next ? next.minRating : 0,
       },
       categories: [],
@@ -165,10 +216,23 @@ export async function fetchJourneyPageData(
     .order('created_at', { ascending: false })
     .limit(20)
 
-  const breakdown = latestRating.breakdown as JourneyBreakdown
-  const delta = monthAgoRating
-    ? Number(latestRating.total) - Number(monthAgoRating.total)
-    : 0
+  let breakdown = latestRating.breakdown as JourneyBreakdown
+  if (tennisCategoryStale(breakdown.categories, utrSingles)) {
+    const fresh = await ensureJourneyReflectsUtr(
+      playerId,
+      utrSingles!,
+      utrRow != null && utrFromInput != null,
+    )
+    if (fresh) breakdown = fresh
+  }
+
+  const ratingDelta: number | null = monthAgoRating
+    ? Number(
+        (
+          Number(breakdown.total) - Number(monthAgoRating.total)
+        ).toFixed(1),
+      )
+    : null
 
   return {
     player: {
@@ -176,18 +240,18 @@ export async function fetchJourneyPageData(
       name: player.name ?? 'Player',
       sport: capitalizeSport(player.sport),
       classYear,
-      tier: latestRating.tier,
-      nextTier: nextTierAfter(latestRating.tier),
-      tierProgress: Number(latestRating.tier_progress),
-      journeyRating: Number(latestRating.total),
-      ratingDelta: Number(delta.toFixed(1)),
-      pointsToNextTier: pointsToNextTierFor(Number(latestRating.total)),
+      tier: breakdown.tier,
+      nextTier: nextTierAfter(breakdown.tier),
+      tierProgress: Number(breakdown.tier_progress),
+      journeyRating: Number(breakdown.total),
+      ratingDelta,
+      pointsToNextTier: pointsToNextTierFor(Number(breakdown.total)),
     },
     categories: breakdown.categories ?? [],
     milestones: buildMilestones(Number(latestRating.total)),
     events: events ?? [],
     inputs: inputRows ?? [],
-    weightsVersion: latestRating.weights_version,
+    weightsVersion: breakdown.weights_version ?? latestRating.weights_version,
     isEmpty: false,
     utrSingles,
   }

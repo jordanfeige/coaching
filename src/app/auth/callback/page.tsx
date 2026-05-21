@@ -35,28 +35,25 @@ function AuthCallbackContent() {
         .eq('id', session.user.id)
         .maybeSingle()
 
-      const profilePayload = {
-        id: session.user.id,
-        email: session.user.email ?? null,
-        full_name:
-          typeof session.user.user_metadata?.full_name === 'string'
-            ? session.user.user_metadata.full_name
-            : null,
-      }
+      const role =
+        session.user.user_metadata?.role === 'coach' || session.user.user_metadata?.role === 'player'
+          ? session.user.user_metadata.role
+          : 'player'
 
-      const { error: upsertError } = await supabase.from('profiles').upsert(profilePayload, { onConflict: 'id' })
-      if (upsertError && (upsertError.message.includes("Could not find the 'full_name' column") || upsertError.message.includes('schema cache'))) {
-        await supabase.from('profiles').upsert({
-          id: session.user.id,
-          email: session.user.email ?? null,
-        }, { onConflict: 'id' })
-      }
+      await fetch('/api/onboarding/ensure-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: session.user.email,
+          full_name:
+            typeof session.user.user_metadata?.full_name === 'string'
+              ? session.user.user_metadata.full_name
+              : null,
+          role,
+        }),
+      }).catch(error => console.error('Could not ensure profile:', error))
 
       if (!existingProfile && session.user.email) {
-        const role =
-          session.user.user_metadata?.role === 'coach' || session.user.user_metadata?.role === 'player'
-            ? session.user.user_metadata.role
-            : 'player'
         const name =
           typeof session.user.user_metadata?.full_name === 'string' && session.user.user_metadata.full_name.trim()
             ? session.user.user_metadata.full_name.trim()

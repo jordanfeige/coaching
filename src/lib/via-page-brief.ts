@@ -398,26 +398,6 @@ export function generatePageBrief(
       }
     }
 
-    case 'player-recruiting': {
-      const brief = pageContext.utrSingles
-        ? `UTR ${pageContext.utrSingles}. ` +
-          (pageContext.targetDivision
-            ? `${pageContext.targetDivision} is your target.`
-            : '')
-        : 'Build your recruiting profile to see matching schools.'
-      return {
-        brief,
-        prompts: [
-          'What schools fit me?',
-          pageContext.targetDivision
-            ? `What do I need for ${pageContext.targetDivision}?`
-            : 'What division fits my UTR?',
-          'How does my schedule look?',
-          'When should I contact coaches?',
-        ],
-      }
-    }
-
     case 'pulse': {
       const attention = getAttentionPlayers(ctx)
       const brief =

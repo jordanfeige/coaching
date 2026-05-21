@@ -16,7 +16,7 @@ const inputClass =
 function ProgressDots() {
   return (
     <div className="flex items-center justify-center gap-2">
-      {[0, 1, 2].map(index => (
+      {[0, 1, 2, 3].map(index => (
         <span
           key={index}
           className="size-2.5 rounded-full"
@@ -61,41 +61,6 @@ export default function OnboardingAccountPage() {
     }
   }, [role, router])
 
-  async function saveProfile(userId: string, normalizedEmail: string, accountRole: Role) {
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .upsert(
-        {
-          id: userId,
-          email: normalizedEmail,
-          role: accountRole,
-          beta_status: 'pending',
-          analyses_used: 0,
-          is_subscribed: false,
-        },
-        { onConflict: 'id' }
-      )
-
-    if (profileError) {
-      console.error('Profile save error:', profileError)
-      try {
-        const { error: fallbackError } = await supabase
-          .from('profiles')
-          .upsert(
-            {
-              id: userId,
-              email: normalizedEmail,
-              role: accountRole,
-            },
-            { onConflict: 'id' }
-          )
-        if (fallbackError) console.error('Profile fallback save error:', fallbackError)
-      } catch (fallbackError) {
-        console.error('Profile fallback save failed:', fallbackError)
-      }
-    }
-  }
-
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
@@ -114,41 +79,57 @@ export default function OnboardingAccountPage() {
     }
 
     const normalizedEmail = email.trim().toLowerCase()
-    const { data, error: signupError } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-        data: {
-          full_name: fullName.trim(),
-          role,
-        },
-      },
+    const signupRes = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: normalizedEmail,
+        password,
+        fullName: fullName.trim(),
+        role,
+      }),
     })
 
-    if (signupError) {
-      const msg = signupError.message?.toLowerCase() || ''
-      if (
-        msg.includes('email') ||
-        msg.includes('smtp') ||
-        msg.includes('confirmation') ||
-        msg.includes('sending')
-      ) {
-        console.warn('Email send failed but continuing:', signupError.message)
-        localStorage.setItem('onboarding_role', role)
-        router.push('/onboarding/profile')
-        return
-      }
+    const signupBody = (await signupRes.json().catch(() => ({}))) as { error?: string }
 
-      setError(signupError.message || 'Failed to create account. Please try again.')
+    if (!signupRes.ok) {
+      setError(
+        signupBody.error ||
+          (signupRes.status === 409
+            ? 'An account already exists for this email. Please sign in.'
+            : 'Failed to create account. Please try again.'),
+      )
       setLoading(false)
       return
     }
 
-    if (data.user) {
-      await saveProfile(data.user.id, normalizedEmail, role)
-    } else {
-      console.warn('Signup succeeded without a user object; continuing onboarding')
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    })
+
+    if (signInError) {
+      setError('Account created — please sign in with your email and password.')
+      setLoading(false)
+      return
+    }
+
+    const ensureRes = await fetch('/api/onboarding/ensure-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: normalizedEmail,
+        full_name: fullName.trim(),
+        role,
+      }),
+    })
+
+    if (!ensureRes.ok) {
+      const ensureBody = (await ensureRes.json().catch(() => ({}))) as { error?: string }
+      console.error('Ensure profile error:', ensureBody.error)
+      setError(ensureBody.error || 'Could not save your profile. Please try again.')
+      setLoading(false)
+      return
     }
 
     await fetch('/api/send-email', {
@@ -182,7 +163,7 @@ export default function OnboardingAccountPage() {
         <div className="mt-8">
           <ProgressDots />
           <p className="mt-3 text-center text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: brand.textMuted }}>
-            Step 1 of 3
+            Step 1 of 4
           </p>
         </div>
 

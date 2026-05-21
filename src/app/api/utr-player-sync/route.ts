@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { userCanManagePlayer } from '@/lib/linked-player'
 import { runPlayerUTRSync, searchUTRPlayers } from '@/lib/utr'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
@@ -50,6 +51,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const canManage = await userCanManagePlayer(authSupabase, user.id, playerId)
+    if (!canManage) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     try {
       const syncResult = await runPlayerUTRSync(
         admin,
@@ -87,6 +93,15 @@ export async function POST(req: NextRequest) {
         { error: 'playerId required' },
         { status: 400 },
       )
+    }
+
+    const canManageUnlink = await userCanManagePlayer(
+      authSupabase,
+      user.id,
+      playerId,
+    )
+    if (!canManageUnlink) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     try {
@@ -166,6 +181,15 @@ export async function POST(req: NextRequest) {
         { error: 'playerId required' },
         { status: 400 },
       )
+    }
+
+    const canManageSync = await userCanManagePlayer(
+      authSupabase,
+      user.id,
+      playerId,
+    )
+    if (!canManageSync) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const { data: player } = await admin

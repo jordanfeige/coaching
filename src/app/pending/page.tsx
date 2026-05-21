@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BrandMark } from '@/components/brand/BrandMark'
 import { createClient } from '@/lib/supabase'
+import { homePathForRole, isBetaGateEnabled } from '@/lib/beta-gate'
 
 type PendingProfile = {
   beta_status: string | null
@@ -17,6 +18,23 @@ export default function PendingPage() {
 
   useEffect(() => {
     async function check() {
+      if (!isBetaGateEnabled(window.location.hostname)) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) {
+          router.push('/login')
+          return
+        }
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle()
+        router.push(homePathForRole(profile?.role))
+        return
+      }
+
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -32,7 +50,7 @@ export default function PendingPage() {
         .single()
 
       if (profile?.beta_status === 'approved') {
-        router.push(profile.role === 'coach' ? '/dashboard' : '/player')
+        router.push(homePathForRole(profile.role))
         return
       }
 

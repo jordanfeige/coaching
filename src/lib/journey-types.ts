@@ -68,7 +68,7 @@ export type JourneyPlayerCard = {
   nextTier: string
   tierProgress: number
   journeyRating: number
-  ratingDelta: number
+  ratingDelta: number | null
   pointsToNextTier: number
 }
 

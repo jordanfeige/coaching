@@ -97,7 +97,16 @@ export async function recalcJourneyRating(
     mapDbBenchmark(row as DbBenchmarkRow),
   )
 
-  const breakdown = calculateJourneyRating(inputs, benchmarks)
+  const { data: prefs } = await supabase
+    .from('journey_preferences')
+    .select('target_academic_tier, target_division')
+    .eq('player_id', playerId)
+    .maybeSingle()
+
+  const breakdown = calculateJourneyRating(inputs, benchmarks, {
+    targetAcademicTier: prefs?.target_academic_tier ?? null,
+    targetDivision: prefs?.target_division ?? null,
+  })
 
   const { error: insertErr } = await supabase.from('journey_ratings').insert({
     player_id: playerId,

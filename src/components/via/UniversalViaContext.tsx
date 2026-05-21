@@ -43,7 +43,16 @@ export function ViaContextProvider({ children }: { children: ReactNode }) {
     setPrefilledPrompt(payload.prompt)
     setPrefilledContext(payload.context)
     if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      requestAnimationFrame(() => {
+        const anchor =
+          document.getElementById('player-via-top') ??
+          document.getElementById('universal-via-bar')
+        if (anchor) {
+          anchor.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }
+      })
     }
   }, [])
 

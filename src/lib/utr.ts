@@ -29,6 +29,52 @@ export type UTRSearchPlayer = {
   nationality: string
 }
 
+/** UTR search often returns 0 / "0.xx" for minors; read fallbacks from the hit payload. */
+function parseUtrFromSearchSource(
+  source: Record<string, unknown>,
+  kind: 'singles' | 'doubles',
+): number {
+  const primary =
+    kind === 'singles'
+      ? Number(source.singlesUtr)
+      : Number(source.doublesUtr)
+  const displayRaw =
+    kind === 'singles'
+      ? String(source.singlesUtrDisplay || '')
+      : String(source.doublesUtrDisplay || '')
+  const myUtr =
+    kind === 'singles'
+      ? Number(source.myUtrSingles)
+      : Number(source.myUtrDoubles)
+
+  if (Number.isFinite(primary) && primary > 0) return primary
+
+  if (displayRaw && !/^0\.xx$/i.test(displayRaw) && !/^0\.00$/.test(displayRaw)) {
+    const fromDisplay = parseFloat(displayRaw)
+    if (Number.isFinite(fromDisplay) && fromDisplay > 0) return fromDisplay
+  }
+
+  if (Number.isFinite(myUtr) && myUtr > 0) return myUtr
+
+  const threeMonth = Number(source.threeMonthRating)
+  if (kind === 'singles' && Number.isFinite(threeMonth) && threeMonth > 0) {
+    return threeMonth
+  }
+
+  const changeDetails = source.threeMonthRatingChangeDetails as
+    | { rating?: number }
+    | undefined
+  if (
+    kind === 'singles' &&
+    changeDetails?.rating != null &&
+    changeDetails.rating > 0
+  ) {
+    return changeDetails.rating
+  }
+
+  return 0
+}
+
 export type UTRPlayerRating = {
   singlesUtr: number
   doublesUtr: number
@@ -92,27 +138,42 @@ export async function searchUTRPlayers(
   } catch {
     throw new Error('UTR search returned invalid JSON')
   }
-  return (data.players?.hits ?? []).map(h => {
-    const source = h.source || {}
-      const location = source.location as { display?: string } | undefined
-      return {
-        id: String(source.id ?? h.id ?? ''),
-        name:
-          String(source.displayName || '') ||
-          `${source.firstName || ''} ${source.lastName || ''}`.trim(),
-        singlesUtr: Number(source.singlesUtr) || 0,
-        doublesUtr: Number(source.doublesUtr) || 0,
-        location: location?.display || '',
-        age: (source.age as number) ?? null,
-        ageRange: String(source.ageRange || ''),
-        gender: String(source.gender || ''),
-        gradYear: source.gradYearHighSchool
-          ? String(source.gradYearHighSchool)
-          : null,
-        ratingStatus: String(source.ratingStatusSingles || ''),
-        nationality: String(source.nationality || ''),
+  const players = (data.players?.hits ?? []).map(h => {
+    const source = (h.source || {}) as Record<string, unknown>
+    const location = source.location as { display?: string } | undefined
+    return {
+      id: String(source.id ?? h.id ?? ''),
+      name:
+        String(source.displayName || '') ||
+        `${source.firstName || ''} ${source.lastName || ''}`.trim(),
+      singlesUtr: parseUtrFromSearchSource(source, 'singles'),
+      doublesUtr: parseUtrFromSearchSource(source, 'doubles'),
+      location: location?.display || '',
+      age: (source.age as number) ?? null,
+      ageRange: String(source.ageRange || ''),
+      gender: String(source.gender || ''),
+      gradYear: source.gradYearHighSchool
+        ? String(source.gradYearHighSchool)
+        : null,
+      ratingStatus: String(source.ratingStatusSingles || ''),
+      nationality: String(source.nationality || ''),
+    }
+  })
+
+  // Search masks some junior profiles as 0; player detail has the real rating.
+  await Promise.all(
+    players.map(async player => {
+      if (player.singlesUtr > 0) return
+      const full = await fetchUTRPlayer(player.id)
+      if (full && full.singlesUtr > 0) {
+        player.singlesUtr = full.singlesUtr
+        player.doublesUtr =
+          full.doublesUtr > 0 ? full.doublesUtr : full.singlesUtr
       }
-    })
+    }),
+  )
+
+  return players
 }
 
 export async function fetchUTRPlayer(
@@ -127,9 +188,18 @@ export async function fetchUTRPlayer(
   const changeDetails = p.threeMonthRatingChangeDetails as
     | { ratingDifference?: number }
     | undefined
+  const singlesUtr =
+    Number(p.singlesUtr) > 0
+      ? Number(p.singlesUtr)
+      : parseUtrFromSearchSource(p as Record<string, unknown>, 'singles')
+  const doublesUtr =
+    Number(p.doublesUtr) > 0
+      ? Number(p.doublesUtr)
+      : parseUtrFromSearchSource(p as Record<string, unknown>, 'doubles')
+
   return {
-    singlesUtr: p.singlesUtr || 0,
-    doublesUtr: p.doublesUtr || 0,
+    singlesUtr,
+    doublesUtr: doublesUtr > 0 ? doublesUtr : singlesUtr,
     ratingStatus: p.ratingStatusSingles || '',
     ratingProgress: p.ratingProgressSingles || 0,
     displayName: p.displayName || '',
@@ -347,6 +417,25 @@ export async function runPlayerUTRSync(
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
+  }
+
+  if (playerData.singlesUtr != null) {
+    const { updateJourneyInput } = await import('./journey-inputs')
+    try {
+      await updateJourneyInput({
+        playerId,
+        category: 'tennis',
+        inputKey: 'utr_rating',
+        valueNumeric: playerData.singlesUtr,
+        unit: 'utr_points',
+        source: 'utr_api',
+        verified: true,
+        actor: 'utr-sync',
+        triggerRecalc: true,
+      })
+    } catch (e) {
+      console.error('[utr] journey input/recalc after sync failed:', e)
+    }
   }
 
   await supabase
