@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import MarkDrillCompleteButton from '@/components/player/MarkDrillCompleteButton'
+import { usePageReady } from '@/contexts/PageLoadingContext'
 
 export type DrillRow = {
   id: string
@@ -106,10 +107,10 @@ export default function PlayerTrainingDrills({
     )
   }
 
+  usePageReady(!loading)
+
   if (loading) {
-    return (
-      <p style={{ fontSize: 13, color: MUTED, margin: '8px 0 0' }}>Loading drills…</p>
-    )
+    return null
   }
 
   return (

@@ -12,10 +12,14 @@ import AnalysisResultStepper, {
   mapAnalysisStrengths,
 } from '@/components/AnalysisResultStepper'
 import { analysisScore } from '@/lib/analysis-display'
+import { usePageReady } from '@/contexts/PageLoadingContext'
+import { ReelTitleEditor } from '@/components/player/reels/ReelTitleEditor'
+import { formatReelDisplayTitle } from '@/lib/reel-display'
 
 type Session = {
   id: string
   sport: string
+  title: string | null
   shot_type: string | null
   overall_score: number | null
   source: string
@@ -60,7 +64,7 @@ export default function ReelDetailPage() {
       const { data } = await supabase
         .from('analysis_sessions')
         .select(
-          'id, sport, shot_type, overall_score, source, analyzed_at, storage_path, full_result, player_id',
+          'id, sport, title, shot_type, overall_score, source, analyzed_at, storage_path, full_result, player_id',
         )
         .eq('id', sessionId)
         .eq('player_id', row.id)
@@ -76,6 +80,7 @@ export default function ReelDetailPage() {
       setSession({
         id: data.id,
         sport: data.sport,
+        title: data.title,
         shot_type: data.shot_type,
         overall_score: data.overall_score,
         source: data.source || 'video',
@@ -96,12 +101,10 @@ export default function ReelDetailPage() {
     void load()
   }, [router, sessionId, supabase])
 
+  usePageReady(!loading)
+
   if (loading) {
-    return (
-      <div style={{ padding: 40, color: 'hsl(220,10%,65%)', fontFamily: 'system-ui' }}>
-        Loading reel…
-      </div>
-    )
+    return null
   }
 
   if (!session) return null
@@ -142,6 +145,15 @@ export default function ReelDetailPage() {
       >
         ← Back to reels
       </button>
+
+      <ReelTitleEditor
+        reelId={session.id}
+        initialTitle={formatReelDisplayTitle(
+          session.title,
+          session.shot_type,
+          session.sport,
+        )}
+      />
 
       <AnalysisResultStepper
         score={analysisScore(full)}

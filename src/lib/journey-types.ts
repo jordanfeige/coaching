@@ -1,3 +1,5 @@
+import type { SubScoreNudgeContext } from './journey-subscore-nudges'
+
 export type Severity = 'critical' | 'important' | 'minor' | 'done'
 export type Difficulty = 1 | 2 | 3
 
@@ -82,20 +84,26 @@ export type JourneyPlayerCard = {
   pointsToNextTier: number
 }
 
-export type JourneyMomentum = {
-  fastestMover: { name: string; delta: string; window: string }
-  utrPercentile: number
-  statement: string
+export type JourneyRoadToOfferData = {
+  goalKey: string
+  classYear: number
+  currentUtr: number
+  currentGpa: number | null
+  qualityWinsLast12Mo: number
 }
 
-export type JourneyPageViewModel = {
+export type JourneyPageCoreViewModel = {
   player: JourneyPlayerCard
   categories: JourneyCategory[]
   milestones: JourneyMilestone[]
   quests: JourneyQuest[]
   events: JourneyEvent[]
-  momentum: JourneyMomentum
   weightsVersion: string
   isEmpty: boolean
   utrSingles: number | null
+}
+
+export type JourneyPageViewModel = JourneyPageCoreViewModel & {
+  roadToOffer: JourneyRoadToOfferData
+  nudgeContext: SubScoreNudgeContext
 }

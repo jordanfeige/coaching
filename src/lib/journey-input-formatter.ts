@@ -144,7 +144,9 @@ export function formatInputValue(input: JourneyInputRow): string {
       case 'match_count_12mo':
         return v ? `${v} matches in last 12 months` : 'No matches recorded'
       case 'quality_wins_12mo':
-        return v ? `${v} quality wins (vs UTR ≥ yours)` : 'No quality wins yet'
+        return v
+          ? `${v} quality wins (vs age-bracket peer UTR or higher)`
+          : 'No quality wins yet'
       case 'national_events_12mo':
         return v ? `${v} national/sectional events` : 'No national events yet'
       case 'win_pct_12mo':

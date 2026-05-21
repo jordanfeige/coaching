@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import { differenceInDays, format } from 'date-fns'
-import PlayerPageVia from '@/components/player/PlayerPageVia'
 import MarkDrillCompleteButton from '@/components/player/MarkDrillCompleteButton'
 import ViaBlob from '@/components/ViaBlob'
+import { usePageReady } from '@/contexts/PageLoadingContext'
 import {
   PLAYER_VISIBLE_SESSIONS_FILTER,
   SessionReviewBadge,
@@ -274,23 +274,10 @@ function ProgressPageContent() {
     }
   }
 
+  usePageReady(!loading)
+
   if (loading) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '60vh',
-          fontFamily: 'Arial, sans-serif',
-          color: TEXT_MUTED,
-          fontSize: 14,
-          background: WARM_BG,
-        }}
-      >
-        Loading your progress...
-      </div>
-    )
+    return null
   }
 
   if (sessionCount === 0) {
@@ -664,17 +651,6 @@ function ProgressPageContent() {
       }}
     >
       <style>{CSS}</style>
-
-      <PlayerPageVia
-        playerId={player?.id}
-        playerName={player?.name || undefined}
-        pageContext={{
-          page: 'player-progress',
-          totalGain: totalGain || undefined,
-          fixedCount: fixedIssues.length,
-          activeIssue: activeIssues[0]?.issue || undefined,
-        }}
-      />
 
       <div
         style={{

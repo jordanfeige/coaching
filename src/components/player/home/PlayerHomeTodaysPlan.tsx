@@ -193,7 +193,7 @@ export default function PlayerHomeTodaysPlan({ drill, lesson }: Props) {
             )}
             <button
               type="button"
-              onClick={() => router.push('/player/training#drills')}
+              onClick={() => router.push('/player/training/drills')}
               style={{
                 flex: 1,
                 minWidth: 120,

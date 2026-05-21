@@ -6,6 +6,7 @@ import { brand, fonts } from '@/lib/brand'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerIdForUser } from '@/lib/linked-player'
 import type { ProfileUpdateField } from '@/lib/player-profile-update'
+import { usePageReady } from '@/contexts/PageLoadingContext'
 
 const GOALS = [
   { value: 'recruited_college', label: 'Get recruited to play in college' },
@@ -243,12 +244,10 @@ export default function PlayerProfileSettings() {
     }
   }
 
+  usePageReady(!loading)
+
   if (loading) {
-    return (
-      <div style={{ padding: 24, fontFamily: fonts.sans, color: brand.sub }}>
-        Loading profile…
-      </div>
-    )
+    return null
   }
 
   if (!form || !playerId) {

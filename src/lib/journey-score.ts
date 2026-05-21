@@ -3,7 +3,13 @@
 // Pure calculation function. Takes inputs + benchmarks, returns a breakdown.
 // Versioned so old ratings stay calculable even if formulas change later.
 
-export const WEIGHTS_VERSION = 'v1.2'
+import {
+  bracketForAge,
+  computeAgeAt,
+  yearInBracketForAge,
+} from '@/lib/utr-forecast'
+
+export const WEIGHTS_VERSION = 'v1.3'
 
 export const WEIGHTS = {
   tennis: 35,
@@ -43,9 +49,17 @@ export interface JourneyBenchmark {
   unit: string
 }
 
+export type CohortBenchmark = {
+  bracket: string
+  year_in_bracket: number
+  utr_threshold: number
+}
+
 export interface ScoringContext {
   targetAcademicTier?: string | null
   targetDivision?: string | null
+  birthDate?: string | null
+  cohortBenchmarks?: CohortBenchmark[]
 }
 
 /** Row shape from `match_results` used by Exposure scoring. */
@@ -92,6 +106,40 @@ function normalizeTargetDivision(
 ): string {
   if (!raw || raw === 'not_sure') return 'd1_mid_major'
   return raw
+}
+
+function cohortMap(
+  rows: CohortBenchmark[] | undefined,
+): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const row of rows ?? []) {
+    map.set(`${row.bracket}:${row.year_in_bracket}`, row.utr_threshold)
+  }
+  return map
+}
+
+function peerUtrAtMatch(
+  birthDate: string,
+  matchDate: string,
+  peers: Map<string, number>,
+): number | null {
+  const age = computeAgeAt(birthDate, new Date(`${matchDate}T12:00:00`))
+  const bracket = bracketForAge(age)
+  const year = yearInBracketForAge(age)
+  return peers.get(`${bracket}:${year}`) ?? null
+}
+
+function currentPeerLabel(
+  birthDate: string | null | undefined,
+  peers: Map<string, number>,
+): string {
+  if (!birthDate) return 'age-bracket peer UTR'
+  const age = computeAgeAt(birthDate, new Date())
+  const bracket = bracketForAge(age)
+  const year = yearInBracketForAge(age)
+  const utr = peers.get(`${bracket}:${year}`)
+  if (utr == null) return `${bracket} peer UTR`
+  return `${bracket} peer UTR (${utr.toFixed(1)})`
 }
 
 const ACADEMIC_TIER_LABELS: Record<string, string> = {
@@ -327,17 +375,17 @@ function scoreExposure(
   const wins = recentMatches.filter(m => m.result === 'W')
   const winPct = totalMatches > 0 ? wins.length / totalMatches : 0
 
+  const peers = cohortMap(context.cohortBenchmarks)
+  const birthDate = context.birthDate ?? null
+
   const qualityWins = wins.filter(m => {
-    if (m.opponent_utr_at_time == null || m.player_utr_at_time == null) {
-      return false
-    }
-    return m.opponent_utr_at_time >= m.player_utr_at_time
+    if (m.opponent_utr_at_time == null || !birthDate) return false
+    const peerBar = peerUtrAtMatch(birthDate, m.match_date, peers)
+    if (peerBar == null) return false
+    return m.opponent_utr_at_time >= peerBar
   }).length
 
-  const playerCurrentUtr = findInput(inputs, 'tennis', 'utr_rating')?.value_numeric
-  const utrLabel = playerCurrentUtr
-    ? `your UTR (${Number(playerCurrentUtr).toFixed(1)})`
-    : 'your UTR'
+  const peerLabel = currentPeerLabel(birthDate, peers)
 
   const nationalEvents = new Set(
     recentMatches
@@ -368,13 +416,13 @@ function scoreExposure(
   let gapStatement = ''
   if (qualityScore < 5) {
     const needed = Math.max(1, Math.ceil(5 - qualityWins))
-    gapStatement = `+${needed} win${needed > 1 ? 's' : ''} vs opponents at ${utrLabel} or higher`
+    gapStatement = `+${needed} quality win${needed > 1 ? 's' : ''} vs opponents at ${peerLabel} or higher`
   } else if (volumeScore < 6) {
     gapStatement = `Play ${Math.ceil(30 - totalMatches)} more matches in next 12mo`
   } else if (eventScore < 3) {
     gapStatement = 'Enter 1 more national/sectional event'
   } else {
-    gapStatement = `Maintain your win rate vs peers at ${utrLabel} or higher`
+    gapStatement = `Maintain wins vs opponents at ${peerLabel} or higher`
   }
 
   if (reels?.value_numeric === 0) {

@@ -1,9 +1,8 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Sparkle } from 'lucide-react'
 import { brand, fonts } from '@/lib/brand'
-import PlayerHomeViaHero from '@/components/player/home/PlayerHomeViaHero'
 import PlayerHomeQuickStats, {
   type HomeStat,
 } from '@/components/player/home/PlayerHomeQuickStats'
@@ -11,11 +10,14 @@ import PlayerHomeTodaysPlan from '@/components/player/home/PlayerHomeTodaysPlan'
 import PlayerHomeJourneySnapshot from '@/components/player/home/PlayerHomeJourneySnapshot'
 import TrajectoryChartCompact from '@/components/player/home-desktop/TrajectoryChartCompact'
 import PlayerHomeAddReelCard from '@/components/player/home/PlayerHomeAddReelCard'
+import { QuestsTeaser } from '@/components/player/home/QuestsTeaser'
+import { JourneyRatingHomeCard } from '@/components/player/home/JourneyRatingHomeCard'
 
 const CSS = `
   @media (max-width: 640px) {
     .player-home-plan { grid-template-columns: 1fr !important; }
-    .player-home-stats { grid-template-columns: repeat(2, 1fr) !important; }
+    .player-home-stats { grid-template-columns: repeat(3, 1fr) !important; }
+    .player-home-stats > div { padding: 12px 10px !important; }
   }
 `
 
@@ -48,13 +50,15 @@ export default function HomeDesktopLayout({
   playerName,
   firstName,
   editorialLine,
-  welcomeMessage,
-  prompts,
+  welcomeMessage: _welcomeMessage,
+  prompts: _prompts,
   stats,
   drill,
   lesson,
   journey,
 }: HomeDesktopProps) {
+  const [trajectoryChartVisible, setTrajectoryChartVisible] = useState(false)
+
   return (
     <div style={{ fontFamily: fonts.serif, color: brand.ink }}>
       <style>{CSS}</style>
@@ -76,18 +80,8 @@ export default function HomeDesktopLayout({
         {editorialLine}
       </div>
 
-      <PlayerHomeViaHero
-        playerId={playerId}
-        playerName={playerName}
-        welcomeMessage={welcomeMessage}
-        prompts={prompts}
-      />
-
-      <PlayerHomeQuickStats stats={stats} />
-
-      <PlayerHomeTodaysPlan drill={drill} lesson={lesson} />
-
       <TrajectoryChartCompact
+        onChartVisible={setTrajectoryChartVisible}
         fallback={
           journey ? (
             <PlayerHomeJourneySnapshot
@@ -100,6 +94,22 @@ export default function HomeDesktopLayout({
           ) : null
         }
       />
+
+      <QuestsTeaser />
+
+      {trajectoryChartVisible && journey && (
+        <JourneyRatingHomeCard
+          rating={journey.rating}
+          ratingDelta={journey.ratingDelta}
+          tier={journey.tier}
+          nextTier={journey.nextTier}
+          pointsToNext={journey.pointsToNext}
+        />
+      )}
+
+      <PlayerHomeQuickStats stats={stats} />
+
+      <PlayerHomeTodaysPlan drill={drill} lesson={lesson} />
 
       <PlayerHomeAddReelCard />
     </div>

@@ -14,6 +14,7 @@ import {
 import ViaBar from '@/components/ViaBar'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayersForUser, type LinkedPlayer } from '@/lib/linked-player'
+import { usePageReady } from '@/contexts/PageLoadingContext'
 
 const TEAL = 'hsl(168,62%,36%)'
 const TEAL_LIGHT = 'hsl(168,62%,95%)'
@@ -277,6 +278,8 @@ export default function BulletinPage() {
     boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
     transition: 'box-shadow 0.2s, transform 0.2s',
   }
+
+  usePageReady(!loading)
 
   return (
     <div style={{ color: TEXT, fontFamily: 'Arial, sans-serif' }}>

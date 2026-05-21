@@ -9,7 +9,7 @@ import {
   LogOut,
   PlayCircle,
   TrendingUp,
-  UserRound,
+  Trophy,
 } from 'lucide-react'
 import { brand, fonts, layout } from '@/lib/brand'
 import { createClient } from '@/lib/supabase'
@@ -17,9 +17,14 @@ import { createClient } from '@/lib/supabase'
 const PLAYER_NAV = [
   { key: 'home', label: 'Home', Icon: Home, href: '/player' },
   { key: 'journey', label: 'Journey', Icon: TrendingUp, href: '/player/journey' },
+  {
+    key: 'recruiting',
+    label: 'Recruiting',
+    Icon: Trophy,
+    href: '/player/recruiting',
+  },
   { key: 'training', label: 'Training', Icon: Dumbbell, href: '/player/training' },
   { key: 'reels', label: 'Reels', Icon: PlayCircle, href: '/player/reels' },
-  { key: 'coach', label: 'Coach', Icon: UserRound, href: '/player/coach' },
 ]
 
 const SECONDARY_NAV = [

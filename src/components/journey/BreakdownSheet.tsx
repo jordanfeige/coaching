@@ -1,10 +1,13 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
+import { X } from 'lucide-react'
+import { brand } from '@/lib/brand'
 import type { JourneyCategory, JourneyEvent } from '@/lib/journey-types'
 import { ViaAnchor } from './ViaAnchor'
 import { Bar } from './Bar'
 import { ExposureSignalsList } from './ExposureSignalsList'
+import { ExposureMatchHistory } from './ExposureMatchHistory'
 import { TOKENS, FONTS, CATEGORY_COLORS } from './JourneyTokens'
 
 type BreakdownData = {
@@ -27,14 +30,21 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
     ? breakdown.categories.find(c => c.key === focus)
     : null
 
+  const handleClose = useCallback(() => onClose(), [onClose])
+
   useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose()
+    }
+    window.addEventListener('keydown', onKey)
     return () => {
       document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [open, handleClose])
 
   if (!open) return null
 
@@ -44,74 +54,63 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
       : breakdown.events
 
   return (
-    <>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={focusedCat ? focusedCat.label : 'Score breakdown'}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        display: 'flex',
+        justifyContent: 'flex-end',
+      }}
+    >
       <button
         type="button"
         aria-label="Close breakdown"
-        onClick={onClose}
+        onClick={handleClose}
         style={{
-          position: 'fixed',
+          position: 'absolute',
           inset: 0,
-          background: 'rgba(17,24,39,0.45)',
-          zIndex: 80,
+          background: 'rgba(0,0,0,0.45)',
+          backdropFilter: 'blur(2px)',
           border: 'none',
           cursor: 'pointer',
         }}
       />
-      <div
-        role="dialog"
-        aria-modal
+      <aside
+        className="journey-breakdown-drawer-panel"
         style={{
-          position: 'fixed',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          bottom: 0,
-          width: '100%',
-          maxWidth: 540,
-          maxHeight: '92vh',
-          zIndex: 90,
+          position: 'relative',
+          width: 'min(65vw, 560px)',
+          maxWidth: '100vw',
+          height: '100%',
           background: TOKENS.CREAM,
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
-          boxShadow: '0 -12px 48px rgba(0,0,0,0.18)',
+          boxShadow: '-8px 0 32px rgba(0,0,0,0.12)',
           display: 'flex',
           flexDirection: 'column',
-          animation: 'journeySheetUp 0.28s ease',
+          animation: 'journeyBreakdownIn 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
         }}
       >
         <style>{`
-          @keyframes journeySheetUp {
-            from { transform: translateX(-50%) translateY(100%); }
-            to { transform: translateX(-50%) translateY(0); }
+          @keyframes journeyBreakdownIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+          }
+          @media (max-width: 1023px) {
+            .journey-breakdown-drawer-panel {
+              width: 100vw !important;
+            }
           }
         `}</style>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            padding: '10px 0 6px',
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              width: 36,
-              height: 4,
-              borderRadius: 2,
-              background: TOKENS.LINE,
-            }}
-          />
-        </div>
 
         <div
           style={{
-            position: 'sticky',
-            top: 0,
-            zIndex: 2,
-            background: TOKENS.CREAM,
-            borderBottom: `1px solid ${TOKENS.LINE}`,
-            padding: '8px 18px 14px',
             flexShrink: 0,
+            borderBottom: `1px solid ${TOKENS.LINE}`,
+            padding: '20px 22px 16px',
+            background: TOKENS.CREAM,
           }}
         >
           <div
@@ -126,8 +125,8 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
               <h2
                 style={{
                   fontFamily: FONTS.serif,
-                  fontSize: 20,
-                  fontWeight: 700,
+                  fontSize: 18,
+                  fontWeight: 500,
                   color: TOKENS.INK,
                   margin: 0,
                 }}
@@ -140,6 +139,7 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
                   fontSize: 12,
                   color: TOKENS.SUB,
                   margin: '4px 0 0',
+                  lineHeight: 1.5,
                 }}
               >
                 {focusedCat ? focusedCat.tagline : breakdown.weightsVersion}
@@ -147,21 +147,24 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               aria-label="Close"
               style={{
-                background: 'white',
-                border: `1px solid ${TOKENS.LINE}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                background: brand.lineSoft,
                 borderRadius: 8,
-                padding: '6px 10px',
-                fontFamily: FONTS.sans,
-                fontSize: 12,
-                fontWeight: 600,
+                width: 36,
+                height: 36,
+                padding: 0,
                 cursor: 'pointer',
-                color: TOKENS.SUB,
+                flexShrink: 0,
+                color: brand.ink,
               }}
             >
-              Close
+              <X size={18} strokeWidth={2} aria-hidden />
             </button>
           </div>
           {!focusedCat && (
@@ -200,7 +203,7 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
           )}
         </div>
 
-        <div style={{ overflowY: 'auto', padding: '14px 18px 28px', flex: 1 }}>
+        <div style={{ overflowY: 'auto', padding: '14px 22px 28px', flex: 1 }}>
           {focusedCat ? (
             <>
               <div
@@ -321,6 +324,24 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
                   </div>
                 </div>
               ))}
+
+              {focusedCat.key === 'exposure' ? (
+                <section style={{ marginTop: 32 }}>
+                  <h3
+                    style={{
+                      fontFamily: FONTS.serif,
+                      fontSize: 15,
+                      fontWeight: 500,
+                      margin: '0 0 14px',
+                      color: TOKENS.INK,
+                    }}
+                  >
+                    Match history · last 12 months
+                  </h3>
+                  <ExposureMatchHistory />
+                </section>
+              ) : null}
+
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                 {focusedCat.viaPrompts.map(p => (
                   <ViaAnchor
@@ -467,7 +488,7 @@ export function BreakdownSheet({ open, focus, breakdown, onClose }: Props) {
             </>
           )}
         </div>
-      </div>
-    </>
+      </aside>
+    </div>
   )
 }

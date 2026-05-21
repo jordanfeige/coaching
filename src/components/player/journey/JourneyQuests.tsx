@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { Lock, Sparkles } from 'lucide-react'
-import { useViaContext } from '@/components/via/UniversalViaContext'
+import { useAskVia } from '@/components/player/ask-via/AskViaContext'
 import { playerJourneyMock } from '@/lib/player-journey-mock'
 import type { JourneyQuest } from '@/lib/player-journey-mock'
 
@@ -22,7 +22,7 @@ function statusLabel(status: JourneyQuest['status']) {
 }
 
 export default function JourneyQuests({ onScrollToVia }: Props) {
-  const { askVia } = useViaContext()
+  const { askVia } = useAskVia()
   const { quests } = playerJourneyMock
 
   function handleQuestAction(quest: JourneyQuest) {

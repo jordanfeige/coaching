@@ -9,7 +9,6 @@ import { QuestCard } from '@/components/journey/QuestCard'
 import { BreakdownSheet } from '@/components/journey/BreakdownSheet'
 import { Bar } from '@/components/journey/Bar'
 import { ExposureSignalsList } from '@/components/journey/ExposureSignalsList'
-import JourneyUtrSection from '@/components/journey/JourneyUtrSection'
 import AskViaAnchor from '@/components/player/AskViaAnchor'
 import PlayerPageVia from '@/components/player/PlayerPageVia'
 import CollegeMatchesSection from '@/components/player/journey-desktop/CollegeMatchesSection'
@@ -181,109 +180,6 @@ function SubScoreGrid({
   )
 }
 
-function DesktopMomentum({ data }: { data: JourneyPageViewModel }) {
-  const m = data.momentum
-  return (
-    <section style={{ marginTop: 20 }}>
-      <div
-        style={{
-          fontFamily: fonts.sans,
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          color: brand.sub,
-          marginBottom: 12,
-        }}
-      >
-        Momentum
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div
-          style={{
-            background: brand.tealTint,
-            border: `1px solid rgba(45,155,127,0.25)`,
-            borderRadius: 16,
-            padding: '18px 20px',
-          }}
-        >
-          <div
-            style={{
-              fontFamily: fonts.sans,
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: brand.tealDarkHex,
-              marginBottom: 8,
-            }}
-          >
-            Fastest mover
-          </div>
-          <div
-            style={{
-              fontFamily: fonts.serif,
-              fontSize: 20,
-              fontWeight: 700,
-              color: brand.ink,
-              marginBottom: 4,
-            }}
-          >
-            {m.fastestMover.name}
-          </div>
-          <div style={{ fontFamily: fonts.sans, fontSize: 13, color: brand.sub }}>
-            {m.fastestMover.delta} · {m.fastestMover.window}
-          </div>
-        </div>
-        <div
-          style={{
-            background: brand.blueTint,
-            border: `1px solid rgba(24,95,165,0.2)`,
-            borderRadius: 16,
-            padding: '18px 20px',
-          }}
-        >
-          <div
-            style={{
-              fontFamily: fonts.sans,
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: brand.blueHex,
-              marginBottom: 8,
-            }}
-          >
-            UTR percentile
-          </div>
-          <div
-            style={{
-              fontFamily: fonts.serif,
-              fontSize: 36,
-              fontWeight: 700,
-              color: brand.ink,
-              lineHeight: 1,
-            }}
-          >
-            {m.utrPercentile}%
-          </div>
-          <div
-            style={{
-              fontFamily: fonts.sans,
-              fontSize: 12,
-              color: brand.sub,
-              marginTop: 8,
-              lineHeight: 1.5,
-            }}
-          >
-            {m.statement}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
 export default function JourneyDesktopLayout({ data }: Props) {
   const [sheetFocus, setSheetFocus] = useState<string | null>(null)
   const m = data
@@ -394,15 +290,13 @@ export default function JourneyDesktopLayout({ data }: Props) {
         </div>
       </section>
 
+      <TrajectoryChart />
+
       <SubScoreGrid
         categories={m.categories}
         onTapScore={key => setSheetFocus(key)}
         lowestGap={lowestGap}
       />
-
-      <TrajectoryChart />
-
-      <DesktopMomentum data={data} />
 
       <section style={{ marginTop: 28 }}>
         <div
@@ -488,10 +382,6 @@ export default function JourneyDesktopLayout({ data }: Props) {
         </div>
         <RoadToOffer milestones={m.milestones} />
       </section>
-
-      <div style={{ marginTop: 28 }}>
-        <JourneyUtrSection />
-      </div>
 
       <BreakdownSheet
         open={sheetFocus !== null}

@@ -66,6 +66,51 @@
   --font-serif: var(--font-dm-serif), "DM Serif Display", Georgia, serif;
 }
 
+@keyframes playviaLoaderPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes playviaLoaderDot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.85);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.playvia-loader-wordmark {
+  animation: playviaLoaderPulse 2s ease-in-out infinite;
+}
+
+.playvia-loader-dot {
+  display: inline-block;
+  border-radius: 50%;
+  background: #0f6e56;
+  animation: playviaLoaderDot 1.4s ease-in-out infinite both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playvia-loader-wordmark {
+    animation: none;
+    opacity: 1;
+  }
+  .playvia-loader-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 @layer base {
   * {
     border-color: hsl(var(--border));

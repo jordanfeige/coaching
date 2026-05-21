@@ -14,8 +14,7 @@ import type {
   CategoryKey,
   JourneyCategory,
   JourneyEvent,
-  JourneyMomentum,
-  JourneyPageViewModel,
+  JourneyPageCoreViewModel,
   JourneyQuest,
 } from './journey-types'
 import { WEIGHTS } from './journey-score'
@@ -114,37 +113,6 @@ function buildCategories(data: JourneyPageData): JourneyCategory[] {
       }),
     }
   })
-}
-
-function buildMomentum(
-  categories: JourneyCategory[],
-  classYear: string | null,
-  ratingDelta: number | null,
-): JourneyMomentum {
-  const top = [...categories].sort((a, b) => b.score - a.score)[0]
-  const classLabel = classYear ?? 'your class'
-
-  const deltaLabel =
-    ratingDelta == null
-      ? '—'
-      : ratingDelta > 0
-        ? `+${ratingDelta.toFixed(1)}`
-        : ratingDelta < 0
-          ? String(ratingDelta)
-          : '0'
-
-  return {
-    fastestMover: {
-      name: top?.shortLabel ?? 'Coachability',
-      delta: deltaLabel,
-      window: '30 days',
-    },
-    utrPercentile: 18,
-    statement:
-      ratingDelta != null && ratingDelta > 0
-        ? `Improving faster than most ${classLabel} prospects on Playvia`
-        : `Track weekly inputs to build momentum vs ${classLabel} peers`,
-  }
 }
 
 function buildQuests(
@@ -284,7 +252,7 @@ function buildQuests(
 
 export function buildJourneyViewModel(
   data: JourneyPageData,
-): JourneyPageViewModel {
+): JourneyPageCoreViewModel {
   const categories = buildCategories(data)
   const classYear = data.player.classYear ?? '—'
 
@@ -304,11 +272,6 @@ export function buildJourneyViewModel(
     milestones: data.milestones,
     quests: buildQuests(data, categories),
     events: mapEvents(data.events),
-    momentum: buildMomentum(
-      categories,
-      data.player.classYear,
-      data.player.ratingDelta,
-    ),
     weightsVersion: `${data.weightsVersion} — Playvia default`,
     isEmpty: data.isEmpty,
     utrSingles: data.utrSingles,

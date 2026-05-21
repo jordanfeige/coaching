@@ -98,11 +98,22 @@ export async function recalcJourneyRating(
     mapDbBenchmark(row as DbBenchmarkRow),
   )
 
-  const { data: prefs } = await supabase
-    .from('journey_preferences')
-    .select('target_academic_tier, target_division')
-    .eq('player_id', playerId)
-    .maybeSingle()
+  const [{ data: prefs }, { data: playerRow }, { data: cohortRows }] =
+    await Promise.all([
+      supabase
+        .from('journey_preferences')
+        .select('target_academic_tier, target_division')
+        .eq('player_id', playerId)
+        .maybeSingle(),
+      supabase
+        .from('players')
+        .select('birth_date')
+        .eq('id', playerId)
+        .maybeSingle(),
+      supabase
+        .from('cohort_benchmarks')
+        .select('bracket, year_in_bracket, utr_threshold'),
+    ])
 
   const matchCutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -141,6 +152,12 @@ export async function recalcJourneyRating(
     {
       targetAcademicTier: prefs?.target_academic_tier ?? null,
       targetDivision: prefs?.target_division ?? null,
+      birthDate: playerRow?.birth_date ?? null,
+      cohortBenchmarks: (cohortRows ?? []).map(row => ({
+        bracket: String(row.bracket),
+        year_in_bracket: Number(row.year_in_bracket),
+        utr_threshold: Number(row.utr_threshold),
+      })),
     },
   )
 

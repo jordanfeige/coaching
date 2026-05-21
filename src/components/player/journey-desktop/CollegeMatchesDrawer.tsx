@@ -9,7 +9,7 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { useViaContext } from '@/components/via/UniversalViaContext'
+import { useAskVia } from '@/components/player/ask-via/AskViaContext'
 import { brand, fonts } from '@/lib/brand'
 import {
   BUCKET_STYLES,
@@ -111,7 +111,7 @@ function SchoolCard({
   playerSnapshot: PlayerSnapshot | null
   onToggleSave: (schoolId: string, saved: boolean) => void
 }) {
-  const { askVia } = useViaContext()
+  const { askVia } = useAskVia()
   const [expanded, setExpanded] = useState(false)
   const [saving, setSaving] = useState(false)
   const s = BUCKET_STYLES[row.bucket]
@@ -646,16 +646,21 @@ export default function CollegeMatchesDrawer({
               onClick={onClose}
               aria-label="Close"
               style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 border: 'none',
                 background: brand.lineSoft,
                 borderRadius: 8,
                 width: 36,
                 height: 36,
+                padding: 0,
                 cursor: 'pointer',
                 flexShrink: 0,
+                color: brand.ink,
               }}
             >
-              <X size={18} />
+              <X size={18} strokeWidth={2} aria-hidden />
             </button>
           </div>
 

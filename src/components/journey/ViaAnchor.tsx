@@ -1,6 +1,6 @@
 'use client'
 
-import { useViaContext } from '@/components/via/UniversalViaContext'
+import { useAskVia } from '@/components/player/ask-via/AskViaContext'
 import { TOKENS, FONTS } from './JourneyTokens'
 
 interface ViaAnchorProps {
@@ -16,7 +16,7 @@ export function ViaAnchor({
   color = TOKENS.TEAL_DARK,
   onDark = false,
 }: ViaAnchorProps) {
-  const { askVia } = useViaContext()
+  const { askVia } = useAskVia()
 
   return (
     <button

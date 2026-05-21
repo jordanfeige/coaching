@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { getLinkedPlayerIdForUser } from '@/lib/linked-player'
 import { fetchJourneyPageData } from '@/lib/journey-fetch'
+import { fetchJourneyPageSupplement } from '@/lib/journey-page-supplement'
 import { buildJourneyViewModel } from '@/lib/journey-view-model'
 import JourneyPageClient from '@/components/journey/JourneyPageClient'
 
@@ -22,7 +23,11 @@ export default async function JourneyPage() {
     )
   }
 
-  const raw = await fetchJourneyPageData(supabase, playerId)
+  const [raw, supplement] = await Promise.all([
+    fetchJourneyPageData(supabase, playerId),
+    fetchJourneyPageSupplement(supabase, playerId),
+  ])
+
   if (!raw) {
     return (
       <div style={{ padding: 24, fontFamily: 'system-ui' }}>
@@ -31,6 +36,10 @@ export default async function JourneyPage() {
     )
   }
 
-  const data = buildJourneyViewModel(raw)
+  const data = {
+    ...buildJourneyViewModel(raw),
+    roadToOffer: supplement.roadToOffer,
+    nudgeContext: supplement.nudgeContext,
+  }
   return <JourneyPageClient data={data} />
 }

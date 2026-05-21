@@ -1,7 +1,7 @@
 'use client'
 
 import { HelpCircle } from 'lucide-react'
-import { useViaContext } from '@/components/via/UniversalViaContext'
+import { useAskVia } from '@/components/player/ask-via/AskViaContext'
 import { brand, fonts } from '@/lib/brand'
 
 interface Props {
@@ -17,7 +17,7 @@ export default function AskViaAnchor({
   context = '',
   variant = 'light',
 }: Props) {
-  const { askVia } = useViaContext()
+  const { askVia } = useAskVia()
   const isDark = variant === 'dark'
 
   return (

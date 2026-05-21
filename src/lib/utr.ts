@@ -111,6 +111,8 @@ export interface UtrMatchResult {
   date: string
   eventId: string | null
   eventName: string | null
+  eventDivision: string | null
+  eventLocation: string | null
   eventLevel: UtrMatchEventLevel | null
   opponentUtrId: string
   opponentName: string
@@ -201,6 +203,29 @@ function utrFromPlayer(p: UtrResultPlayer | null): number | null {
   return null
 }
 
+function formatUtrEventLocation(event: {
+  location?: string | { display?: string; cityName?: string; stateName?: string }
+  cityName?: string
+  stateName?: string
+  venue?: string
+}): string | null {
+  if (typeof event.location === 'string' && event.location.trim()) {
+    return event.location.trim()
+  }
+  if (event.location && typeof event.location === 'object') {
+    const display = event.location.display?.trim()
+    if (display) return display
+    const cityState = [event.location.cityName, event.location.stateName]
+      .filter(Boolean)
+      .join(', ')
+    if (cityState) return cityState
+  }
+  const cityState = [event.cityName, event.stateName].filter(Boolean).join(', ')
+  if (cityState) return cityState
+  if (event.venue?.trim()) return event.venue.trim()
+  return null
+}
+
 function parseV4MatchResults(
   data: Record<string, unknown>,
   utrPlayerId: string,
@@ -212,7 +237,15 @@ function parseV4MatchResults(
     id?: string | number
     eventId?: string | number
     name?: string
+    location?: string | { display?: string; cityName?: string; stateName?: string }
+    cityName?: string
+    stateName?: string
+    venue?: string
     draws?: Array<{
+      name?: string
+      division?: string
+      category?: string
+      genderAgeGroup?: string
       results?: Array<{
         id?: string | number
         matchId?: string | number
@@ -245,8 +278,15 @@ function parseV4MatchResults(
           ? String(event.eventId)
           : null
     const eventName = event.name || null
+    const eventLocation = formatUtrEventLocation(event)
 
     ;(event.draws || []).forEach(draw => {
+      const eventDivision =
+        draw.name?.trim() ||
+        draw.division?.trim() ||
+        draw.category?.trim() ||
+        draw.genderAgeGroup?.trim() ||
+        null
       ;(draw.results || []).forEach(result => {
         if (
           result.outcome !== 'completed' ||
@@ -289,6 +329,8 @@ function parseV4MatchResults(
           date: toIsoDate(result.date || ''),
           eventId,
           eventName,
+          eventDivision,
+          eventLocation,
           eventLevel: mapSourceTypeToEventLevel(result.sourceType || ''),
           opponentUtrId,
           opponentName:

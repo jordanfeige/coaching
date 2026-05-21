@@ -131,11 +131,6 @@ const PAGE_SUGGESTIONS: Record<string, string[]> = {
     'How do I improve schedule strength?',
     'What should I film for recruiting?',
   ],
-  '/player/coach': [
-    'What should I work on before our next session?',
-    'Can you review my latest reel?',
-    'How do I prepare for a college showcase?',
-  ],
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -364,7 +359,7 @@ export default function PlayerChat({ playerId, playerName, sport, skillLevel }: 
         router.push('/player/progress')
         break
       case 'viewDrills':
-        router.push('/player/training#drills')
+        router.push('/player/training/drills')
         break
       case 'viewLesson':
         router.push('/player/training')

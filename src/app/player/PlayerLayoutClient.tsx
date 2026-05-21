@@ -3,17 +3,20 @@
 import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Dumbbell, Home, LogOut, PlayCircle, TrendingUp, UserRound } from 'lucide-react'
+import {
+  Dumbbell,
+  Home,
+  LogOut,
+  PlayCircle,
+  TrendingUp,
+  Trophy,
+} from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 import PlayerBottomNav from '@/components/player/PlayerBottomNav'
 import PlayerHeaderAvatar from '@/components/player/PlayerHeaderAvatar'
 import PlayerSideNav from '@/components/player/PlayerSideNav'
-import UniversalViaBar from '@/components/player/UniversalViaBar'
-import PlayerDesktopViaPanel from '@/components/player/PlayerDesktopViaPanel'
 import { createClient } from '@/lib/supabase'
 import { brand, layout } from '@/lib/brand'
-import { playerPageHidesLayoutViaChrome } from '@/lib/player-via-layout'
-import type { PageContext } from '@/lib/via-page-brief'
 
 type PlayerForChat = {
   id: string
@@ -37,9 +40,9 @@ type NavItem = {
 const playerNavItems: NavItem[] = [
   { href: '/player', label: 'Home', icon: Home, exact: true },
   { href: '/player/journey', label: 'Journey', icon: TrendingUp },
+  { href: '/player/recruiting', label: 'Recruiting', icon: Trophy },
   { href: '/player/training', label: 'Training', icon: Dumbbell },
   { href: '/player/reels', label: 'Reels', icon: PlayCircle },
-  { href: '/player/coach', label: 'Coach', icon: UserRound },
 ]
 
 function playerNavStyle(active: boolean) {
@@ -67,31 +70,6 @@ function playerNavStyle(active: boolean) {
 const NAV_LINK_FOCUS =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D9B7F] focus-visible:ring-offset-2'
 
-function desktopPageContext(pathname: string): PageContext {
-  if (pathname.startsWith('/player/journey')) {
-    return { page: 'player-journey' }
-  }
-  if (pathname.startsWith('/player/reels')) {
-    return { page: 'player-reels' }
-  }
-  if (pathname.startsWith('/player/training')) {
-    return { page: 'player-training' }
-  }
-  if (pathname.startsWith('/player/coach')) {
-    return { page: 'player-coach' }
-  }
-  if (pathname.startsWith('/player/progress')) {
-    return { page: 'player-progress' }
-  }
-  if (pathname.startsWith('/player/settings')) {
-    return { page: 'player-settings' }
-  }
-  if (pathname.startsWith('/player/bulletin')) {
-    return { page: 'player-home' }
-  }
-  return { page: 'player-home' }
-}
-
 export default function PlayerLayoutClient({ children, player }: Props) {
   const pathname = usePathname()
   const router = useRouter()
@@ -99,9 +77,6 @@ export default function PlayerLayoutClient({ children, player }: Props) {
   const navItems = playerNavItems
   const isHome = pathname === '/player'
   const contentMax = isHome ? layout.contentMaxHome : layout.contentMax
-  const showLayoutViaChrome =
-    !isHome && !playerPageHidesLayoutViaChrome(pathname ?? '')
-
   async function handleSignOut() {
     await supabase.auth.signOut()
     router.push('/login')
@@ -168,16 +143,6 @@ export default function PlayerLayoutClient({ children, player }: Props) {
             <div className="mb-4 hidden items-center justify-end lg:flex">
               <PlayerHeaderAvatar playerName={player?.name} />
             </div>
-            {showLayoutViaChrome && (
-              <div id="player-via-top" className="player-layout-via-chrome hidden lg:block">
-                <UniversalViaBar />
-                <PlayerDesktopViaPanel
-                  playerId={player?.id}
-                  playerName={player?.name}
-                  pageContext={desktopPageContext(pathname ?? '/player')}
-                />
-              </div>
-            )}
             {children}
           </div>
         </main>

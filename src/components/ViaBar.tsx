@@ -114,7 +114,6 @@ const PLAYER_SUGGESTIONS: Record<string, string[]> = {
   '/player/training': ['What did my coach say last session?', 'How should I prepare for my next session?', 'Explain my assigned drills'],
   '/player/lessons': ['What did my coach say last session?', 'How should I prepare for my next session?', 'Explain my assigned drills'],
   '/player/journey': ['What schools fit me?', 'How do I improve schedule strength?', 'What should I film for recruiting?'],
-  '/player/coach': ['What should I work on before our next session?', 'Can you review my latest reel?', 'How do I prepare for a showcase?'],
   '/player/bulletin': ['Find tournaments near me', 'What events are good for my level?', 'Find camps this summer'],
 }
 
@@ -396,7 +395,7 @@ export default function ViaBar({ role, playerContext }: Props) {
         setExpanded(false)
         break
       case 'viewDrills':
-        router.push('/player/training#drills')
+        router.push('/player/training/drills')
         setExpanded(false)
         break
     }

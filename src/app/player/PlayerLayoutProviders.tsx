@@ -1,11 +1,16 @@
 'use client'
 
-import { ViaContextProvider } from '@/components/via/UniversalViaContext'
+import AppLoadingRoot from '@/components/navigation/AppLoadingRoot'
+import { AskViaProvider } from '@/components/player/ask-via/AskViaContext'
 
 export default function PlayerLayoutProviders({
   children,
 }: {
   children: React.ReactNode
 }) {
-  return <ViaContextProvider>{children}</ViaContextProvider>
+  return (
+    <AppLoadingRoot>
+      <AskViaProvider>{children}</AskViaProvider>
+    </AppLoadingRoot>
+  )
 }

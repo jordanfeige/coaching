@@ -11,6 +11,7 @@ import { calculateScore, extractCheckpointScores } from '@/lib/scoring'
 import { sendAnalysisComplete } from '@/lib/email'
 import { ADMIN_EMAILS } from '@/lib/admin'
 import { fullStoragePath, parseStoragePath } from '@/lib/reel-storage'
+import { defaultReelTitle, normalizeReelTitle } from '@/lib/reel-display'
 
 export const maxDuration = 120
 export const runtime = 'nodejs'
@@ -750,6 +751,7 @@ export async function POST(req: NextRequest) {
     playerId,
     sport = 'tennis',
     shotType,
+    title: titleInput,
     playerHistory = '',
     cameraAngle,
     poseData,
@@ -774,6 +776,7 @@ export async function POST(req: NextRequest) {
     playerId?: string
     sport?: string
     shotType?: string
+    title?: string
     playerHistory?: string
     cameraAngle?: string
     poseData?: PosePromptData
@@ -964,6 +967,11 @@ export async function POST(req: NextRequest) {
     const shouldSave = data.confidence !== 'low' || overallScore > 15
 
     if (shouldSave) {
+      const sessionTitle =
+        typeof titleInput === 'string' && normalizeReelTitle(titleInput)
+          ? normalizeReelTitle(titleInput)
+          : defaultReelTitle(shotType)
+
       let persistedStoragePath: string | null = null
       let videoId: string | null = null
 
@@ -988,7 +996,7 @@ export async function POST(req: NextRequest) {
             .insert({
               player_id: playerId,
               storage_path: objectPath,
-              title: `${normalizedSport || 'tennis'} reel · ${new Date().toLocaleDateString()}`,
+              title: sessionTitle,
             })
             .select('id')
             .single()
@@ -1009,6 +1017,7 @@ export async function POST(req: NextRequest) {
         source: 'video',
         published_to_player: isCoach ? false : true,
         coach_verified: false,
+        title: sessionTitle,
         shot_type: shotType || null,
         overall_score: overallScore,
         rating: data.overall_rating,

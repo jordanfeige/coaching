@@ -14,10 +14,10 @@ interface Props {
 
 const PAGE_KICKERS: Record<string, string> = {
   '/player/journey': 'your journey',
+  '/player/recruiting': 'your recruiting',
   '/player/training': 'your training',
   '/player/reels': 'your reels',
-  '/player/coach': 'your coach',
-  '/player/training#drills': 'your drills',
+  '/player/training/drills': 'your drills',
 }
 
 export default function UniversalViaBar({

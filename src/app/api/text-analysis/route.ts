@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { defaultReelTitle, normalizeReelTitle } from '@/lib/reel-display'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
     sport,
     context,
     shotTypes,
+    title: titleInput,
     playerId,
     lessonId,
   } = body as {
@@ -30,6 +32,7 @@ export async function POST(req: NextRequest) {
     sport?: string
     context?: string
     shotTypes?: string[]
+    title?: string
     playerId?: string | null
     lessonId?: string | null
   }
@@ -152,6 +155,12 @@ Analyze this session and extract structured technique feedback.`
     const strengths = Array.isArray(result.strengths) ? result.strengths : []
     const overallScore = result.overall_score ?? 70
 
+    const primaryShot = shotTypes?.[0] ?? null
+    const sessionTitle =
+      typeof titleInput === 'string' && normalizeReelTitle(titleInput)
+        ? normalizeReelTitle(titleInput)
+        : defaultReelTitle(primaryShot)
+
     const { data: session, error } = await supabase
       .from('analysis_sessions')
       .insert({
@@ -159,6 +168,7 @@ Analyze this session and extract structured technique feedback.`
         player_id: resolvedPlayerId,
         lesson_id: lessonId || null,
         sport: sport || 'tennis',
+        title: sessionTitle,
         shot_type: shotTypes?.length ? shotTypes.join(', ') : null,
         overall_score: overallScore,
         top_issue: result.top_issue || null,

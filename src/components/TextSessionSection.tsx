@@ -33,6 +33,7 @@ export type TextAnalysisResult = {
 interface Props {
   sport: string
   playerId?: string | null
+  reelTitle?: string
   lessonId?: string | null
   initialDescription?: string
   autoSubmit?: boolean
@@ -43,6 +44,7 @@ interface Props {
 export default function TextSessionSection({
   sport,
   playerId,
+  reelTitle,
   lessonId,
   initialDescription = '',
   autoSubmit = false,
@@ -97,6 +99,7 @@ export default function TextSessionSection({
           sport,
           context,
           shotTypes: selectedShots,
+          title: reelTitle?.trim() || undefined,
           playerId: playerId || null,
           lessonId: lessonId || null,
         }),

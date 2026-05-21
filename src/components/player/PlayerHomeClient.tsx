@@ -17,6 +17,7 @@ import { TEAL_DARK } from '@/lib/player-home-tokens'
 import HomeDesktopLayout from '@/components/player/home-desktop/HomeDesktopLayout'
 import type { HomeStat } from '@/components/player/home/PlayerHomeQuickStats'
 import PlayerHomeMobile from '@/components/player/PlayerHomeMobile'
+import { usePageReady } from '@/contexts/PageLoadingContext'
 
 type JourneyHome = {
   rating: number
@@ -24,13 +25,6 @@ type JourneyHome = {
   tier: string
   nextTier: string | null
   pointsToNext: number
-}
-
-type PoseMeasurement = {
-  label?: string
-  measured?: number
-  status?: 'good' | 'warning' | 'critical'
-  deficit?: number
 }
 
 function buildEditorialLine(recentCount: number): string {
@@ -332,7 +326,6 @@ export default function PlayerHomeClient() {
 
   const latest = sortedSessions[sortedSessions.length - 1]
   const previous = sortedSessions[sortedSessions.length - 2]
-  const first = sortedSessions[0]
 
   const currentScore =
     typeof latest?.overall_score === 'number' ? latest.overall_score : null
@@ -342,30 +335,6 @@ export default function PlayerHomeClient() {
     typeof previous.overall_score === 'number'
       ? currentScore - previous.overall_score
       : null
-  const totalGain =
-    latest &&
-    first &&
-    first.id !== latest.id &&
-    typeof latest.overall_score === 'number' &&
-    typeof first.overall_score === 'number'
-      ? latest.overall_score - first.overall_score
-      : 0
-
-  const poseRaw = latest?.pose_measurements
-  const pose: PoseMeasurement[] | null = Array.isArray(poseRaw)
-    ? (poseRaw as PoseMeasurement[])
-    : poseRaw &&
-        typeof poseRaw === 'object' &&
-        Array.isArray((poseRaw as { measurements?: PoseMeasurement[] }).measurements)
-      ? (poseRaw as { measurements: PoseMeasurement[] }).measurements
-      : null
-
-  const last3 = sortedSessions.slice(-3)
-  const cleanStreak = [...last3].reverse().findIndex(s => {
-    const critical = s.critical_count
-    return typeof critical === 'number' && critical > 0
-  })
-  const consecutiveClean = cleanStreak === -1 ? last3.length : cleanStreak
 
   const firstName = player?.name?.split(' ')[0] || 'there'
   const utr =
@@ -383,13 +352,6 @@ export default function PlayerHomeClient() {
   })
 
   const stats: HomeStat[] = [
-    {
-      label: 'UTR',
-      value: utr != null ? utr.toFixed(2) : '—',
-      delta: null,
-      positive: null,
-      source: utr != null ? 'Verified' : 'Not linked',
-    },
     {
       label: 'Sessions',
       value: String(sessionsThisMonth),
@@ -420,22 +382,10 @@ export default function PlayerHomeClient() {
       ? new Date(nextLesson.starts_at)
       : null
 
+  usePageReady(!loading)
+
   if (loading) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '40vh',
-          fontFamily: 'system-ui',
-          color: '#9CA3AF',
-          fontSize: 14,
-        }}
-      >
-        Loading your progress...
-      </div>
-    )
+    return null
   }
 
   if (!player) {
@@ -454,6 +404,30 @@ export default function PlayerHomeClient() {
 
   const mobileProps = {
     player,
+    journey,
+    stats,
+    drill: upcomingDrill
+      ? {
+          id: String(upcomingDrill.id),
+          title: String(upcomingDrill.title),
+          description:
+            typeof upcomingDrill.description === 'string'
+              ? upcomingDrill.description
+              : null,
+          completed_at:
+            typeof upcomingDrill.completed_at === 'string'
+              ? upcomingDrill.completed_at
+              : null,
+        }
+      : null,
+    lesson:
+      nextLesson && nextLessonDate
+        ? {
+            startsAt: nextLessonDate,
+            notes:
+              typeof nextLesson.notes === 'string' ? nextLesson.notes : null,
+          }
+        : null,
     welcomeMessage: buildWelcomeMessage({
       firstName,
       utr,
@@ -464,13 +438,8 @@ export default function PlayerHomeClient() {
     }),
     prompts,
     sessions: sortedSessions,
-    drills,
-    lessons,
     currentScore,
     delta,
-    totalGain,
-    pose,
-    consecutiveClean,
   }
 
   const desktopProps = {

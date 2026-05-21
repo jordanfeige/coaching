@@ -70,7 +70,7 @@ export default function CollegeMatchesSection() {
   if (loading || !data?.showSection) return null
 
   return (
-    <>
+    <div id="college-matches">
       <CollegeMatchesSummary
         summary={data.summary}
         savedCount={savedCount}
@@ -87,6 +87,6 @@ export default function CollegeMatchesSection() {
         playerSnapshot={data.playerSnapshot}
         onMatchesChange={handleMatchesChange}
       />
-    </>
+    </div>
   )
 }

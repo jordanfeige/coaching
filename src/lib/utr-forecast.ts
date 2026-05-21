@@ -18,6 +18,11 @@ export function bracketForAge(age: number): BracketKey {
   return '18U'
 }
 
+/** 1 = first year in bracket, 2 = second year (matches cohort_benchmarks). */
+export function yearInBracketForAge(age: number): 1 | 2 {
+  return Math.ceil(age) % 2 === 0 ? 2 : 1
+}
+
 export function forecastUtr(
   currentUtr: number,
   currentAge: number,

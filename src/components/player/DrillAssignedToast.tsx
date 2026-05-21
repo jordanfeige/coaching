@@ -34,7 +34,7 @@ export default function DrillAssignedToast({ onDismiss }: Props) {
       </span>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <Link
-          href="/player/training#drills"
+          href="/player/training/drills"
           style={{
             fontSize: 12,
             fontWeight: 700,

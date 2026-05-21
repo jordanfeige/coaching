@@ -6,7 +6,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useCallback } from 'react'
 import { Loader2, ArrowLeft, Upload } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
-import { takePendingReelVideoFile } from '@/lib/pending-reel'
+import {
+  takePendingReelShotType,
+  takePendingReelTitle,
+  takePendingReelVideoFile,
+} from '@/lib/pending-reel'
+import { ReelNameField } from '@/components/player/reels/ReelNameField'
+import { defaultReelTitle } from '@/lib/reel-display'
+import { usePageReady } from '@/contexts/PageLoadingContext'
 import AnalysisResultStepper, {
   mapAnalysisIssues,
   mapAnalysisStrengths,
@@ -28,6 +35,13 @@ const MAX_VIDEO_DURATION_SECONDS = 60
 
 type Sport = 'tennis' | 'golf' | 'baseball' | 'basketball' | 'pickleball'
 const SPORTS: Sport[] = ['tennis', 'golf', 'baseball', 'basketball', 'pickleball']
+
+const SHOT_TYPES = [
+  { value: 'forehand', label: 'Forehand' },
+  { value: 'backhand', label: 'Backhand' },
+  { value: 'serve', label: 'Serve' },
+  { value: 'volley', label: 'Volley' },
+] as const
 
 type AnalysisResult = {
   overall_score?: number
@@ -81,10 +95,11 @@ function NewReelPageContent() {
   const [error, setError] = useState('')
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null)
+  const [shotType, setShotType] = useState<string>('forehand')
+  const [reelTitle, setReelTitle] = useState(() => defaultReelTitle('forehand'))
   const [textDescription, setTextDescription] = useState('')
   const [autoText, setAutoText] = useState(false)
-  const autoVideoStarted = useRef(false)
-  const hasPendingFile = useRef(false)
+  const titleTouched = useRef(false)
 
   async function handleFileSelect(nextFile: File | null) {
     setError('')
@@ -93,7 +108,6 @@ function NewReelPageContent() {
     setFile(nextFile)
     setVideoURL(URL.createObjectURL(nextFile))
     setPoseResult(null)
-    autoVideoStarted.current = false
     try {
       const duration = await getVideoDuration(nextFile)
       if (Number.isFinite(duration)) setVideoDuration(duration)
@@ -138,15 +152,25 @@ function NewReelPageContent() {
       }
 
       const pendingFile = takePendingReelVideoFile()
+      const pendingShot = takePendingReelShotType()
+      const pendingTitle = takePendingReelTitle()
+      const queryShot = searchParams.get('shot')
+      const shot = pendingShot || queryShot || 'forehand'
+      setShotType(shot)
+      if (pendingTitle) {
+        setReelTitle(pendingTitle)
+        titleTouched.current = true
+      } else {
+        setReelTitle(defaultReelTitle(shot))
+      }
       if (pendingFile && !isTextMode) {
-        hasPendingFile.current = true
         await handleFileSelect(pendingFile)
       }
 
       setLoading(false)
     }
     void init()
-  }, [router, supabase, isTextMode])
+  }, [router, supabase, isTextMode, searchParams])
 
   const analyzeVideo = useCallback(async () => {
     if (!file || analyzing) return
@@ -207,6 +231,8 @@ function NewReelPageContent() {
           storagePath: `videos/${uploadPath}`,
           videoDurationSeconds: videoDuration ?? undefined,
           sport,
+          shotType: shotType || undefined,
+          title: reelTitle.trim(),
           cameraAngle: 'side-on',
           playerName: 'Athlete',
           playerId,
@@ -237,14 +263,17 @@ function NewReelPageContent() {
     } finally {
       setAnalyzing(false)
     }
-  }, [analyzing, file, videoDuration, supabase, sport, playerId, poseResult])
-
-  useEffect(() => {
-    if (loading || isTextMode || !file || autoVideoStarted.current) return
-    if (!hasPendingFile.current) return
-    autoVideoStarted.current = true
-    void analyzeVideo()
-  }, [loading, isTextMode, file, analyzeVideo])
+  }, [
+    analyzing,
+    file,
+    videoDuration,
+    supabase,
+    sport,
+    playerId,
+    poseResult,
+    shotType,
+    reelTitle,
+  ])
 
   function handleTextComplete(payload: TextAnalysisResult) {
     if (payload.error) {
@@ -262,20 +291,10 @@ function NewReelPageContent() {
     setError('')
   }
 
+  usePageReady(!loading)
+
   if (loading) {
-    return (
-      <div
-        style={{
-          maxWidth: 560,
-          margin: '0 auto',
-          padding: 40,
-          fontFamily: 'Arial, sans-serif',
-          color: TEXT_MUTED,
-        }}
-      >
-        Loading…
-      </div>
-    )
+    return null
   }
 
   if (analysis) {
@@ -311,7 +330,6 @@ function NewReelPageContent() {
             if (videoURL) URL.revokeObjectURL(videoURL)
             setVideoURL(null)
             setPoseResult(null)
-            autoVideoStarted.current = false
           }}
         />
         <button
@@ -413,16 +431,70 @@ function NewReelPageContent() {
       )}
 
       {isTextMode ? (
-        <TextSessionSection
-          sport={sport}
-          playerId={playerId}
-          initialDescription={textDescription}
-          autoSubmit={autoText}
-          onAnalysisComplete={handleTextComplete}
-          onError={setError}
-        />
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <ReelNameField
+              value={reelTitle}
+              onChange={value => {
+                titleTouched.current = true
+                setReelTitle(value)
+              }}
+            />
+          </div>
+          <TextSessionSection
+            sport={sport}
+            playerId={playerId}
+            reelTitle={reelTitle}
+            initialDescription={textDescription}
+            autoSubmit={autoText}
+            onAnalysisComplete={handleTextComplete}
+            onError={setError}
+          />
+        </>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <ReelNameField
+            value={reelTitle}
+            onChange={value => {
+              titleTouched.current = true
+              setReelTitle(value)
+            }}
+            hint="This is how the reel appears on your dashboard and in Ask Via."
+          />
+          <div>
+            <p
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: TEXT_MUTED,
+                marginBottom: 8,
+              }}
+            >
+              Shot type
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {SHOT_TYPES.map(s => (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setShotType(s.value)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 999,
+                    border: `0.5px solid ${shotType === s.value ? TEAL : BORDER}`,
+                    background: shotType === s.value ? TEAL : 'white',
+                    color: shotType === s.value ? 'white' : TEXT,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'Arial, sans-serif',
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
           {videoURL && file && (
             <PoseSplitView
               videoURL={videoURL}

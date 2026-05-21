@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Video } from 'lucide-react'
 import { format } from 'date-fns'
+import { usePageReady } from '@/contexts/PageLoadingContext'
 export default function PlayerVideosPage() {
   const [players, setPlayers] = useState<LinkedPlayer[]>([])
   const [selectedPlayerId, setSelectedPlayerId] = useState('all')
@@ -80,6 +81,8 @@ export default function PlayerVideosPage() {
   }
 
   const filteredVideos = selectedPlayerId === 'all' ? videos : videos.filter(v => v.player_id === selectedPlayerId)
+
+  usePageReady(!loading)
 
   return (
     <div className="space-y-6">

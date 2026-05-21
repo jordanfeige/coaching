@@ -4,7 +4,6 @@ const EMBEDDED_UNIVERSAL_VIA_PREFIXES = [
   '/player/training',
   '/player/reels',
   '/player/progress',
-  '/player/coach',
   '/player/settings',
 ] as const
 

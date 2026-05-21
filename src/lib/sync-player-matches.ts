@@ -70,6 +70,8 @@ export async function syncPlayerMatches(
       match_date: m.date,
       event_id: m.eventId,
       event_name: m.eventName,
+      event_division: m.eventDivision,
+      event_location: m.eventLocation,
       event_level: m.eventLevel,
       opponent_utr_id: m.opponentUtrId,
       opponent_name: m.opponentName,

@@ -139,29 +139,47 @@ export default function PlayerHomeJourneySnapshot({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => router.push('/player/journey')}
-            style={{
-              padding: '11px 18px',
-              background: 'white',
-              color: TEAL_DARK,
-              border: 'none',
-              borderRadius: 12,
-              fontFamily: sans,
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              flexShrink: 0,
-              boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
-            }}
-          >
-            View full Journey
-            <ArrowUpRight size={14} strokeWidth={2.2} />
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={() => router.push('/player/recruiting')}
+              style={{
+                padding: '11px 18px',
+                background: 'white',
+                color: TEAL_DARK,
+                border: 'none',
+                borderRadius: 12,
+                fontFamily: sans,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
+              }}
+            >
+              View recruiting
+              <ArrowUpRight size={14} strokeWidth={2.2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/player/journey')}
+              style={{
+                padding: '8px 14px',
+                background: 'rgba(255,255,255,0.12)',
+                color: 'rgba(255,255,255,0.9)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 12,
+                fontFamily: sans,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Journey rating →
+            </button>
+          </div>
         </div>
       </div>
     </section>
