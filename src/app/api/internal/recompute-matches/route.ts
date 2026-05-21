@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { recomputeCollegeMatchesForPlayer } from '@/lib/college-match-recompute'
+import { computeCollegeMatches } from '@/lib/college-matching'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 120
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -22,17 +22,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'playerId required' }, { status: 400 })
   }
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceKey) {
+    return NextResponse.json({ error: 'Missing Supabase env' }, { status: 500 })
+  }
 
   try {
-    const result = await recomputeCollegeMatchesForPlayer(
-      supabase,
+    const matches = await computeCollegeMatches(
       body.playerId,
+      supabaseUrl,
+      serviceKey,
     )
-    return NextResponse.json(result)
+    return NextResponse.json({ ok: true, count: matches.length })
   } catch (e) {
     console.error('[recompute-matches]', e)
     return NextResponse.json(

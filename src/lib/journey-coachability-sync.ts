@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { differenceInCalendarDays, subDays } from 'date-fns'
-import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
 import { updateJourneyInput } from '@/lib/journey-inputs'
+import { recalcJourneyRating } from '@/lib/journey-recalc'
 
 const COACHABILITY_SOURCE = 'coachability_sync'
 
@@ -25,6 +25,17 @@ type AnalysisRow = {
   overall_score: number | null
   top_issue: string | null
   full_result: Record<string, unknown> | null
+  lesson_id?: string | null
+  published_to_player?: boolean | null
+}
+
+/** Same rule as PLAYER_VISIBLE_SESSIONS_FILTER / isSessionVisibleToPlayer. */
+function isPlayerVisibleSession(row: {
+  lesson_id?: string | null
+  published_to_player?: boolean | null
+}): boolean {
+  if (row.lesson_id == null) return true
+  return Boolean(row.published_to_player)
 }
 
 function normalizeIssueArea(raw: string): string {
@@ -153,17 +164,18 @@ export async function syncCoachabilityForPlayer(
   const nowIso = new Date().toISOString()
 
   const [
-    { data: sessionsRaw },
-    { data: drillsRaw },
-    { data: lessonsRaw },
+    { data: sessionsRaw, error: sessionsErr },
+    { data: drillsRaw, error: drillsErr },
+    { data: lessonsRaw, error: lessonsErr },
   ] = await Promise.all([
     supabase
       .from('analysis_sessions')
-      .select('id, analyzed_at, overall_score, top_issue, full_result')
+      .select(
+        'id, analyzed_at, overall_score, top_issue, full_result, lesson_id, published_to_player',
+      )
       .eq('player_id', playerId)
       .not('overall_score', 'is', null)
       .gte('analyzed_at', sinceIso)
-      .or(PLAYER_VISIBLE_SESSIONS_FILTER)
       .order('analyzed_at', { ascending: true }),
     supabase
       .from('drills')
@@ -179,9 +191,21 @@ export async function syncCoachabilityForPlayer(
       .lte('starts_at', nowIso),
   ])
 
-  const sessions = (sessionsRaw ?? []) as AnalysisRow[]
+  const sessions = ((sessionsRaw ?? []) as AnalysisRow[]).filter(
+    isPlayerVisibleSession,
+  )
   const drills = drillsRaw ?? []
   const lessons = lessonsRaw ?? []
+
+  if (sessionsErr || drillsErr || lessonsErr) {
+    console.error('[coachability-sync] query errors:', {
+      playerId,
+      sinceIso,
+      sessionsErr: sessionsErr?.message,
+      drillsErr: drillsErr?.message,
+      lessonsErr: lessonsErr?.message,
+    })
+  }
 
   const drillsAssigned = drills.length
   const drillsCompleted = drills.filter(d => d.completed_at != null).length
@@ -269,8 +293,7 @@ export async function syncCoachabilityForPlayer(
     },
   ] as const
 
-  for (let i = 0; i < inputDefs.length; i++) {
-    const def = inputDefs[i]
+  for (const def of inputDefs) {
     await updateJourneyInput({
       playerId,
       category: 'coachability',
@@ -280,7 +303,7 @@ export async function syncCoachabilityForPlayer(
       unit: def.unit,
       source: COACHABILITY_SOURCE,
       verified: true,
-      triggerRecalc: triggerRecalc && i === inputDefs.length - 1,
+      triggerRecalc: false,
     })
   }
 
@@ -293,6 +316,21 @@ export async function syncCoachabilityForPlayer(
     metadata,
     actor: 'system',
   })
+
+  if (triggerRecalc) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !serviceKey) {
+      console.error('[coachability-sync] Recalc skipped: missing Supabase env')
+    } else {
+      try {
+        await recalcJourneyRating(playerId, supabaseUrl, serviceKey)
+      } catch (e) {
+        console.error('[coachability-sync] Recalc failed:', e)
+        throw e
+      }
+    }
+  }
 
   return { written: true, points, metadata }
 }

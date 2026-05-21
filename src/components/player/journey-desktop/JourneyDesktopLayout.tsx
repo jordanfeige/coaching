@@ -12,6 +12,8 @@ import { ExposureSignalsList } from '@/components/journey/ExposureSignalsList'
 import JourneyUtrSection from '@/components/journey/JourneyUtrSection'
 import AskViaAnchor from '@/components/player/AskViaAnchor'
 import PlayerPageVia from '@/components/player/PlayerPageVia'
+import CollegeMatchesSection from '@/components/player/journey-desktop/CollegeMatchesSection'
+import TrajectoryChart from '@/components/player/journey-desktop/TrajectoryChart'
 import { TOKENS, FONTS, CATEGORY_COLORS } from '@/components/journey/JourneyTokens'
 
 type Props = {
@@ -398,6 +400,8 @@ export default function JourneyDesktopLayout({ data }: Props) {
         lowestGap={lowestGap}
       />
 
+      <TrajectoryChart />
+
       <DesktopMomentum data={data} />
 
       <section style={{ marginTop: 28 }}>
@@ -450,6 +454,8 @@ export default function JourneyDesktopLayout({ data }: Props) {
           ))}
         </div>
       </section>
+
+      <CollegeMatchesSection />
 
       <section style={{ marginTop: 28 }}>
         <div

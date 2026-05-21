@@ -1,7 +1,10 @@
 // src/lib/journey-inputs.ts
 
 import { createClient } from '@supabase/supabase-js'
+import { triggerCollegeMatchRecomputeApi } from '@/lib/college-match-recompute'
 import { recalcJourneyRating } from './journey-recalc'
+
+const MATCHING_INPUT_KEYS = new Set(['utr_rating', 'gpa', 'sat'])
 
 export interface UpdateInputArgs {
   playerId: string
@@ -135,5 +138,12 @@ export async function updateJourneyInput(args: UpdateInputArgs) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     )
+  }
+
+  if (
+    MATCHING_INPUT_KEYS.has(args.inputKey) &&
+    (isNewInput || valueChanged)
+  ) {
+    triggerCollegeMatchRecomputeApi(args.playerId)
   }
 }

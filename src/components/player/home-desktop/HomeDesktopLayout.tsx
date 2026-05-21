@@ -9,6 +9,7 @@ import PlayerHomeQuickStats, {
 } from '@/components/player/home/PlayerHomeQuickStats'
 import PlayerHomeTodaysPlan from '@/components/player/home/PlayerHomeTodaysPlan'
 import PlayerHomeJourneySnapshot from '@/components/player/home/PlayerHomeJourneySnapshot'
+import TrajectoryChartCompact from '@/components/player/home-desktop/TrajectoryChartCompact'
 import PlayerHomeAddReelCard from '@/components/player/home/PlayerHomeAddReelCard'
 
 const CSS = `
@@ -86,15 +87,19 @@ export default function HomeDesktopLayout({
 
       <PlayerHomeTodaysPlan drill={drill} lesson={lesson} />
 
-      {journey && (
-        <PlayerHomeJourneySnapshot
-          rating={journey.rating}
-          ratingDelta={journey.ratingDelta}
-          tier={journey.tier}
-          nextTier={journey.nextTier}
-          pointsToNext={journey.pointsToNext}
-        />
-      )}
+      <TrajectoryChartCompact
+        fallback={
+          journey ? (
+            <PlayerHomeJourneySnapshot
+              rating={journey.rating}
+              ratingDelta={journey.ratingDelta}
+              tier={journey.tier}
+              nextTier={journey.nextTier}
+              pointsToNext={journey.pointsToNext}
+            />
+          ) : null
+        }
+      />
 
       <PlayerHomeAddReelCard />
     </div>

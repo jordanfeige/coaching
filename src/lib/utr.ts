@@ -115,6 +115,7 @@ export interface UtrMatchResult {
   opponentUtrId: string
   opponentName: string
   opponentUtr: number | null
+  playerUtr: number | null
   result: 'W' | 'L'
   score: string
   round: string | null
@@ -172,6 +173,32 @@ function opponentFromResult(
   return isWinner
     ? players.loser1 || players.loser2 || null
     : players.winner1 || players.winner2 || null
+}
+
+function focalPlayerFromResult(
+  players: {
+    winner1?: UtrResultPlayer
+    winner2?: UtrResultPlayer
+    loser1?: UtrResultPlayer
+    loser2?: UtrResultPlayer
+  } | undefined,
+  pid: string,
+  isWinner: boolean,
+): UtrResultPlayer | null {
+  if (!players) return null
+  if (isWinner) {
+    if (String(players.winner1?.id) === pid) return players.winner1 ?? null
+    if (String(players.winner2?.id) === pid) return players.winner2 ?? null
+  } else {
+    if (String(players.loser1?.id) === pid) return players.loser1 ?? null
+    if (String(players.loser2?.id) === pid) return players.loser2 ?? null
+  }
+  return null
+}
+
+function utrFromPlayer(p: UtrResultPlayer | null): number | null {
+  if (p?.singlesUtr != null && p.singlesUtr > 0) return p.singlesUtr
+  return null
 }
 
 function parseV4MatchResults(
@@ -236,6 +263,8 @@ function parseV4MatchResults(
         const opponent = opponentFromResult(players, pid, isWinner)
         if (!opponent) return
 
+        const focal = focalPlayerFromResult(players, pid, isWinner)
+
         const opponentUtrId = String(opponent.id ?? '')
         if (!opponentUtrId) return
 
@@ -264,10 +293,8 @@ function parseV4MatchResults(
           opponentUtrId,
           opponentName:
             `${opponent.firstName || ''} ${opponent.lastName || ''}`.trim(),
-          opponentUtr:
-            opponent.singlesUtr != null && opponent.singlesUtr > 0
-              ? opponent.singlesUtr
-              : null,
+          opponentUtr: utrFromPlayer(opponent),
+          playerUtr: utrFromPlayer(focal),
           result: isWinner ? 'W' : 'L',
           score,
           round: result.round?.name || null,

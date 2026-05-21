@@ -110,7 +110,9 @@ export async function recalcJourneyRating(
 
   const { data: matchRows, error: matchesErr } = await supabase
     .from('match_results')
-    .select('match_date, event_id, event_level, opponent_utr_at_time, result')
+    .select(
+      'match_date, event_id, event_level, opponent_utr_at_time, player_utr_at_time, result',
+    )
     .eq('player_id', playerId)
     .gte('match_date', matchCutoff)
     .order('match_date', { ascending: false })
@@ -124,6 +126,10 @@ export async function recalcJourneyRating(
     opponent_utr_at_time:
       row.opponent_utr_at_time != null
         ? Number(row.opponent_utr_at_time)
+        : null,
+    player_utr_at_time:
+      row.player_utr_at_time != null
+        ? Number(row.player_utr_at_time)
         : null,
     result: row.result as 'W' | 'L',
   }))

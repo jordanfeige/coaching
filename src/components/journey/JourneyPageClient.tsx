@@ -11,6 +11,7 @@ import JourneyUtrSection from '@/components/journey/JourneyUtrSection'
 import { TOKENS, FONTS } from '@/components/journey/JourneyTokens'
 import PlayerPageVia from '@/components/player/PlayerPageVia'
 import JourneyDesktopLayout from '@/components/player/journey-desktop/JourneyDesktopLayout'
+import CollegeMatchesSection from '@/components/player/journey-desktop/CollegeMatchesSection'
 
 type Props = {
   data: JourneyPageViewModel
@@ -107,10 +108,6 @@ export default function JourneyPageClient({ data }: Props) {
             <MomentumStrip momentum={m.momentum} classYear={m.player.classYear} />
           </div>
 
-          <div style={{ marginTop: 18 }}>
-            <RoadToOffer milestones={m.milestones} />
-          </div>
-
           <div style={{ marginTop: 26, marginBottom: 14 }}>
             <div
               style={{
@@ -142,6 +139,12 @@ export default function JourneyPageClient({ data }: Props) {
             {m.quests.map(q => (
               <QuestCard key={q.id} quest={q} />
             ))}
+          </div>
+
+          <CollegeMatchesSection />
+
+          <div style={{ marginTop: 18 }}>
+            <RoadToOffer milestones={m.milestones} />
           </div>
 
           <div

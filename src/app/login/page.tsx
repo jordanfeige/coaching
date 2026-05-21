@@ -17,7 +17,23 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error, data } = await supabase.auth.signInWithPassword({ email, password })
+    let signInResult: Awaited<
+      ReturnType<typeof supabase.auth.signInWithPassword>
+    >
+    try {
+      signInResult = await supabase.auth.signInWithPassword({ email, password })
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'Could not reach the server'
+      setError(
+        msg.includes('fetch') || msg === 'Failed to fetch'
+          ? 'Cannot reach Supabase (network). Check your connection, VPN/firewall, and that the project is active in the Supabase dashboard. Restart `npm run dev` after changing .env.local.'
+          : msg,
+      )
+      setLoading(false)
+      return
+    }
+    const { error, data } = signInResult
     if (error) {
       setError(error.message)
       setLoading(false)

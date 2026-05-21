@@ -74,6 +74,7 @@ export async function syncPlayerMatches(
       opponent_utr_id: m.opponentUtrId,
       opponent_name: m.opponentName,
       opponent_utr_at_time: m.opponentUtr,
+      player_utr_at_time: m.playerUtr,
       result: m.result,
       score: m.score || null,
       round: m.round,

@@ -15,6 +15,7 @@
     "seed:benchmarks": "npx tsx scripts/seed-journey-benchmarks.ts",
     "seed:journey-inputs": "npx tsx scripts/seed-journey-inputs.ts",
     "sync:player-matches": "npx tsx scripts/sync-player-matches.ts",
+    "recalc:all": "npx tsx scripts/recalc-all-players.ts",
     "sync:rosters": "npx tsx scripts/sync-college-rosters.ts",
     "sync:college-benchmarks": "npx tsx scripts/sync-college-benchmarks.ts",
     "sync:scorecard": "npx tsx scripts/sync-college-scorecard.ts",

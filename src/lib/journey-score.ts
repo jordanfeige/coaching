@@ -54,6 +54,7 @@ export interface MatchResult {
   event_id: string | null
   event_level: string | null
   opponent_utr_at_time: number | null
+  player_utr_at_time: number | null
   result: 'W' | 'L'
 }
 
@@ -322,18 +323,21 @@ function scoreExposure(
     }
   }
 
-  const targetDivision = normalizeTargetDivision(context.targetDivision)
-  const benchmarkUtr = getDivisionBenchmarkUtr(benchmarks, targetDivision)
-
   const totalMatches = recentMatches.length
   const wins = recentMatches.filter(m => m.result === 'W')
   const winPct = totalMatches > 0 ? wins.length / totalMatches : 0
 
-  const qualityWins = wins.filter(
-    m =>
-      m.opponent_utr_at_time != null &&
-      m.opponent_utr_at_time >= benchmarkUtr,
-  ).length
+  const qualityWins = wins.filter(m => {
+    if (m.opponent_utr_at_time == null || m.player_utr_at_time == null) {
+      return false
+    }
+    return m.opponent_utr_at_time >= m.player_utr_at_time
+  }).length
+
+  const playerCurrentUtr = findInput(inputs, 'tennis', 'utr_rating')?.value_numeric
+  const utrLabel = playerCurrentUtr
+    ? `your UTR (${Number(playerCurrentUtr).toFixed(1)})`
+    : 'your UTR'
 
   const nationalEvents = new Set(
     recentMatches
@@ -364,13 +368,13 @@ function scoreExposure(
   let gapStatement = ''
   if (qualityScore < 5) {
     const needed = Math.max(1, Math.ceil(5 - qualityWins))
-    gapStatement = `+${needed} win${needed > 1 ? 's' : ''} vs UTR ${benchmarkUtr.toFixed(1)}+ to close Exposure gap`
+    gapStatement = `+${needed} win${needed > 1 ? 's' : ''} vs opponents at ${utrLabel} or higher`
   } else if (volumeScore < 6) {
     gapStatement = `Play ${Math.ceil(30 - totalMatches)} more matches in next 12mo`
   } else if (eventScore < 3) {
     gapStatement = 'Enter 1 more national/sectional event'
   } else {
-    gapStatement = `Maintain win rate vs UTR ${benchmarkUtr.toFixed(1)}+ opponents`
+    gapStatement = `Maintain your win rate vs peers at ${utrLabel} or higher`
   }
 
   if (reels?.value_numeric === 0) {
@@ -390,7 +394,7 @@ function scoreExposure(
   return {
     raw_pct,
     inputs_used: used,
-    benchmarks_used: [`${targetDivision}:utr:avg`],
+    benchmarks_used: [],
     gap_statement: gapStatement,
   }
 }

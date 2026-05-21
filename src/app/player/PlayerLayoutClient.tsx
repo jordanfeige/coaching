@@ -3,9 +3,10 @@
 import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Dumbbell, Home, LogOut, Menu, PlayCircle, TrendingUp, UserRound } from 'lucide-react'
+import { Dumbbell, Home, LogOut, PlayCircle, TrendingUp, UserRound } from 'lucide-react'
 import { BrandMark } from '@/components/brand/BrandMark'
 import PlayerBottomNav from '@/components/player/PlayerBottomNav'
+import PlayerHeaderAvatar from '@/components/player/PlayerHeaderAvatar'
 import PlayerSideNav from '@/components/player/PlayerSideNav'
 import UniversalViaBar from '@/components/player/UniversalViaBar'
 import PlayerDesktopViaPanel from '@/components/player/PlayerDesktopViaPanel'
@@ -152,7 +153,7 @@ export default function PlayerLayoutClient({ children, player }: Props) {
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <div className="player-mobile-top-bar fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between border-b border-border bg-card px-4 lg:hidden">
           <BrandMark size="sm" href="/player" />
-          <Menu className="size-5 text-muted-foreground" />
+          <PlayerHeaderAvatar playerName={player?.name} />
         </div>
 
         <main className="flex-1 overflow-auto">
@@ -164,6 +165,9 @@ export default function PlayerLayoutClient({ children, player }: Props) {
               } as CSSProperties
             }
           >
+            <div className="mb-4 hidden items-center justify-end lg:flex">
+              <PlayerHeaderAvatar playerName={player?.name} />
+            </div>
             {showLayoutViaChrome && (
               <div id="player-via-top" className="player-layout-via-chrome hidden lg:block">
                 <UniversalViaBar />

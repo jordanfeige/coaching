@@ -1,72 +1,21 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { computePlayerTrajectory } from '@/lib/utr-forecast'
+import { computeCollegeMatches } from '@/lib/college-matching'
 
 /**
- * Recompute college match suggestions when targeting or birth_date changes.
- * Invalidates cached Via school lists and refreshes trajectory inputs.
+ * Recompute and persist college_matches for a player (service role).
  */
 export async function recomputeCollegeMatchesForPlayer(
   supabase: SupabaseClient,
   playerId: string,
-): Promise<{ ok: boolean; forecastUtr: number | null }> {
-  const [{ data: player }, { data: prefs }, { data: recruiting }, { data: utrInput }] =
-    await Promise.all([
-      supabase
-        .from('players')
-        .select('birth_date, utr_singles')
-        .eq('id', playerId)
-        .maybeSingle(),
-      supabase
-        .from('journey_preferences')
-        .select('target_division, target_academic_tier, target_geography')
-        .eq('player_id', playerId)
-        .maybeSingle(),
-      supabase
-        .from('recruiting_profiles')
-        .select('grad_year, via_suggested_schools')
-        .eq('player_id', playerId)
-        .maybeSingle(),
-      supabase
-        .from('journey_score_inputs')
-        .select('value_numeric')
-        .eq('player_id', playerId)
-        .eq('category', 'tennis')
-        .eq('input_key', 'utr_rating')
-        .maybeSingle(),
-    ])
-
-  const gradYear = recruiting?.grad_year ?? null
-  const currentUtr =
-    utrInput?.value_numeric != null
-      ? Number(utrInput.value_numeric)
-      : player?.utr_singles != null
-        ? Number(player.utr_singles)
-        : null
-
-  const trajectory = computePlayerTrajectory({
-    birthDate: player?.birth_date ?? null,
-    gradYear,
-    currentUtr,
-  })
-
-  // Invalidate cached school suggestions — M5 / Via will refresh on next request.
-  if (recruiting?.via_suggested_schools != null) {
-    await supabase
-      .from('recruiting_profiles')
-      .update({
-        via_suggested_schools: null,
-        projection_generated_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('player_id', playerId)
+): Promise<{ ok: boolean; count: number }> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) {
+    throw new Error('Missing Supabase service env')
   }
 
-  void prefs
-
-  return {
-    ok: true,
-    forecastUtr: trajectory.forecastUtrAtGraduation,
-  }
+  const matches = await computeCollegeMatches(playerId, url, key)
+  return { ok: true, count: matches.length }
 }
 
 export function scheduleCollegeMatchRecompute(
@@ -75,5 +24,26 @@ export function scheduleCollegeMatchRecompute(
 ): void {
   recomputeCollegeMatchesForPlayer(supabase, playerId).catch(e => {
     console.error('[college-match-recompute] failed:', playerId, e)
+  })
+}
+
+/** Fire-and-forget via internal API (for journey-inputs from server routes). */
+export function triggerCollegeMatchRecomputeApi(playerId: string): void {
+  const secret = process.env.CRON_SECRET
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+
+  if (!secret || !base || !playerId) return
+
+  void fetch(`${base.replace(/\/$/, '')}/api/internal/recompute-matches`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ playerId }),
+  }).catch(e => {
+    console.error('[college-match-recompute] API trigger failed:', e)
   })
 }

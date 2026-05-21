@@ -9,7 +9,6 @@ import {
   LogOut,
   PlayCircle,
   TrendingUp,
-  User,
   UserRound,
 } from 'lucide-react'
 import { brand, fonts, layout } from '@/lib/brand'
@@ -25,7 +24,6 @@ const PLAYER_NAV = [
 
 const SECONDARY_NAV = [
   { key: 'updates', label: 'Updates', Icon: Bell, href: '/player/bulletin' },
-  { key: 'profile', label: 'Profile', Icon: User, href: '/player/settings' },
 ]
 
 const NAV_LINK_FOCUS =
