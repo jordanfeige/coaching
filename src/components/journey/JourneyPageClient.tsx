@@ -9,7 +9,7 @@ import { QuestCard } from '@/components/journey/QuestCard'
 import { BreakdownSheet } from '@/components/journey/BreakdownSheet'
 import JourneyUtrSection from '@/components/journey/JourneyUtrSection'
 import { TOKENS, FONTS } from '@/components/journey/JourneyTokens'
-import UniversalVia from '@/components/UniversalVia'
+import PlayerPageVia from '@/components/player/PlayerPageVia'
 import JourneyDesktopLayout from '@/components/player/journey-desktop/JourneyDesktopLayout'
 
 type Props = {
@@ -39,8 +39,7 @@ export default function JourneyPageClient({ data }: Props) {
         }}
       >
         <div style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 60px' }}>
-          <UniversalVia
-            role="player"
+          <PlayerPageVia
             pageContext={{
               page: 'player-journey',
               utrSingles: m.utrSingles ?? undefined,

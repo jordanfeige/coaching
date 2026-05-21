@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ArrowRight, Calendar, Dumbbell } from 'lucide-react'
+import MarkDrillCompleteButton from '@/components/player/MarkDrillCompleteButton'
 import {
   BLUE,
   BLUE_TINT,
@@ -17,8 +18,10 @@ import {
 } from '@/lib/player-home-tokens'
 
 type Drill = {
+  id: string
   title: string
   description?: string | null
+  completed_at?: string | null
 }
 
 type Lesson = {
@@ -180,12 +183,20 @@ export default function PlayerHomeTodaysPlan({ drill, lesson }: Props) {
             </>
           )}
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            {drill && !drill.completed_at && (
+              <MarkDrillCompleteButton
+                drillId={drill.id}
+                completedAt={drill.completed_at}
+                compact
+              />
+            )}
             <button
               type="button"
-              onClick={() => router.push('/player/drills')}
+              onClick={() => router.push('/player/training#drills')}
               style={{
                 flex: 1,
+                minWidth: 120,
                 padding: '11px',
                 background: TEAL_DARK,
                 color: 'white',
@@ -201,25 +212,8 @@ export default function PlayerHomeTodaysPlan({ drill, lesson }: Props) {
                 gap: 6,
               }}
             >
-              {drill ? 'Start drill' : 'Get drills'}{' '}
+              {drill ? 'View drills' : 'Get drills'}{' '}
               <ArrowRight size={14} strokeWidth={2.2} />
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push('/player/drills')}
-              style={{
-                padding: '11px 14px',
-                background: 'transparent',
-                border: `1px solid ${LINE}`,
-                borderRadius: 10,
-                fontFamily: sans,
-                fontSize: 13,
-                fontWeight: 600,
-                color: SUB,
-                cursor: 'pointer',
-              }}
-            >
-              View all
             </button>
           </div>
         </div>

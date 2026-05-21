@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import { usePathname } from 'next/navigation'
+import { playerPageHidesLayoutViaChrome } from '@/lib/player-via-layout'
 
 export interface AskViaPayload {
   prompt: string
@@ -26,7 +27,7 @@ export interface ViaContextValue {
 const ViaContext = createContext<ViaContextValue | null>(null)
 
 export function ViaContextProvider({ children }: { children: ReactNode }) {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ''
   const prevPathRef = useRef(pathname)
   const [prefilledPrompt, setPrefilledPrompt] = useState<string | null>(null)
   const [prefilledContext, setPrefilledContext] = useState<string | null>(null)
@@ -39,22 +40,26 @@ export function ViaContextProvider({ children }: { children: ReactNode }) {
     }
   }, [pathname])
 
-  const askVia = useCallback((payload: AskViaPayload) => {
-    setPrefilledPrompt(payload.prompt)
-    setPrefilledContext(payload.context)
-    if (typeof window !== 'undefined') {
-      requestAnimationFrame(() => {
-        const anchor =
-          document.getElementById('player-via-top') ??
-          document.getElementById('universal-via-bar')
-        if (anchor) {
-          anchor.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        } else {
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }
-      })
-    }
-  }, [])
+  const askVia = useCallback(
+    (payload: AskViaPayload) => {
+      setPrefilledPrompt(payload.prompt)
+      setPrefilledContext(payload.context)
+      if (playerPageHidesLayoutViaChrome(pathname)) return
+      if (typeof window !== 'undefined') {
+        requestAnimationFrame(() => {
+          const anchor =
+            document.getElementById('player-via-top') ??
+            document.getElementById('universal-via-bar')
+          if (anchor) {
+            anchor.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }
+        })
+      }
+    },
+    [pathname],
+  )
 
   const clearPrefill = useCallback(() => {
     setPrefilledPrompt(null)

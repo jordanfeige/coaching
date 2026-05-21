@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
+import { shouldShowReelAnalysisStepper } from '@/lib/reel-sessions'
 import { setPendingReelVideoFile } from '@/lib/pending-reel'
 import { parseStoragePath } from '@/lib/reel-storage'
 import ViaBlob from '@/components/ViaBlob'
-import UniversalVia from '@/components/UniversalVia'
+import PlayerPageVia from '@/components/player/PlayerPageVia'
+import AnalysisStepperDialog from '@/components/video/AnalysisStepperDialog'
 import { glass } from '@/lib/glass'
 
 const TEAL = 'hsl(168,62%,36%)'
@@ -733,6 +735,7 @@ export default function ReelsPage() {
   } | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [selected, setSelected] = useState<Session | null>(null)
+  const [existingDrillTitles, setExistingDrillTitles] = useState<string[]>([])
 
   function goToTextReel(message: string) {
     const msg = message.trim()
@@ -811,6 +814,21 @@ export default function ReelsPage() {
     }
     void load()
   }, [router, supabase])
+
+  useEffect(() => {
+    async function loadDrillTitles() {
+      if (!selected || !player?.id || !shouldShowReelAnalysisStepper(selected)) {
+        setExistingDrillTitles([])
+        return
+      }
+      const { data } = await supabase
+        .from('drills')
+        .select('title')
+        .eq('player_id', player.id)
+      setExistingDrillTitles((data ?? []).map(d => d.title).filter(Boolean))
+    }
+    void loadDrillTitles()
+  }, [selected, player?.id, supabase])
 
   const filtered = useMemo(() => {
     switch (filter) {
@@ -905,9 +923,7 @@ export default function ReelsPage() {
         </div>
       </div>
 
-      <UniversalVia
-        role="player"
-        embedded
+      <PlayerPageVia
         reelContext={reelContext}
         playerId={player?.id}
         playerName={player?.name || undefined}
@@ -1012,7 +1028,25 @@ export default function ReelsPage() {
         ))}
       </div>
 
-      {selected && (
+      {selected && shouldShowReelAnalysisStepper(selected) && (
+        <AnalysisStepperDialog
+          open
+          onOpenChange={open => {
+            if (!open) setSelected(null)
+          }}
+          analysis={selected.full_result as Record<string, unknown>}
+          sport={selected.sport}
+          shotType={selected.shot_type ?? undefined}
+          sessionId={selected.id}
+          playerId={player?.id}
+          analyzedAt={selected.analyzed_at}
+          viewMode="re-view"
+          existingDrillTitles={existingDrillTitles}
+          progressHref="/player/progress"
+        />
+      )}
+
+      {selected && !shouldShowReelAnalysisStepper(selected) && (
         <SessionDetail
           session={selected}
           onClose={() => setSelected(null)}

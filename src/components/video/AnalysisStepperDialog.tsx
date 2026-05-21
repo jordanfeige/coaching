@@ -3,6 +3,7 @@
 import AnalysisResultStepper, {
   mapAnalysisIssues,
   mapAnalysisStrengths,
+  type AnalysisViewMode,
   type CoachReviewConfig,
 } from '@/components/AnalysisResultStepper'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -20,6 +21,9 @@ type Props = {
   poseMeasurements?: JointMeasurement[]
   coachReview?: CoachReviewConfig
   progressHref?: string
+  analyzedAt?: string
+  viewMode?: AnalysisViewMode
+  existingDrillTitles?: string[]
   onSaved?: () => void
   onReanalyze?: () => void
 }
@@ -35,6 +39,9 @@ export default function AnalysisStepperDialog({
   poseMeasurements,
   coachReview,
   progressHref,
+  analyzedAt,
+  viewMode = 'first-view',
+  existingDrillTitles,
   onSaved,
   onReanalyze,
 }: Props) {
@@ -54,6 +61,9 @@ export default function AnalysisStepperDialog({
             sessionId={sessionId}
             playerId={playerId}
             progressHref={progressHref}
+            analyzedAt={analyzedAt}
+            viewMode={viewMode}
+            existingDrillTitles={existingDrillTitles}
             onSaved={onSaved}
             onReanalyze={onReanalyze}
             coachReview={coachReview}

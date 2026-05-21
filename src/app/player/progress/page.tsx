@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import { differenceInDays, format } from 'date-fns'
-import UniversalVia from '@/components/UniversalVia'
+import PlayerPageVia from '@/components/player/PlayerPageVia'
+import MarkDrillCompleteButton from '@/components/player/MarkDrillCompleteButton'
 import ViaBlob from '@/components/ViaBlob'
 import {
   PLAYER_VISIBLE_SESSIONS_FILTER,
@@ -56,6 +57,7 @@ type Drill = {
   id: string
   title?: string | null
   player_id?: string | null
+  completed_at?: string | null
 }
 
 type Player = {
@@ -209,7 +211,7 @@ function ProgressPageContent() {
 
         const { data: d } = await supabase
           .from('drills')
-          .select('*')
+          .select('id, title, description, completed_at')
           .eq('player_id', playerRow.id)
           .order('created_at', { ascending: false })
           .limit(5)
@@ -663,8 +665,7 @@ function ProgressPageContent() {
     >
       <style>{CSS}</style>
 
-      <UniversalVia
-        role="player"
+      <PlayerPageVia
         playerId={player?.id}
         playerName={player?.name || undefined}
         pageContext={{
@@ -921,25 +922,11 @@ function ProgressPageContent() {
                       </div>
                     </div>
                     {relatedDrill && (
-                      <button
-                        type="button"
-                        onClick={() => router.push('/player/drills')}
-                        style={{
-                          padding: '5px 11px',
-                          borderRadius: 8,
-                          background: TEAL,
-                          border: 'none',
-                          color: 'white',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          fontFamily: 'Arial, sans-serif',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                        }}
-                      >
-                        View drill
-                      </button>
+                      <MarkDrillCompleteButton
+                        drillId={relatedDrill.id}
+                        completedAt={relatedDrill.completed_at}
+                        compact
+                      />
                     )}
                   </div>
                 </div>

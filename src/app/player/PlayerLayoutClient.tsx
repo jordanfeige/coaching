@@ -1,5 +1,6 @@
 'use client'
 
+import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Dumbbell, Home, LogOut, Menu, PlayCircle, TrendingUp, UserRound } from 'lucide-react'
@@ -10,7 +11,7 @@ import UniversalViaBar from '@/components/player/UniversalViaBar'
 import PlayerDesktopViaPanel from '@/components/player/PlayerDesktopViaPanel'
 import { createClient } from '@/lib/supabase'
 import { brand, layout } from '@/lib/brand'
-import { usePlayerDesktopLayout } from '@/hooks/usePlayerDesktopLayout'
+import { playerPageHidesLayoutViaChrome } from '@/lib/player-via-layout'
 import type { PageContext } from '@/lib/via-page-brief'
 
 type PlayerForChat = {
@@ -78,6 +79,15 @@ function desktopPageContext(pathname: string): PageContext {
   if (pathname.startsWith('/player/coach')) {
     return { page: 'player-coach' }
   }
+  if (pathname.startsWith('/player/progress')) {
+    return { page: 'player-progress' }
+  }
+  if (pathname.startsWith('/player/settings')) {
+    return { page: 'player-settings' }
+  }
+  if (pathname.startsWith('/player/bulletin')) {
+    return { page: 'player-home' }
+  }
   return { page: 'player-home' }
 }
 
@@ -85,11 +95,11 @@ export default function PlayerLayoutClient({ children, player }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  const isDesktop = usePlayerDesktopLayout()
   const navItems = playerNavItems
   const isHome = pathname === '/player'
   const contentMax = isHome ? layout.contentMaxHome : layout.contentMax
-  const showDesktopViaBar = !isHome
+  const showLayoutViaChrome =
+    !isHome && !playerPageHidesLayoutViaChrome(pathname ?? '')
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -102,90 +112,73 @@ export default function PlayerLayoutClient({ children, player }: Props) {
 
   return (
     <div className="flex min-h-screen" style={{ background: brand.paper }}>
-      {/* Desktop cream nav — not mounted below 1024px (JS gate, not CSS-only) */}
-      {isDesktop && (
-        <div className="player-desktop-sidebar">
-          <PlayerSideNav />
-        </div>
-      )}
+      <div className="player-desktop-sidebar">
+        <PlayerSideNav />
+      </div>
 
-      {/* Tablet sidebar: 768px–1023px only (hidden on desktop via JS + CSS) */}
-      {!isDesktop && (
-        <aside className="player-tablet-sidebar hidden min-h-screen w-56 flex-col border-r border-border bg-card md:flex">
-          <div className="border-b border-border p-5">
-            <BrandMark size="md" href="/player" />
-          </div>
-          <nav className="flex-1 space-y-1 p-3">
-            {navItems.map(({ href, label, icon: Icon, exact }) => {
-              const active = isActive(href, exact)
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${NAV_LINK_FOCUS}`}
-                  style={playerNavStyle(active)}
-                >
-                  <Icon className="size-4" />
-                  {label}
-                </Link>
-              )
-            })}
-          </nav>
-          <div className="border-t border-border p-3">
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground ${NAV_LINK_FOCUS}`}
-              style={{ outline: 'none' }}
-            >
-              <LogOut className="size-4" />
-              Sign out
-            </button>
-          </div>
-        </aside>
-      )}
+      <aside className="player-tablet-sidebar hidden min-h-screen w-56 flex-col border-r border-border bg-card md:flex lg:hidden">
+        <div className="border-b border-border p-5">
+          <BrandMark size="md" href="/player" />
+        </div>
+        <nav className="flex-1 space-y-1 p-3">
+          {navItems.map(({ href, label, icon: Icon, exact }) => {
+            const active = isActive(href, exact)
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${NAV_LINK_FOCUS}`}
+                style={playerNavStyle(active)}
+              >
+                <Icon className="size-4" />
+                {label}
+              </Link>
+            )
+          })}
+        </nav>
+        <div className="border-t border-border p-3">
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground ${NAV_LINK_FOCUS}`}
+            style={{ outline: 'none' }}
+          >
+            <LogOut className="size-4" />
+            Sign out
+          </button>
+        </div>
+      </aside>
 
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        {!isDesktop && (
-          <div className="fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between border-b border-border bg-card px-4">
-            <BrandMark size="sm" href="/player" />
-            <Menu className="size-5 text-muted-foreground" />
-          </div>
-        )}
+        <div className="player-mobile-top-bar fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between border-b border-border bg-card px-4 lg:hidden">
+          <BrandMark size="sm" href="/player" />
+          <Menu className="size-5 text-muted-foreground" />
+        </div>
 
-        <main
-          className="flex-1 overflow-auto"
-          style={{
-            paddingBottom: isDesktop ? 0 : undefined,
-            paddingTop: isDesktop ? 0 : undefined,
-          }}
-        >
-          {!isDesktop && (
-            <div className="mx-auto max-w-4xl p-4 pb-24 pt-14 md:p-8">{children}</div>
-          )}
-
-          {isDesktop && (
-            <div
-              className="mx-auto"
-              style={{
-                maxWidth: contentMax,
-                padding: `${layout.contentPaddingTop}px ${layout.contentPaddingX}px ${layout.contentPaddingBottom}px`,
-              }}
-            >
-              <div id="player-via-top">
-                {showDesktopViaBar && <UniversalViaBar />}
+        <main className="flex-1 overflow-auto">
+          <div
+            className="player-main-shell mx-auto w-full max-w-4xl px-4 pb-24 pt-14 md:p-8"
+            style={
+              {
+                '--player-content-max': `${contentMax}px`,
+              } as CSSProperties
+            }
+          >
+            {showLayoutViaChrome && (
+              <div id="player-via-top" className="player-layout-via-chrome hidden lg:block">
+                <UniversalViaBar />
                 <PlayerDesktopViaPanel
                   playerId={player?.id}
                   playerName={player?.name}
                   pageContext={desktopPageContext(pathname ?? '/player')}
                 />
               </div>
-              {children}
-            </div>
-          )}
+            )}
+            {children}
+          </div>
         </main>
 
-        {!isDesktop && <PlayerBottomNav />}
+        <PlayerBottomNav />
       </div>
     </div>
   )

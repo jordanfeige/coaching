@@ -96,7 +96,7 @@ CURRENT PAGE: ${playerContext?.currentPage || '/player'}
 Tailor suggestions to the current page context:
 - On /player/reels: help them understand what to film
 - On /player/progress: discuss their score trends
-- On /player/drills: explain drills in detail
+- On /player/training (drills section): explain drills in detail
 - On /player/lessons: discuss lesson preparation
 
 Return ONLY your response text plus optional ACTION or PICKER block.

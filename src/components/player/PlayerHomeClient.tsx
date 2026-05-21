@@ -199,7 +199,7 @@ export default function PlayerHomeClient() {
         .eq('player_id', playerId),
       supabase
         .from('drills')
-        .select('title, description')
+        .select('id, title, description, completed_at')
         .eq('player_id', playerId)
         .order('created_at', { ascending: false })
         .limit(1),
@@ -454,6 +454,15 @@ export default function PlayerHomeClient() {
 
   const mobileProps = {
     player,
+    welcomeMessage: buildWelcomeMessage({
+      firstName,
+      utr,
+      techniqueScore: currentScore,
+      scoreDelta: delta,
+      activeIssue:
+        typeof latest?.top_issue === 'string' ? latest.top_issue : undefined,
+    }),
+    prompts,
     sessions: sortedSessions,
     drills,
     lessons,
@@ -465,6 +474,8 @@ export default function PlayerHomeClient() {
   }
 
   const desktopProps = {
+    playerId: player.id,
+    playerName: player.name ?? firstName,
     firstName,
     editorialLine: buildEditorialLine(recentActivityCount),
     welcomeMessage: buildWelcomeMessage({
@@ -479,10 +490,15 @@ export default function PlayerHomeClient() {
     stats,
     drill: upcomingDrill
       ? {
+          id: String(upcomingDrill.id),
           title: String(upcomingDrill.title),
           description:
             typeof upcomingDrill.description === 'string'
               ? upcomingDrill.description
+              : null,
+          completed_at:
+            typeof upcomingDrill.completed_at === 'string'
+              ? upcomingDrill.completed_at
               : null,
         }
       : null,
@@ -495,9 +511,6 @@ export default function PlayerHomeClient() {
           }
         : null,
     journey,
-    onViaAsk: () => {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    },
   }
 
   return (

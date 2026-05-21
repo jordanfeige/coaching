@@ -19,12 +19,19 @@ const CSS = `
 `
 
 export type HomeDesktopProps = {
+  playerId: string
+  playerName: string
   firstName: string
   editorialLine: string
   welcomeMessage: ReactNode
   prompts: string[]
   stats: HomeStat[]
-  drill: { title: string; description?: string | null } | null
+  drill: {
+    id: string
+    title: string
+    description?: string | null
+    completed_at?: string | null
+  } | null
   lesson: { startsAt: Date; notes?: string | null } | null
   journey: {
     rating: number
@@ -33,10 +40,11 @@ export type HomeDesktopProps = {
     nextTier: string | null
     pointsToNext: number
   } | null
-  onViaAsk: () => void
 }
 
 export default function HomeDesktopLayout({
+  playerId,
+  playerName,
   firstName,
   editorialLine,
   welcomeMessage,
@@ -45,7 +53,6 @@ export default function HomeDesktopLayout({
   drill,
   lesson,
   journey,
-  onViaAsk,
 }: HomeDesktopProps) {
   return (
     <div style={{ fontFamily: fonts.serif, color: brand.ink }}>
@@ -69,10 +76,10 @@ export default function HomeDesktopLayout({
       </div>
 
       <PlayerHomeViaHero
-        playerName={firstName}
+        playerId={playerId}
+        playerName={playerName}
         welcomeMessage={welcomeMessage}
         prompts={prompts}
-        onAsk={onViaAsk}
       />
 
       <PlayerHomeQuickStats stats={stats} />

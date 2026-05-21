@@ -11,6 +11,7 @@ import { Bar } from '@/components/journey/Bar'
 import { ExposureSignalsList } from '@/components/journey/ExposureSignalsList'
 import JourneyUtrSection from '@/components/journey/JourneyUtrSection'
 import AskViaAnchor from '@/components/player/AskViaAnchor'
+import PlayerPageVia from '@/components/player/PlayerPageVia'
 import { TOKENS, FONTS, CATEGORY_COLORS } from '@/components/journey/JourneyTokens'
 
 type Props = {
@@ -292,6 +293,15 @@ export default function JourneyDesktopLayout({ data }: Props) {
 
   return (
     <>
+      <PlayerPageVia
+        playerName={m.player.name}
+        pageContext={{
+          page: 'player-journey',
+          utrSingles: m.utrSingles ?? undefined,
+          targetDivision: 'D1 mid-major',
+        }}
+      />
+
       <header style={{ marginBottom: 28 }}>
         <div
           style={{

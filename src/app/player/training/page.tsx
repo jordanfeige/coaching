@@ -1,6 +1,8 @@
 'use client'
 
-import UniversalVia from '@/components/UniversalVia'
+import { useEffect } from 'react'
+import PlayerPageVia from '@/components/player/PlayerPageVia'
+import PlayerTrainingDrills from '@/components/player/PlayerTrainingDrills'
 import { playerTrainingMock } from '@/lib/player-journey-mock'
 import { fonts } from '@/lib/brand'
 
@@ -11,7 +13,17 @@ const TEXT_MUTED = 'hsl(220,10%,65%)'
 const WARM_BG = '#F5F4F0'
 
 export default function PlayerTrainingPage() {
-  const { nextSession, recentSessions, assignedDrills } = playerTrainingMock
+  const { nextSession, recentSessions } = playerTrainingMock
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.location.hash !== '#drills') return
+    const el = document.getElementById('drills')
+    if (el) {
+      window.requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
+  }, [])
 
   return (
     <div
@@ -28,7 +40,7 @@ export default function PlayerTrainingPage() {
         paddingRight: 16,
       }}
     >
-      <UniversalVia role="player" pageContext={{ page: 'player-training' }} />
+      <PlayerPageVia pageContext={{ page: 'player-training' }} />
 
       <h1
         style={{
@@ -41,6 +53,18 @@ export default function PlayerTrainingPage() {
         Training
       </h1>
 
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          color: TEXT_MUTED,
+          marginBottom: 8,
+        }}
+      >
+        Upcoming sessions
+      </div>
       <div
         style={{
           background: 'white',
@@ -73,36 +97,7 @@ export default function PlayerTrainingPage() {
         </div>
       </div>
 
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 600,
-          letterSpacing: '.08em',
-          textTransform: 'uppercase',
-          color: TEXT_MUTED,
-          marginBottom: 8,
-        }}
-      >
-        Assigned drills
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-        {assignedDrills.map(drill => (
-          <div
-            key={drill.id}
-            style={{
-              background: 'white',
-              border: `0.5px solid ${BORDER}`,
-              borderRadius: 12,
-              padding: '12px 14px',
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{drill.name}</div>
-            <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 2 }}>
-              {drill.due}
-            </div>
-          </div>
-        ))}
-      </div>
+      <PlayerTrainingDrills />
 
       <div
         style={{
@@ -111,7 +106,7 @@ export default function PlayerTrainingPage() {
           letterSpacing: '.08em',
           textTransform: 'uppercase',
           color: TEXT_MUTED,
-          marginBottom: 8,
+          margin: '20px 0 8px',
         }}
       >
         Recent sessions

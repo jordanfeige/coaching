@@ -79,6 +79,10 @@ type UniversalViaProps = {
   playerName?: string
   pageContext?: PageContext
   embedded?: boolean
+  /** Inside PlayerViaHero chat — hide duplicate Via header/brief chrome. */
+  embeddedInHero?: boolean
+  /** When set, sends this prompt once on mount (avoids global open-via-chat + duplicate sends). */
+  autoSendPrompt?: string | null
   reelContext?: UniversalViaReelContext
 }
 
@@ -172,6 +176,8 @@ export default function UniversalVia({
   playerName,
   pageContext,
   embedded = false,
+  embeddedInHero = false,
+  autoSendPrompt = null,
   reelContext,
 }: UniversalViaProps) {
   const pathname = usePathname()
@@ -186,7 +192,10 @@ export default function UniversalVia({
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([])
   const [pendingAction, setPendingAction] = useState<ViaAction | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<EventListing | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const autoSendHandledRef = useRef<string | null>(null)
+  const loadingRef = useRef(loading)
+  loadingRef.current = loading
   const [isMobile, setIsMobile] = useState(false)
   const [mobileExpanded, setMobileExpanded] = useState(false)
   const [coachBriefCtx, setCoachBriefCtx] = useState<CoachBriefContext | null>(null)
@@ -202,6 +211,7 @@ export default function UniversalVia({
   const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
   const viaCtx = useViaContextOptional()
+  const prefilledContext = viaCtx?.prefilledContext ?? null
   const [isPrefilled, setIsPrefilled] = useState(false)
   const pendingAnchorContextRef = useRef<string | null>(null)
 
@@ -372,21 +382,35 @@ export default function UniversalVia({
   }, [role, coachBriefCtx, pageContext, reelContext])
 
   useEffect(() => {
-    if (embedded && messages.length === 0) return
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messages.length === 0 && !loading) return
+    const container = messagesContainerRef.current
+    if (!container) return
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: embedded ? 'auto' : 'smooth',
+    })
   }, [messages, loading, embedded])
+
+  useEffect(() => {
+    const prompt = autoSendPrompt?.trim()
+    if (!prompt || loading) return
+    if (autoSendHandledRef.current === prompt) return
+    autoSendHandledRef.current = prompt
+    pendingAnchorContextRef.current = prefilledContext
+    void sendMessage(prompt)
+  }, [autoSendPrompt, loading, prefilledContext])
 
   useEffect(() => {
     function handleViaOpen(event: Event) {
       const detail = (event as CustomEvent<{ prompt?: string }>).detail
-      if (detail?.prompt) {
-        setInput(detail.prompt)
-        void sendMessage(detail.prompt)
-      }
+      const prompt = detail?.prompt?.trim()
+      if (!prompt || loadingRef.current) return
+      setInput(prompt)
+      void sendMessage(prompt)
     }
     window.addEventListener('open-via-chat', handleViaOpen)
     return () => window.removeEventListener('open-via-chat', handleViaOpen)
-  })
+  }, [])
 
   async function executeSearchEvents(action: ViaAction) {
     const response = await fetch('/api/bulletin-search', {
@@ -576,10 +600,21 @@ export default function UniversalVia({
   if (!canRender) return null
 
   const mobileFullscreen = isMobile && (embedded || mobileExpanded)
+  const heroChat = embedded && embeddedInHero
   const showMessagesPane = messages.length > 0 || loading
   const showCollapsedMobile = isMobile && !embedded && !mobileExpanded
 
-  const cardStyle: CSSProperties = mobileFullscreen
+  const cardStyle: CSSProperties = heroChat
+    ? {
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 0,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: 'none',
+      }
+    : mobileFullscreen
     ? {
         position: 'fixed',
         inset: 0,
@@ -611,8 +646,8 @@ export default function UniversalVia({
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          maxHeight: VIA_CARD_MAX_HEIGHT,
-          minHeight: messages.length > 0 ? 340 : undefined,
+          maxHeight: embedded ? undefined : VIA_CARD_MAX_HEIGHT,
+          minHeight: !embedded && messages.length > 0 ? 340 : undefined,
           boxShadow:
             '0 2px 16px rgba(29,158,117,.06), 0 1px 0 rgba(255,255,255,.8) inset',
         }
@@ -660,7 +695,7 @@ export default function UniversalVia({
   }
 
   return (
-    <div style={{ marginBottom: mobileFullscreen ? 0 : embedded ? 14 : 24 }}>
+    <div style={{ marginBottom: mobileFullscreen || heroChat ? 0 : embedded ? 14 : 24 }}>
       <ViaPanelStyles />
       <div style={cardStyle}>
         {mobileFullscreen && (
@@ -751,7 +786,7 @@ export default function UniversalVia({
             )}
           </div>
         )}
-        {!mobileFullscreen && (
+        {!mobileFullscreen && !heroChat && (
         <div
           style={{
             background:
@@ -858,10 +893,13 @@ export default function UniversalVia({
 
         {(showMessagesPane || mobileFullscreen) && (
           <div
+            ref={messagesContainerRef}
             style={{
-              flex: 1,
+              flex: embedded ? '0 1 auto' : 1,
               minHeight: 0,
+              maxHeight: embedded ? 320 : undefined,
               overflowY: 'auto',
+              overscrollBehavior: 'contain',
               padding: '12px 18px',
               display: 'flex',
               flexDirection: 'column',
@@ -1154,7 +1192,6 @@ export default function UniversalVia({
                 ))}
               </div>
             )}
-            <div ref={messagesEndRef} />
           </div>
         )}
 

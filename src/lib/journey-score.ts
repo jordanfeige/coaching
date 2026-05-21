@@ -395,40 +395,38 @@ function scoreExposure(
   }
 }
 
+/** M6: 4 signals — 5 + 4 + 3 + 3 = 15 pts max (category weight 15%). */
 function scoreCoachability(inputs: JourneyInput[]): CategoryScore {
-  const velocity = findInput(inputs, 'coachability', 'technique_velocity_90d')
-  const resolutionSpeed = findInput(
-    inputs,
-    'coachability',
-    'issue_resolution_avg_sessions',
-  )
-  const sessions = findInput(inputs, 'coachability', 'sessions_90d')
+  const improvement = findInput(inputs, 'coachability', 'improvement_pts_90d')
+  const drill = findInput(inputs, 'coachability', 'drill_pts_90d')
+  const lesson = findInput(inputs, 'coachability', 'lesson_pts_90d')
+  const reel = findInput(inputs, 'coachability', 'reel_pts_90d')
 
-  let pct = 0
+  const impPts = Math.min(5, Math.max(0, Number(improvement?.value_numeric ?? 0)))
+  const drillPts = Math.min(4, Math.max(0, Number(drill?.value_numeric ?? 0)))
+  const lessonPts = Math.min(3, Math.max(0, Number(lesson?.value_numeric ?? 0)))
+  const reelPts = Math.min(3, Math.max(0, Number(reel?.value_numeric ?? 0)))
+
+  const totalPts = Math.min(15, impPts + drillPts + lessonPts + reelPts)
+  const raw_pct = totalPts / 15
+
   const used: string[] = []
-
-  if (velocity?.value_numeric != null) {
-    pct += Math.min(1, Math.max(0, velocity.value_numeric) / 20) * 0.5
-    used.push('technique_velocity_90d')
-  }
-  if (resolutionSpeed?.value_numeric != null) {
-    pct += Math.max(0, Math.min(1, (6 - resolutionSpeed.value_numeric) / 5)) * 0.3
-    used.push('issue_resolution_avg_sessions')
-  }
-  if (sessions?.value_numeric != null) {
-    pct += Math.min(1, sessions.value_numeric / 8) * 0.2
-    used.push('sessions_90d')
-  }
+  if (improvement) used.push('improvement_pts_90d')
+  if (drill) used.push('drill_pts_90d')
+  if (lesson) used.push('lesson_pts_90d')
+  if (reel) used.push('reel_pts_90d')
 
   const gap =
-    pct > 0.8
+    raw_pct >= 0.8
       ? 'Top of Playvia distribution — this is your edge'
-      : pct > 0.5
-        ? 'Solid improvement velocity — keep stacking sessions'
-        : 'Run more sessions to build coachability signal'
+      : raw_pct >= 0.5
+        ? 'Solid engagement — keep stacking sessions and drills'
+        : totalPts > 0
+          ? 'Building coachability signal — more reels and drills help'
+          : 'Run more sessions to build coachability signal'
 
   return {
-    raw_pct: pct,
+    raw_pct,
     inputs_used: used,
     benchmarks_used: [],
     gap_statement: gap,

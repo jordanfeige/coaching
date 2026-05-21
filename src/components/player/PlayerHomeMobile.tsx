@@ -2,8 +2,11 @@
 
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import UniversalVia from '@/components/UniversalVia'
+import type { ReactNode } from 'react'
+import PlayerViaHero from '@/components/player/PlayerViaHero'
+import MarkDrillCompleteButton from '@/components/player/MarkDrillCompleteButton'
 import { typography } from '@/lib/brand'
+import type { PageContext } from '@/lib/via-page-brief'
 
 const BORDER = 'hsl(30,10%,88%)'
 const TEXT = 'hsl(220,20%,15%)'
@@ -33,6 +36,8 @@ type PoseMeasurement = {
 
 export type PlayerHomeMobileProps = {
   player: { id: string; name: string | null; sport: string | null }
+  welcomeMessage: ReactNode
+  prompts: string[]
   sessions: Array<Record<string, unknown>>
   drills: Array<Record<string, unknown>>
   lessons: Array<Record<string, unknown>>
@@ -52,6 +57,8 @@ const CSS = `
 
 export default function PlayerHomeMobile({
   player,
+  welcomeMessage,
+  prompts,
   sessions,
   drills,
   lessons,
@@ -83,20 +90,23 @@ export default function PlayerHomeMobile({
     >
       <style>{CSS}</style>
 
-      <UniversalVia
-        role="player"
+      <PlayerViaHero
         playerId={player.id}
-        playerName={player.name || undefined}
-        pageContext={{
-          page: 'player-home',
-          techniqueScore: currentScore ?? undefined,
-          scoreDelta: delta ?? undefined,
-          activeIssue:
-            typeof latest?.top_issue === 'string'
-              ? latest.top_issue
-              : undefined,
-          sessionCount: sessions.length,
-        }}
+        playerName={player.name || 'Athlete'}
+        pageContext={
+          {
+            page: 'player-home',
+            techniqueScore: currentScore ?? undefined,
+            scoreDelta: delta ?? undefined,
+            activeIssue:
+              typeof latest?.top_issue === 'string'
+                ? latest.top_issue
+                : undefined,
+            sessionCount: sessions.length,
+          } satisfies PageContext
+        }
+        welcomeMessage={welcomeMessage}
+        prompts={prompts}
       />
 
       {currentScore !== null && (
@@ -345,24 +355,39 @@ export default function PlayerHomeMobile({
               </div>
             </>
           )}
-          <button
-            type="button"
-            onClick={() => router.push('/player/drills')}
-            style={{
-              padding: '8px 0',
-              borderRadius: 9,
-              background: TEAL,
-              border: 'none',
-              color: 'white',
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontFamily: 'Arial, sans-serif',
-              width: '100%',
-            }}
-          >
-            {upcomingDrill ? 'View drill →' : 'Get drills →'}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {upcomingDrill &&
+              typeof upcomingDrill.id === 'string' &&
+              !upcomingDrill.completed_at && (
+                <MarkDrillCompleteButton
+                  drillId={upcomingDrill.id}
+                  completedAt={
+                    typeof upcomingDrill.completed_at === 'string'
+                      ? upcomingDrill.completed_at
+                      : null
+                  }
+                  compact
+                />
+              )}
+            <button
+              type="button"
+              onClick={() => router.push('/player/training#drills')}
+              style={{
+                padding: '8px 0',
+                borderRadius: 9,
+                background: TEAL,
+                border: 'none',
+                color: 'white',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: 'Arial, sans-serif',
+                width: '100%',
+              }}
+            >
+              {upcomingDrill ? 'View drills →' : 'Get drills →'}
+            </button>
+          </div>
         </div>
 
         <div

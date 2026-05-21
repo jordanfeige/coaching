@@ -5,6 +5,7 @@ import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { calculateScore, extractCheckpointScores } from '@/lib/scoring'
 import { sendAnalysisComplete } from '@/lib/email'
@@ -1032,6 +1033,24 @@ export async function POST(req: NextRequest) {
         .from('profiles')
         .update({ analyses_used: analysesUsed + 1 })
         .eq('id', user.id)
+    }
+
+    if (playerId && process.env.SUPABASE_SERVICE_ROLE_KEY && insertedSession?.id) {
+      try {
+        const { syncCoachabilityForPlayer } = await import(
+          '@/lib/journey-coachability-sync'
+        )
+        const admin = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!,
+          { auth: { autoRefreshToken: false, persistSession: false } },
+        )
+        void syncCoachabilityForPlayer(admin, playerId).catch(err => {
+          console.error('[video-analysis] coachability sync failed:', err)
+        })
+      } catch (e) {
+        console.error('[video-analysis] coachability sync import failed:', e)
+      }
     }
 
     if (user.email && overallScore) {

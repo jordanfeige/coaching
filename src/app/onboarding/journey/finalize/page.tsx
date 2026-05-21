@@ -14,6 +14,7 @@ export default function FinalizeStep() {
     async function run() {
       try {
         const classYear = sessionStorage.getItem('journey_class_year')
+        const birthDate = sessionStorage.getItem('journey_birth_date')
         const utr = sessionStorage.getItem('journey_utr')
         const academics = sessionStorage.getItem('journey_academics')
         const tournaments = sessionStorage.getItem('journey_tournaments')
@@ -26,6 +27,7 @@ export default function FinalizeStep() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             classYear,
+            birthDate: birthDate || null,
             utr: utr ? JSON.parse(utr) : null,
             academics: academics ? JSON.parse(academics) : null,
             tournaments: tournaments ? JSON.parse(tournaments) : null,

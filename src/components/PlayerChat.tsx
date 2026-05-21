@@ -364,7 +364,7 @@ export default function PlayerChat({ playerId, playerName, sport, skillLevel }: 
         router.push('/player/progress')
         break
       case 'viewDrills':
-        router.push('/player/drills')
+        router.push('/player/training#drills')
         break
       case 'viewLesson':
         router.push('/player/training')

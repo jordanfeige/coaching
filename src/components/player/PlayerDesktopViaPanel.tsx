@@ -20,13 +20,14 @@ export default function PlayerDesktopViaPanel({
   if (!prefilledPrompt) return null
 
   return (
-    <div style={{ marginTop: 16, marginBottom: 24 }}>
+    <div className="hidden lg:block" style={{ marginTop: 16, marginBottom: 24 }}>
       <UniversalVia
         role="player"
         playerId={playerId}
         playerName={playerName}
         pageContext={pageContext}
         embedded
+        autoSendPrompt={prefilledPrompt}
       />
     </div>
   )

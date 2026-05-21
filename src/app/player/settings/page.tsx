@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import PlayerPageVia from '@/components/player/PlayerPageVia'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerIdForUser } from '@/lib/linked-player'
 
@@ -78,6 +79,11 @@ export default function PlayerSettingsPage() {
 
   return (
     <div style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 60px' }}>
+      <PlayerPageVia
+        playerId={playerId ?? undefined}
+        pageContext={{ page: 'player-settings' }}
+      />
+
       <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 24, marginBottom: 24 }}>
         Settings
       </h1>

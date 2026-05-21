@@ -1,4 +1,10 @@
-import { CATEGORY_UI_META, inputDisplayName } from './journey-ui-meta'
+import { CATEGORY_UI_META } from './journey-ui-meta'
+import {
+  formatEventDescription,
+  formatInputLabel,
+  formatInputSource,
+  formatInputValue,
+} from './journey-input-formatter'
 import {
   hasMatchBasedExposureSignals,
   parseExposureSignals,
@@ -21,32 +27,11 @@ const CATEGORY_KEYS: CategoryKey[] = [
   'coachability',
 ]
 
-const SOURCE_LABELS: Record<string, string> = {
-  utr_api: 'UTR API',
-  self_reported: 'Self-reported',
-  college_board: 'College Board',
-  usta_manual: 'USTA',
-  playvia: 'Playvia',
-  video_analysis: 'Video analysis',
-}
-
 function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   })
-}
-
-function formatInputValue(
-  valueNumeric: number | null,
-  valueText: string | null,
-  unit: string | null,
-): string {
-  if (valueText) return valueText
-  if (valueNumeric == null) return '—'
-  if (unit === 'utr_points') return valueNumeric.toFixed(2)
-  if (unit === 'gpa') return valueNumeric.toFixed(1)
-  return String(valueNumeric)
 }
 
 function mapEvents(
@@ -57,15 +42,12 @@ function mapEvents(
     .slice(0, 10)
     .map(row => {
       const cat = (row.category ?? 'tier') as JourneyEvent['category']
-      const delta =
-        row.delta_score != null
-          ? `${row.delta_score > 0 ? '+' : ''}${row.delta_score}`
-          : '—'
+      const formatted = formatEventDescription(row)
       return {
         date: formatShortDate(row.created_at),
-        label: row.label,
-        change: row.after_value ?? row.before_value ?? '',
-        delta,
+        label: formatted.label,
+        change: formatted.change,
+        delta: formatted.delta,
         category: cat,
       }
     })
@@ -110,17 +92,26 @@ function buildCategories(data: JourneyPageData): JourneyCategory[] {
       isStrength: (raw?.score ?? 0) >= maxScore && maxScore > 0,
       viaPrompts: meta.viaPrompts,
       exposureSignals,
-      inputs: catInputs.map(inp => ({
-        name: inputDisplayName(inp.input_key),
-        value: formatInputValue(
-          inp.value_numeric != null ? Number(inp.value_numeric) : null,
-          inp.value_text,
-          inp.unit,
-        ),
-        source: SOURCE_LABELS[inp.source] ?? inp.source,
-        verified: inp.verified,
-        date: formatShortDate(inp.captured_at),
-      })),
+      inputs: catInputs.map(inp => {
+        const row = {
+          category: inp.category,
+          input_key: inp.input_key,
+          value_numeric:
+            inp.value_numeric != null ? Number(inp.value_numeric) : null,
+          value_text: inp.value_text,
+          unit: inp.unit,
+          source: inp.source,
+          verified: inp.verified,
+          captured_at: inp.captured_at,
+        }
+        return {
+          name: formatInputLabel(row),
+          value: formatInputValue(row),
+          source: formatInputSource(row),
+          verified: inp.verified,
+          date: formatShortDate(inp.captured_at),
+        }
+      }),
     }
   })
 }

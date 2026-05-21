@@ -151,6 +151,17 @@ button:not([disabled]) {
   .player-tablet-sidebar {
     display: none !important;
   }
+  .player-mobile-top-bar {
+    display: none !important;
+  }
+  .player-main-shell {
+    max-width: var(--player-content-max, 760px);
+    padding: 32px 36px 80px;
+    padding-top: 32px;
+  }
+  .player-layout-via-chrome {
+    display: block;
+  }
 }
 
 @media (max-width: 63.999rem) {

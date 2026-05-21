@@ -1,3 +1,6 @@
+'use client'
+
+import PlayerPageVia from '@/components/player/PlayerPageVia'
 import { fonts } from '@/lib/brand'
 
 const TEXT = 'hsl(220,20%,15%)'
@@ -10,16 +13,18 @@ export default function PlayerCoachPage() {
       style={{
         fontFamily: fonts.sans,
         color: TEXT,
-        maxWidth: 520,
+        maxWidth: 720,
         margin: '0 auto',
-        padding: '48px 16px',
-        textAlign: 'center',
+        padding: '0 0 40px',
         background: WARM_BG,
         marginLeft: -16,
         marginRight: -16,
-        minHeight: '50vh',
+        paddingLeft: 16,
+        paddingRight: 16,
       }}
     >
+      <PlayerPageVia pageContext={{ page: 'player-coach' }} />
+
       <h1
         style={{
           fontFamily: fonts.serif,

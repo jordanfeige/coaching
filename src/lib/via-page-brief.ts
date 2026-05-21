@@ -13,6 +13,7 @@ export type ViaPageId =
   | 'player-journey'
   | 'player-training'
   | 'player-coach'
+  | 'player-settings'
   | 'pulse'
 
 export type PageContext = {
@@ -394,6 +395,17 @@ export function generatePageBrief(
           'What should I work on before our next session?',
           'Can you review my latest reel?',
           'How do I prepare for a college showcase?',
+        ],
+      }
+    }
+
+    case 'player-settings': {
+      return {
+        brief: 'Profile and goals — ask Via about your account or recruiting path.',
+        prompts: [
+          'What should my primary goal be?',
+          'How do I update my recruiting preferences?',
+          'Where do I add my birth date?',
         ],
       }
     }

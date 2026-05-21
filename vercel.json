@@ -17,6 +17,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/coachability-sync",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/cron/sync-player-matches",
       "schedule": "0 8 * * *"
     },

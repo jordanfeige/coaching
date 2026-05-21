@@ -17,7 +17,7 @@ const PAGE_KICKERS: Record<string, string> = {
   '/player/training': 'your training',
   '/player/reels': 'your reels',
   '/player/coach': 'your coach',
-  '/player/drills': 'your drills',
+  '/player/training#drills': 'your drills',
 }
 
 export default function UniversalViaBar({

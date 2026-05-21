@@ -300,8 +300,21 @@ export default function PlayerDetailPage() {
   async function completeLesson() {
     if (!completeNote.trim() || !completeModal) return
     setSaving(true)
-    await supabase.from('lessons').update({ status: 'completed' }).eq('id', completeModal.id)
-    await supabase.from('journal_entries').insert({ player_id: id, lesson_id: completeModal.id, content: completeNote })
+    try {
+      const res = await fetch(`/api/lessons/${completeModal.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ journalNote: completeNote }),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? 'Could not complete lesson')
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not complete lesson')
+      setSaving(false)
+      return
+    }
     setCompleteModal(null)
     setCompleteNote('')
     setSaving(false)

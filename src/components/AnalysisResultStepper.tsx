@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import DrillAssignedToast from '@/components/player/DrillAssignedToast'
 import ViaBlob from '@/components/ViaBlob'
 import CoachVerifyPanel from '@/components/CoachVerifyPanel'
 import ReelScoreSheet, { buildCheckpoints } from '@/components/ReelScoreSheet'
@@ -118,6 +119,8 @@ export type CoachReviewConfig = {
   onPublished?: () => void
 }
 
+export type AnalysisViewMode = 'first-view' | 're-view'
+
 interface Props {
   score: number
   sport: string
@@ -129,6 +132,9 @@ interface Props {
   playerId?: string
   session?: Record<string, unknown> | null
   progressHref?: string
+  analyzedAt?: string
+  viewMode?: AnalysisViewMode
+  existingDrillTitles?: string[]
   onSaved?: () => void
   onReanalyze?: () => void
   coachReview?: CoachReviewConfig
@@ -303,6 +309,8 @@ function ScoreCard({
   strengths,
   verdict,
   session,
+  viewMode = 'first-view',
+  analyzedAt,
   onNext,
 }: {
   score: number
@@ -312,14 +320,22 @@ function ScoreCard({
   strengths: StepperStrength[]
   verdict: string
   session?: Record<string, unknown> | null
+  viewMode?: AnalysisViewMode
+  analyzedAt?: string
   onNext: () => void
 }) {
   const criticalCount = issues.filter(i => i.severity === 'critical').length
-  const today = new Date().toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  const dateLabel = analyzedAt
+    ? new Date(analyzedAt).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -379,7 +395,7 @@ function ScoreCard({
                   fontWeight: 600,
                 }}
               >
-                Via · your analysis
+                {viewMode === 're-view' ? 'Via · analyzed reel' : 'Via · your analysis'}
               </span>
             </div>
             <ReelScoreSheet
@@ -421,8 +437,35 @@ function ScoreCard({
             }}
           >
             {sport.charAt(0).toUpperCase() + sport.slice(1)}
-            {shotType ? ` · ${shotType}` : ''} · {today}
+            {shotType ? ` · ${shotType}` : ''} · {dateLabel}
           </div>
+
+          {viewMode === 're-view' && (
+            <div
+              style={{
+                fontSize: 12,
+                color: 'rgba(255,255,255,.55)',
+                marginBottom: 10,
+              }}
+            >
+              Analyzed {dateLabel}
+            </div>
+          )}
+
+          {viewMode === 'first-view' && (
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#5DCAA5',
+                letterSpacing: '.06em',
+                textTransform: 'uppercase',
+                marginBottom: 10,
+              }}
+            >
+              Analysis complete!
+            </div>
+          )}
 
           <p
             style={{
@@ -538,6 +581,7 @@ function IssueCard({
   total,
   poseMeasurements,
   addedDrills,
+  assignedDrills,
   onAddDrill,
   onBack,
   onNext,
@@ -548,7 +592,8 @@ function IssueCard({
   total: number
   poseMeasurements?: JointMeasurement[]
   addedDrills: Set<string>
-  onAddDrill: (drill: string) => void
+  assignedDrills: Set<string>
+  onAddDrill: (drill: string) => void | Promise<void>
   onBack: () => void
   onNext: () => void
   nextLabel: string
@@ -575,7 +620,13 @@ function IssueCard({
     )
   })
 
-  const drillAdded = Boolean(issue.drill && addedDrills.has(issue.drill))
+  const drillAdded = Boolean(
+    issue.drill &&
+      (addedDrills.has(issue.drill) || assignedDrills.has(issue.drill)),
+  )
+  const alreadyAssigned = Boolean(
+    issue.drill && assignedDrills.has(issue.drill) && !addedDrills.has(issue.drill),
+  )
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -728,7 +779,11 @@ function IssueCard({
                   transition: 'all 0.2s ease',
                 }}
               >
-                {drillAdded ? '✓ Added' : '+ Add'}
+                {alreadyAssigned
+                  ? 'Already assigned'
+                  : drillAdded
+                    ? '✓ Added'
+                    : '+ Assign Drill'}
               </button>
             </div>
           </div>
@@ -882,6 +937,27 @@ function StrengthsCard({
   )
 }
 
+async function assignDrillToTraining(args: {
+  title: string
+  sport: string
+  sessionId?: string
+}) {
+  const res = await fetch('/api/drills/assign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: args.title,
+      sport: args.sport,
+      analysisSessionId: args.sessionId,
+    }),
+  })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(data.error ?? 'Could not assign drill')
+  }
+  return res.json() as Promise<{ alreadyAssigned?: boolean }>
+}
+
 function SaveCard({
   score,
   sport,
@@ -890,8 +966,10 @@ function SaveCard({
   sessionId,
   playerId,
   progressHref,
+  viewMode = 'first-view',
   onReanalyze,
   onSaved,
+  onDrillsSaved,
 }: {
   score: number
   sport: string
@@ -900,13 +978,15 @@ function SaveCard({
   sessionId?: string
   playerId?: string
   progressHref: string
+  viewMode?: AnalysisViewMode
   onReanalyze?: () => void
   onSaved?: () => void
+  onDrillsSaved?: () => void
 }) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [saved, setSaved] = useState(viewMode === 're-view')
   const [rating, setRating] = useState<'helpful' | 'not_helpful' | null>(null)
 
   async function submitRating(value: 'helpful' | 'not_helpful') {
@@ -933,12 +1013,10 @@ function SaveCard({
     setSaving(true)
     try {
       if (addedDrills.size > 0 && playerId) {
-        const drillInserts = Array.from(addedDrills).map(drill => ({
-          player_id: playerId,
-          title: drill,
-          description: `Prescribed from ${sport} analysis. 3 sets · 15 reps.`,
-        }))
-        await supabase.from('drills').insert(drillInserts)
+        for (const drill of addedDrills) {
+          await assignDrillToTraining({ title: drill, sport, sessionId })
+        }
+        onDrillsSaved?.()
       }
       setSaved(true)
       onSaved?.()
@@ -1264,15 +1342,29 @@ export default function AnalysisResultStepper({
   playerId,
   session,
   progressHref = '/player/progress',
+  analyzedAt,
+  viewMode = 'first-view',
+  existingDrillTitles = [],
   onSaved,
   onReanalyze,
   coachReview,
 }: Props) {
+  const supabase = useMemo(() => createClient(), [])
   const [step, setStep] = useState(0)
   const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const [addedDrills, setAddedDrills] = useState<Set<string>>(new Set())
-  const [animKey, setAnimKey] = useState(0)
+  const [assignedDrills] = useState(
+    () => new Set(existingDrillTitles.map(t => t.trim()).filter(Boolean)),
+  )
+  const [showDrillToast, setShowDrillToast] = useState(false)
+  const [animKey, setAnimKey] = useState(viewMode === 're-view' ? -1 : 0)
   const touchStartX = useRef(0)
+
+  useEffect(() => {
+    if (!showDrillToast) return
+    const t = window.setTimeout(() => setShowDrillToast(false), 5000)
+    return () => window.clearTimeout(t)
+  }, [showDrillToast])
 
   const sortedIssues = [...issues].sort((a, b) => {
     const order = { critical: 0, moderate: 1, minor: 2 }
@@ -1282,18 +1374,35 @@ export default function AnalysisResultStepper({
   const totalCards = 1 + sortedIssues.length + 1 + 1
 
   function goNext() {
-    setDirection('forward')
-    setAnimKey(k => k + 1)
+    if (viewMode !== 're-view') {
+      setDirection('forward')
+      setAnimKey(k => k + 1)
+    }
     setStep(s => Math.min(s + 1, totalCards - 1))
   }
 
   function goBack() {
-    setDirection('back')
-    setAnimKey(k => k + 1)
+    if (viewMode !== 're-view') {
+      setDirection('back')
+      setAnimKey(k => k + 1)
+    }
     setStep(s => Math.max(s - 1, 0))
   }
 
-  function addDrill(drill: string) {
+  async function addDrill(drill: string) {
+    if (!drill || assignedDrills.has(drill) || addedDrills.has(drill)) return
+
+    if (viewMode === 're-view' && playerId) {
+      try {
+        await assignDrillToTraining({ title: drill, sport, sessionId })
+        setShowDrillToast(true)
+      } catch (e) {
+        console.error('Drill assign failed:', e)
+        alert(e instanceof Error ? e.message : 'Could not assign drill. Try again.')
+        return
+      }
+    }
+
     setAddedDrills(prev => new Set([...prev, drill]))
   }
 
@@ -1305,7 +1414,11 @@ export default function AnalysisResultStepper({
       : "Good effort. Here's what to focus on next."
 
   const animClass =
-    direction === 'forward' ? 'card-enter-forward' : 'card-enter-back'
+    viewMode === 're-view'
+      ? ''
+      : direction === 'forward'
+        ? 'card-enter-forward'
+        : 'card-enter-back'
 
   return (
     <div
@@ -1316,9 +1429,12 @@ export default function AnalysisResultStepper({
       }}
     >
       <style>{CSS}</style>
+      {showDrillToast && (
+        <DrillAssignedToast onDismiss={() => setShowDrillToast(false)} />
+      )}
 
       <div
-        key={animKey}
+        key={viewMode === 're-view' ? `re-${step}` : animKey}
         className={animClass}
         onTouchStart={e => {
           touchStartX.current = e.touches[0].clientX
@@ -1341,6 +1457,8 @@ export default function AnalysisResultStepper({
             strengths={strengths}
             verdict={verdict}
             session={session}
+            viewMode={viewMode}
+            analyzedAt={analyzedAt}
             onNext={goNext}
           />
         )}
@@ -1352,7 +1470,8 @@ export default function AnalysisResultStepper({
             total={sortedIssues.length}
             poseMeasurements={poseMeasurements}
             addedDrills={addedDrills}
-            onAddDrill={addDrill}
+            assignedDrills={assignedDrills}
+            onAddDrill={drill => void addDrill(drill)}
             onBack={goBack}
             onNext={goNext}
             nextLabel={
@@ -1414,8 +1533,10 @@ export default function AnalysisResultStepper({
               sessionId={sessionId}
               playerId={playerId}
               progressHref={progressHref}
+              viewMode={viewMode}
               onReanalyze={onReanalyze}
               onSaved={onSaved}
+              onDrillsSaved={() => setShowDrillToast(true)}
             />
           )
         )}

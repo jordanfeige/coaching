@@ -396,7 +396,7 @@ export default function ViaBar({ role, playerContext }: Props) {
         setExpanded(false)
         break
       case 'viewDrills':
-        router.push('/player/drills')
+        router.push('/player/training#drills')
         setExpanded(false)
         break
     }
