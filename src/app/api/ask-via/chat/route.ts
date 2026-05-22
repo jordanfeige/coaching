@@ -23,10 +23,19 @@ Workflow hints:
 - Coach: get_coach_info
 - Past lesson notes: get_lessons with timeframe past
 - Colleges: get_college_matches
-- Training plan: get_drills with status assigned
+- Training plan: get_drills with status assigned (already assigned practice)
+- Drill library: search_drill_library first; generate_custom_drill only if no match
 - "What should I work on": get_road_to_offer + get_rating_breakdown
 
-You cannot schedule lessons, message coaches, or change data — read-only.`
+DRILL CAPABILITIES:
+When a player asks for a drill or practice idea:
+1. ALWAYS search_drill_library first (category, checkpoint, skill_level, mode solo if no partner).
+2. Present ONE best match with name, duration, level, mode, short description, 2-3 steps, success criteria, coaching cue. Ask if they want it added.
+3. If no match, use generate_custom_drill — note it is a custom draft.
+4. NEVER call add_drill_to_my_practice without explicit confirmation ("yes", "add it", "save it").
+5. Reference reel issues when relevant (e.g. elbow drop → contact_point checkpoint).
+
+You can add drills to practice (add_drill_to_my_practice) when confirmed. You cannot schedule lessons or message coaches.`
 
 type ChatMessage = {
   role: 'user' | 'assistant'
@@ -199,10 +208,32 @@ export async function POST(req: NextRequest) {
                 (block.input ?? {}) as Record<string, unknown>,
                 playerId,
                 supabase,
+                user.id,
               )
               sendEvent(controller, encoder, 'tool_call_end', {
                 name: block.name,
               })
+
+              const payload = result as Record<string, unknown>
+              if (
+                block.name === 'search_drill_library' &&
+                payload.topMatch &&
+                typeof payload.topMatch === 'object'
+              ) {
+                sendEvent(controller, encoder, 'drill_draft', {
+                  kind: 'library',
+                  drill: payload.topMatch,
+                })
+              } else if (
+                block.name === 'generate_custom_drill' &&
+                payload.draft_drill &&
+                typeof payload.draft_drill === 'object'
+              ) {
+                sendEvent(controller, encoder, 'drill_draft', {
+                  kind: 'generated',
+                  drill: payload.draft_drill,
+                })
+              }
               sendEvent(controller, encoder, 'thinking', { active: true })
               toolResults.push({
                 type: 'tool_result',

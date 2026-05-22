@@ -11,6 +11,13 @@ import {
   diagnoseTrajectoryGaps,
 } from '@/lib/utr-forecast'
 import type { ViaToolName } from '@/lib/ask-via/tools'
+import { assignLibraryDrillToPlayer } from '@/lib/assign-library-drill'
+import {
+  mapCheckpointToCategory,
+  sanitizeSearchQuery,
+  type CustomDrillPayload,
+} from '@/lib/drills-library'
+import { generateCustomDrillWithVia } from '@/lib/drills-library-generate'
 import { formatReelDisplayTitle } from '@/lib/reel-display'
 
 const GOAL_THRESHOLDS: Record<
@@ -63,6 +70,7 @@ export async function runTool(
   input: Record<string, unknown>,
   playerId: string,
   supabase: SupabaseClient,
+  userId?: string,
 ): Promise<unknown> {
   switch (name) {
     case 'get_rating_breakdown': {
@@ -518,6 +526,220 @@ export async function runTool(
         totalCompletions90d: streak.totalSessions,
         drillsThisWeek: streak.thisWeekCount,
         needsDrillThisWeek: streak.needsForThisWeek,
+      }
+    }
+
+    case 'search_drill_library': {
+      const limit = Math.min(
+        typeof input.limit === 'number' ? input.limit : 5,
+        15,
+      )
+
+      let q = supabase
+        .from('drills_library')
+        .select(
+          'id, name, primary_category, drill_type, checkpoints, skill_level, duration_minutes, mode, requires, description, steps, success_criteria, coaching_cue, source',
+        )
+        .order('name', { ascending: true })
+        .limit(limit)
+
+      if (typeof input.category === 'string' && input.category) {
+        q = q.eq('primary_category', input.category)
+      }
+      if (typeof input.skill_level === 'string' && input.skill_level) {
+        q = q.eq('skill_level', input.skill_level)
+      }
+      if (typeof input.mode === 'string' && input.mode) {
+        q = q.eq('mode', input.mode)
+      }
+      if (typeof input.checkpoint === 'string' && input.checkpoint) {
+        q = q.contains('checkpoints', [input.checkpoint])
+      }
+
+      const query =
+        typeof input.query === 'string' ? sanitizeSearchQuery(input.query) : ''
+      if (query) {
+        q = q.or(`name.ilike.%${query}%,description.ilike.%${query}%`)
+      }
+
+      const { data: drills, error } = await q
+
+      if (error) {
+        return { error: error.message, drills: [] }
+      }
+
+      const list = drills ?? []
+      return {
+        drills: list,
+        topMatch: list[0] ?? null,
+        note:
+          list.length > 0
+            ? `Found ${list.length} drill(s). Present the best match as a draft card and ask if they want it added to practice.`
+            : 'No library drills matched. Use generate_custom_drill only if nothing fits.',
+      }
+    }
+
+    case 'generate_custom_drill': {
+      const playerRequest = String(input.player_request ?? '').trim()
+      if (!playerRequest) {
+        return { error: 'player_request required' }
+      }
+
+      try {
+        const draft = await generateCustomDrillWithVia({
+          player_request: playerRequest,
+          target_checkpoints: Array.isArray(input.target_checkpoints)
+            ? (input.target_checkpoints as string[])
+            : undefined,
+          skill_level: String(input.skill_level ?? 'intermediate'),
+          duration_minutes:
+            typeof input.duration_minutes === 'number'
+              ? input.duration_minutes
+              : 15,
+          mode: String(input.mode ?? 'solo'),
+        })
+
+        return {
+          draft_drill: draft,
+          is_generated: true,
+          note: 'Custom drill draft — player must confirm before add_drill_to_my_practice.',
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Generation failed'
+        const fallback: CustomDrillPayload = {
+          name: `Custom: ${playerRequest.slice(0, 48)}`,
+          primary_category: mapCheckpointToCategory(
+            Array.isArray(input.target_checkpoints)
+              ? String(input.target_checkpoints[0] ?? '')
+              : '',
+          ),
+          drill_type: 'live-ball',
+          checkpoints: Array.isArray(input.target_checkpoints)
+            ? (input.target_checkpoints as string[])
+            : [],
+          skill_level: String(input.skill_level ?? 'intermediate'),
+          duration_minutes:
+            typeof input.duration_minutes === 'number'
+              ? input.duration_minutes
+              : 15,
+          mode: String(input.mode ?? 'solo'),
+          requires: [],
+          description: playerRequest,
+          steps: [playerRequest, 'Repeat with quality focus.', 'Rest between sets.'],
+          success_criteria: 'Complete all reps with intentional focus.',
+          coaching_cue: 'Quality over speed.',
+        }
+        return {
+          draft_drill: fallback,
+          is_generated: true,
+          note: `Draft created with fallback (${message}).`,
+        }
+      }
+    }
+
+    case 'add_drill_to_my_practice': {
+      const libraryDrillId =
+        typeof input.library_drill_id === 'string'
+          ? input.library_drill_id
+          : undefined
+      const customDrillData = input.custom_drill_data as
+        | CustomDrillPayload
+        | undefined
+
+      const result = await assignLibraryDrillToPlayer(supabase, playerId, {
+        libraryDrillId,
+        customDrillData,
+      })
+
+      if (!result.success) {
+        return { success: false, error: result.error, details: result.details }
+      }
+
+      return {
+        success: true,
+        drill_id: result.drillId,
+        library_drill_id: result.libraryDrillId,
+        message: `Added "${result.title}" to your practice. View it on the Training page.`,
+      }
+    }
+
+    case 'create_custom_drill_for_player': {
+      if (!userId) {
+        return { error: 'Not authenticated', success: false }
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle()
+
+      if (profile?.role !== 'coach') {
+        return { error: 'Only coaches can create library drills', success: false }
+      }
+
+      const name = String(input.name ?? '').trim()
+      if (!name) {
+        return { error: 'name required', success: false }
+      }
+
+      const slug =
+        name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '')
+          .slice(0, 50) +
+        '-' +
+        Date.now()
+
+      const { data, error } = await supabase
+        .from('drills_library')
+        .insert({
+          slug,
+          name,
+          primary_category: String(input.primary_category ?? 'Forehand'),
+          drill_type:
+            typeof input.drill_type === 'string' ? input.drill_type : null,
+          checkpoints: Array.isArray(input.checkpoints)
+            ? (input.checkpoints as string[])
+            : [],
+          skill_level: String(input.skill_level ?? 'intermediate'),
+          duration_minutes:
+            typeof input.duration_minutes === 'number'
+              ? input.duration_minutes
+              : 15,
+          mode: String(input.mode ?? 'solo'),
+          requires: Array.isArray(input.requires)
+            ? (input.requires as string[])
+            : [],
+          description: String(input.description ?? ''),
+          steps: Array.isArray(input.steps) ? (input.steps as string[]) : [],
+          success_criteria:
+            typeof input.success_criteria === 'string'
+              ? input.success_criteria
+              : null,
+          coaching_cue:
+            typeof input.coaching_cue === 'string' ? input.coaching_cue : null,
+          source: 'coach',
+          source_attribution: 'Coach-authored drill',
+          is_public: false,
+          created_by_coach_id: userId,
+        })
+        .select('id, name')
+        .single()
+
+      if (error || !data) {
+        return {
+          error: 'Failed to create drill',
+          details: error?.message,
+          success: false,
+        }
+      }
+
+      return {
+        success: true,
+        drill_id: data.id,
+        message: `Created "${data.name}" in your drill library.`,
       }
     }
 

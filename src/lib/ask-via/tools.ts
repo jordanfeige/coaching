@@ -126,6 +126,90 @@ export const VIA_TOOLS: Anthropic.Messages.Tool[] = [
     description: 'Practice streak weeks and recent drill completions.',
     input_schema: { type: 'object', properties: {} },
   },
+  {
+    name: 'search_drill_library',
+    description:
+      'Search curated and custom drill templates by category, checkpoint, skill level, mode, or text. Prefer library drills before generating new ones.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Free-text search on name/description' },
+        category: {
+          type: 'string',
+          enum: ['Forehand', 'Backhand', 'Serve', 'Volley', 'Footwork', 'Match Play', 'Mental'],
+        },
+        checkpoint: { type: 'string', description: 'e.g. contact_point, follow_through' },
+        skill_level: {
+          type: 'string',
+          enum: ['beginner', 'intermediate', 'advanced'],
+        },
+        mode: { type: 'string', enum: ['solo', 'partner', 'coach_feed'] },
+        limit: { type: 'number', description: 'Default 5, max 15' },
+      },
+    },
+  },
+  {
+    name: 'generate_custom_drill',
+    description:
+      'Generate a novel drill when the library has no good match. Returns a draft for player review — do not assign without confirmation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        player_request: { type: 'string' },
+        target_checkpoints: { type: 'array', items: { type: 'string' } },
+        skill_level: {
+          type: 'string',
+          enum: ['beginner', 'intermediate', 'advanced'],
+        },
+        duration_minutes: { type: 'number' },
+        mode: { type: 'string', enum: ['solo', 'partner', 'coach_feed'] },
+      },
+      required: ['player_request', 'skill_level', 'duration_minutes', 'mode'],
+    },
+  },
+  {
+    name: 'add_drill_to_my_practice',
+    description:
+      'Add a confirmed drill to the player practice list. ONLY after explicit yes from the player. Use library_drill_id OR custom_drill_data.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        library_drill_id: { type: 'string' },
+        custom_drill_data: { type: 'object' },
+      },
+    },
+  },
+  {
+    name: 'create_custom_drill_for_player',
+    description:
+      'Coach-only: create a private drill template in the library. Only when the user is a coach.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        primary_category: { type: 'string' },
+        drill_type: { type: 'string' },
+        checkpoints: { type: 'array', items: { type: 'string' } },
+        skill_level: { type: 'string' },
+        duration_minutes: { type: 'number' },
+        mode: { type: 'string' },
+        requires: { type: 'array', items: { type: 'string' } },
+        description: { type: 'string' },
+        steps: { type: 'array', items: { type: 'string' } },
+        success_criteria: { type: 'string' },
+        coaching_cue: { type: 'string' },
+      },
+      required: [
+        'name',
+        'primary_category',
+        'skill_level',
+        'duration_minutes',
+        'mode',
+        'description',
+        'steps',
+      ],
+    },
+  },
 ]
 
 export type ViaToolName = (typeof VIA_TOOLS)[number]['name']

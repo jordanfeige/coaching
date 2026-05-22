@@ -4,11 +4,21 @@ import { useEffect, useRef, useState } from 'react'
 import { Lightbulb, Send, X } from 'lucide-react'
 import ViaBlob from '@/components/ViaBlob'
 import { useAskVia } from '@/components/player/ask-via/AskViaContext'
+import {
+  ViaDrillDraftCard,
+  type LibraryDrillDraft,
+} from '@/components/player/ask-via/ViaDrillDraftCard'
+import type { CustomDrillPayload } from '@/lib/drills-library'
+
+type DrillDraftState =
+  | { kind: 'library'; drill: LibraryDrillDraft }
+  | { kind: 'generated'; drill: CustomDrillPayload }
 
 type Message = {
   role: 'user' | 'assistant'
   content: string
   toolCalls?: string[]
+  drillDraft?: DrillDraftState | null
 }
 
 type AskViaPanelProps = {
@@ -27,9 +37,9 @@ const SUGGESTED_PROMPTS_BY_PAGE: Record<string, string[]> = {
     'How many quality wins do I need this year?',
   ],
   training: [
+    'Give me a forehand drill for contact point',
     'What drills are due this week?',
-    'What did my coach say in my last lesson?',
-    'Why is coachability my lowest sub-score?',
+    'Add a solo drill for my elbow drop',
   ],
   reels: [
     "What's my most recurring issue across reels?",
@@ -62,6 +72,9 @@ function prettifyToolName(name: string): string {
     get_college_matches: 'your college matches',
     get_road_to_offer: 'your road to offer',
     get_practice_streak: 'your practice streak',
+    search_drill_library: 'the drill library',
+    generate_custom_drill: 'a custom drill',
+    add_drill_to_my_practice: 'your practice list',
   }
   return map[name] ?? name
 }
@@ -100,6 +113,7 @@ export default function AskViaPanel({ onClose }: AskViaPanelProps) {
       role: 'assistant',
       content: '',
       toolCalls: [],
+      drillDraft: null,
     }
     setMessages([...newMessages, assistantMessage])
 
@@ -167,6 +181,24 @@ export default function AskViaPanel({ onClose }: AskViaPanelProps) {
               setIsThinking(false)
             } else if (eventName === 'tool_call_end') {
               setActiveToolCall(null)
+            } else if (eventName === 'drill_draft') {
+              const kind =
+                data.kind === 'generated' ? 'generated' : ('library' as const)
+              const drill = data.drill as LibraryDrillDraft | CustomDrillPayload
+              setMessages(prev => {
+                const copy = [...prev]
+                const last = copy[copy.length - 1]
+                if (last?.role === 'assistant') {
+                  copy[copy.length - 1] = {
+                    ...last,
+                    drillDraft:
+                      kind === 'generated'
+                        ? { kind: 'generated', drill: drill as CustomDrillPayload }
+                        : { kind: 'library', drill: drill as LibraryDrillDraft },
+                  }
+                }
+                return copy
+              })
             } else if (eventName === 'thinking') {
               setIsThinking(Boolean(data.active))
             } else if (
@@ -389,6 +421,36 @@ export default function AskViaPanel({ onClose }: AskViaPanelProps) {
                         ? '…'
                         : '')}
                   </div>
+                  {m.drillDraft && m.role === 'assistant' && (
+                    <ViaDrillDraftCard
+                      kind={m.drillDraft.kind}
+                      drill={m.drillDraft.drill}
+                      onDismiss={() => {
+                        setMessages(prev => {
+                          const copy = [...prev]
+                          if (copy[i]) {
+                            copy[i] = { ...copy[i], drillDraft: null }
+                          }
+                          return copy
+                        })
+                      }}
+                      onAssigned={msg => {
+                        setMessages(prev => {
+                          const copy = [...prev]
+                          if (copy[i]) {
+                            copy[i] = {
+                              ...copy[i],
+                              drillDraft: null,
+                              content: copy[i].content
+                                ? `${copy[i].content}\n\n${msg}`
+                                : msg,
+                            }
+                          }
+                          return copy
+                        })
+                      }}
+                    />
+                  )}
                 </div>
               ))}
               {(isThinking || activeToolCall) && (

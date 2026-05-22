@@ -19,7 +19,8 @@
     "sync:rosters": "npx tsx scripts/sync-college-rosters.ts",
     "sync:college-benchmarks": "npx tsx scripts/sync-college-benchmarks.ts",
     "sync:scorecard": "npx tsx scripts/sync-college-scorecard.ts",
-    "compute:benchmarks": "npx tsx scripts/compute-academic-benchmarks.ts"
+    "compute:benchmarks": "npx tsx scripts/compute-academic-benchmarks.ts",
+    "seed:drills": "npx tsx scripts/seed-drills-library.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
