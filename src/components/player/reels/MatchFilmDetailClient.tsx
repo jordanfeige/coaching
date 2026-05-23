@@ -26,7 +26,6 @@ import { TendencyBars } from '@/components/player/reels/film-room/TendencyBars'
 import { MatchFilmDrawer } from '@/components/player/reels/film-room/MatchFilmDrawer'
 import { MatchSegmentDrawerContent } from '@/components/player/reels/MatchSegmentDrawerContent'
 import { AssignDrillModal } from '@/components/player/reels/AssignDrillModal'
-import { useAskVia } from '@/components/player/ask-via/AskViaContext'
 
 const PROCESSING = new Set([
   'uploading',
@@ -61,13 +60,21 @@ function chunkIsAnalyzing(
   return activeIds.has(chunk.id) || chunk.analysis_status === 'analyzing'
 }
 
+function pickDefaultActiveChunk(chunks: FilmRoomChunk[]): FilmRoomChunk | null {
+  if (chunks.length === 0) return null
+  const sorted = [...chunks].sort((a, b) => a.sequence_number - b.sequence_number)
+  return sorted.find(c => c.analysis_status === 'analyzed') ?? sorted[0]!
+}
+
 export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
   const [match, setMatch] = useState<FilmRoomMatchDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [synthesis, setSynthesis] = useState<MatchSynthesisV1 | null>(null)
   const [synthesisLoading, setSynthesisLoading] = useState(false)
   const [drawerSeq, setDrawerSeq] = useState<number | null>(null)
-  const [seekTo, setSeekTo] = useState<number | null>(null)
+  const [activeChunk, setActiveChunk] = useState<FilmRoomChunk | null>(null)
+  const [chunkVideoUrl, setChunkVideoUrl] = useState<string | null>(null)
+  const [chunkVideoLoading, setChunkVideoLoading] = useState(false)
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(() => new Set())
   const [batchProgress, setBatchProgress] = useState<{
     current: number
@@ -206,6 +213,15 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
     }
   }, [])
 
+  const goToSegment = useCallback(
+    (seq: number, chunksList: FilmRoomChunk[]) => {
+      const ch = chunksList.find(c => c.sequence_number === seq)
+      if (ch) setActiveChunk(ch)
+      setDrawerSeq(seq)
+    },
+    [],
+  )
+
   const closeDrawer = useCallback(() => {
     setDrawerSeq(null)
     if (drawerPushed.current) {
@@ -265,6 +281,22 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
     [fetchMatch, loadSynthesis, patchChunkStatus, startPolling],
   )
 
+  const handleSegmentTap = useCallback(
+    (chunk: FilmRoomChunk) => {
+      setActiveChunk(chunk)
+      if (chunk.analysis_status === 'analyzed') {
+        openDrawer(chunk.sequence_number)
+      } else if (
+        chunk.analysis_status !== 'analyzing' &&
+        !analyzingIds.has(chunk.id) &&
+        !batchBusy
+      ) {
+        void runAnalyzeChunk(chunk.id)
+      }
+    },
+    [openDrawer, analyzingIds, batchBusy, runAnalyzeChunk],
+  )
+
   const analyzeAllRemaining = useCallback(async () => {
     if (!match || batchBusy) return
     const queue = pendingChunks(match.match_chunks)
@@ -294,8 +326,49 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
   const chunks = match?.match_chunks ?? []
   const totalChunks = chunks.length
   const analyzedCount = match ? countAnalyzed(chunks) : 0
-  const unanalyzedCount = chunks.length - analyzedCount
   const pending = pendingChunks(chunks)
+
+  useEffect(() => {
+    if (!match) return
+    const list = match.match_chunks
+    if (list.length === 0) {
+      setActiveChunk(null)
+      return
+    }
+    setActiveChunk(prev => {
+      if (prev) {
+        const updated = list.find(c => c.id === prev.id)
+        if (updated) return updated
+      }
+      return pickDefaultActiveChunk(list)
+    })
+  }, [match])
+
+  useEffect(() => {
+    if (!activeChunk?.id) {
+      setChunkVideoUrl(null)
+      setChunkVideoLoading(false)
+      return
+    }
+    let cancelled = false
+    setChunkVideoUrl(null)
+    setChunkVideoLoading(true)
+    fetch(`/api/film-room/chunk/${activeChunk.id}/url`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return
+        if (data.url) setChunkVideoUrl(data.url as string)
+      })
+      .catch(() => {
+        if (!cancelled) setChunkVideoUrl(null)
+      })
+      .finally(() => {
+        if (!cancelled) setChunkVideoLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeChunk?.id])
 
   const tendencyRows = useMemo(
     () => synthesisTendencyRows(synthesis?.tendencies ?? null),
@@ -385,9 +458,9 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
       {match.status === 'ready' && (
         <>
           <MatchFilmVideoPlayer
-            chunks={chunks}
-            rawVideoUrl={match.raw_video_url}
-            seekToSeconds={seekTo}
+            activeChunk={activeChunk}
+            videoUrl={chunkVideoUrl}
+            loading={chunkVideoLoading}
           />
 
           {analyzedCount < 2 ? (
@@ -547,10 +620,10 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
                 chunk={chunk}
                 isLast={idx === chunks.length - 1}
                 totalChunks={totalChunks}
+                isActive={activeChunk?.id === chunk.id}
                 isAnalyzing={chunkIsAnalyzing(chunk, analyzingIds)}
                 batchBusy={batchProgress != null || batchBusy}
-                onAnalyze={() => void runAnalyzeChunk(chunk.id)}
-                onOpenDrawer={() => openDrawer(chunk.sequence_number)}
+                onTap={() => handleSegmentTap(chunk)}
               />
             ))}
           </section>
@@ -598,8 +671,10 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
         segmentTotal={totalChunks}
         canPrev={(drawerSeq ?? 0) > 0}
         canNext={(drawerSeq ?? 0) < totalChunks - 1}
-        onPrev={() => setDrawerSeq(s => Math.max(0, (s ?? 0) - 1))}
-        onNext={() => setDrawerSeq(s => Math.min(totalChunks - 1, (s ?? 0) + 1))}
+        onPrev={() => goToSegment(Math.max(0, (drawerSeq ?? 0) - 1), chunks)}
+        onNext={() =>
+          goToSegment(Math.min(totalChunks - 1, (drawerSeq ?? 0) + 1), chunks)
+        }
       >
         {drawerSeq !== null &&
           (chunks.find(c => c.sequence_number === drawerSeq)?.analysis_status ===
@@ -614,8 +689,8 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
             />
           ) : (
             <div style={{ padding: 20, fontSize: 13, color: brand.sub }}>
-              This segment isn&apos;t analyzed yet. Close the drawer and tap
-              &ldquo;Analyze segment&rdquo; on the timeline.
+              This segment isn&apos;t analyzed yet. The clip is playing above — tap
+              &ldquo;Analyze segment&rdquo; on the timeline when you&apos;re ready.
             </div>
           ))}
       </MatchFilmDrawer>
@@ -759,18 +834,18 @@ function SegmentTimelineNode({
   chunk,
   isLast,
   totalChunks,
+  isActive,
   isAnalyzing,
   batchBusy,
-  onAnalyze,
-  onOpenDrawer,
+  onTap,
 }: {
   chunk: FilmRoomChunk
   isLast: boolean
   totalChunks: number
+  isActive: boolean
   isAnalyzing: boolean
   batchBusy: boolean
-  onAnalyze: () => void
-  onOpenDrawer: () => void
+  onTap: () => void
 }) {
   const analyzed = chunk.analysis_status === 'analyzed'
   const failed = chunk.analysis_status === 'failed'
@@ -778,25 +853,17 @@ function SegmentTimelineNode({
   const label = segmentHumanLabel(chunk, totalChunks)
   const pills = segmentPillTags(analysis)
 
-  const handleRowClick = () => {
-    if (analyzed) {
-      onOpenDrawer()
-      return
-    }
-    if (!isAnalyzing && !batchBusy && !analyzed) {
-      onAnalyze()
-    }
-  }
-
   return (
     <div
-      role={analyzed ? 'button' : undefined}
-      tabIndex={analyzed ? 0 : undefined}
-      onClick={handleRowClick}
+      role="button"
+      tabIndex={0}
+      onClick={() => {
+        if (!isAnalyzing && !batchBusy) onTap()
+      }}
       onKeyDown={e => {
-        if (analyzed && (e.key === 'Enter' || e.key === ' ')) {
+        if ((e.key === 'Enter' || e.key === ' ') && !isAnalyzing && !batchBusy) {
           e.preventDefault()
-          onOpenDrawer()
+          onTap()
         }
       }}
       style={{
@@ -805,7 +872,11 @@ function SegmentTimelineNode({
         width: '100%',
         textAlign: 'left',
         marginBottom: isLast ? 0 : 4,
-        cursor: analyzed || (!isAnalyzing && !analyzed) ? 'pointer' : 'default',
+        cursor: isAnalyzing || batchBusy ? 'default' : 'pointer',
+        borderRadius: 8,
+        padding: isActive ? '6px 6px 6px 0' : '0',
+        marginLeft: isActive ? -6 : 0,
+        background: isActive ? brand.tealTint : 'transparent',
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28 }}>
@@ -912,7 +983,10 @@ function SegmentTimelineNode({
             <button
               type="button"
               disabled={batchBusy}
-              onClick={onAnalyze}
+              onClick={e => {
+                e.stopPropagation()
+                onTap()
+              }}
               style={{
                 ...analyzeSegmentBtnStyle,
                 opacity: batchBusy ? 0.5 : 1,
