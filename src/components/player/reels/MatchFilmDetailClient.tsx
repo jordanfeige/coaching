@@ -607,7 +607,6 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
             <MatchSegmentDrawerContent
               matchId={matchId}
               sequenceNumber={drawerSeq}
-              onJumpTo={t => setSeekTo(t)}
               onToast={msg => {
                 setToast(msg)
                 setTimeout(() => setToast(null), 4000)

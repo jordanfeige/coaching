@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { brand, fonts } from '@/lib/brand'
 import { formatSegmentTime } from '@/lib/film-room/format'
 import {
@@ -38,20 +39,22 @@ function momentColor(momentType: string) {
 export function MatchSegmentDrawerContent({
   matchId,
   sequenceNumber,
-  onJumpTo,
   onToast,
 }: {
   matchId: string
   sequenceNumber: number
-  onJumpTo: (startSeconds: number) => void
   onToast: (message: string) => void
 }) {
   const [data, setData] = useState<SegmentPayload | null>(null)
   const [archivedRanks, setArchivedRanks] = useState<number[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [expandedRanks, setExpandedRanks] = useState<Set<number>>(() => new Set([1]))
+  const [expandedRank, setExpandedRank] = useState<number | null>(1)
   const [assignRank, setAssignRank] = useState<1 | 2 | 3 | null>(null)
   const [limitsOpen, setLimitsOpen] = useState(false)
+
+  const toggleWorkOn = useCallback((rank: number) => {
+    setExpandedRank(prev => (prev === rank ? null : rank))
+  }, [])
 
   const load = useCallback(async () => {
     const res = await fetch(
@@ -61,7 +64,7 @@ export function MatchSegmentDrawerContent({
     if (!res.ok) throw new Error(json.error || 'Failed to load segment')
     setData(json as SegmentPayload)
     setArchivedRanks(json.archivedRanks ?? [])
-    setExpandedRanks(new Set([1]))
+    setExpandedRank(1)
   }, [matchId, sequenceNumber])
 
   useEffect(() => {
@@ -241,20 +244,24 @@ export function MatchSegmentDrawerContent({
           if (entry.kind === 'work_on') {
             const item = entry.item
             const isArchived = archivedRanks.includes(item.rank)
-            const expanded = expandedRanks.has(item.rank)
+            const isExpanded = expandedRank === item.rank
             const bar = '#FAC775'
             const pill = rankPillStyle(item.rank)
             return (
               <div
                 key={`wo-${item.rank}`}
+                role="button"
+                tabIndex={0}
                 style={{
                   display: 'flex',
                   opacity: isArchived ? 0.5 : 1,
-                  cursor: item.rank > 1 && !expanded ? 'pointer' : 'default',
+                  cursor: 'pointer',
                 }}
-                onClick={() => {
-                  if (item.rank > 1 && !expanded) {
-                    setExpandedRanks(s => new Set(s).add(item.rank))
+                onClick={() => toggleWorkOn(item.rank)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    toggleWorkOn(item.rank)
                   }
                 }}
               >
@@ -274,18 +281,18 @@ export function MatchSegmentDrawerContent({
                       {item.rank}
                     </span>
                     <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{item.title}</span>
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation()
-                        onJumpTo(data.startSeconds)
+                    <ChevronDown
+                      size={16}
+                      color={brand.muted}
+                      style={{
+                        flexShrink: 0,
+                        transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s ease',
                       }}
-                      style={jumpLinkStyle}
-                    >
-                      Jump to →
-                    </button>
+                      aria-hidden
+                    />
                   </div>
-                  {expanded && (
+                  {isExpanded && (
                     <>
                       <p style={{ fontSize: 12, lineHeight: 1.5, color: brand.sub, margin: '8px 0' }}>
                         {item.observation}
@@ -335,7 +342,7 @@ export function MatchSegmentDrawerContent({
                       </div>
                     </>
                   )}
-                  {!expanded && item.rank > 1 && (
+                  {!isExpanded && (
                     <p
                       style={{
                         fontSize: 12,
@@ -361,19 +368,10 @@ export function MatchSegmentDrawerContent({
                   style={{ width: 3, flexShrink: 0, background: '#1D9E75', borderRadius: 2 }}
                 />
                 <div style={{ flex: 1, paddingLeft: 10 }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
-                      {item.observation.slice(0, 48)}
-                      {item.observation.length > 48 ? '…' : ''}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onJumpTo(data.startSeconds)}
-                      style={jumpLinkStyle}
-                    >
-                      Jump to →
-                    </button>
-                  </div>
+                  <p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>
+                    {item.observation.slice(0, 48)}
+                    {item.observation.length > 48 ? '…' : ''}
+                  </p>
                   <p style={{ fontSize: 12, color: brand.sub, margin: '6px 0 0', lineHeight: 1.5 }}>
                     {item.why_it_worked}
                   </p>
@@ -388,16 +386,7 @@ export function MatchSegmentDrawerContent({
             <div key={`km-${entry.index}`} style={{ display: 'flex' }}>
               <div style={{ width: 3, flexShrink: 0, background: color, borderRadius: 2 }} />
               <div style={{ flex: 1, paddingLeft: 10 }}>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{m.description}</span>
-                  <button
-                    type="button"
-                    onClick={() => onJumpTo(data.startSeconds)}
-                    style={jumpLinkStyle}
-                  >
-                    Jump to →
-                  </button>
-                </div>
+                <p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>{m.description}</p>
                 {keyMomentPhase(m) ? (
                   <span style={{ fontSize: 10, color: brand.muted }}>{keyMomentPhase(m)}</span>
                 ) : null}
@@ -458,16 +447,6 @@ function StatCell({ label, value }: { label: string; value: string }) {
       <p style={{ fontSize: 15, fontWeight: 500, margin: 0 }}>{value}</p>
     </div>
   )
-}
-
-const jumpLinkStyle: CSSProperties = {
-  background: 'none',
-  border: 'none',
-  fontSize: 11,
-  color: brand.tealDarkHex,
-  cursor: 'pointer',
-  padding: 0,
-  flexShrink: 0,
 }
 
 const tealBtn: CSSProperties = {
