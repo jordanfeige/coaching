@@ -8,7 +8,7 @@ import { format } from 'date-fns'
 import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
 import { shouldShowReelAnalysisStepper } from '@/lib/reel-sessions'
 import { setPendingReelVideoFile } from '@/lib/pending-reel'
-import { parseStoragePath } from '@/lib/reel-storage'
+import { signedUrlForReelStorage } from '@/lib/player-reel-video'
 import ViaBlob from '@/components/ViaBlob'
 import { usePageReady } from '@/contexts/PageLoadingContext'
 import AnalysisStepperDialog from '@/components/video/AnalysisStepperDialog'
@@ -105,18 +105,12 @@ async function attachSignedVideoUrls(
   return Promise.all(
     rows.map(async session => {
       if (!session.storage_path || session.source === 'text') return session
-
-      const { bucket, path } = parseStoragePath(session.storage_path)
-      if (!path) return session
-
-      const { data: signed } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(path, 60 * 60 * 24)
-
-      return {
-        ...session,
-        video_url: signed?.signedUrl ?? null,
-      }
+      const video_url = await signedUrlForReelStorage(
+        supabase,
+        session.storage_path,
+        60 * 60 * 24,
+      )
+      return { ...session, video_url }
     }),
   )
 }
@@ -976,6 +970,8 @@ export default function ReelsPage() {
           sessionId={selected.id}
           playerId={player?.id}
           analyzedAt={selected.analyzed_at}
+          videoUrl={selected.video_url}
+          storagePath={selected.storage_path}
           viewMode="re-view"
           existingDrillTitles={existingDrillTitles}
           progressHref="/player/progress"

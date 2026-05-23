@@ -1,7 +1,14 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['@google/generative-ai'],
+  serverExternalPackages: [
+    '@google/generative-ai',
+    '@google-cloud/storage',
+    '@google-cloud/vertexai',
+    '@ffmpeg-installer/ffmpeg',
+    '@ffprobe-installer/ffprobe',
+    'fluent-ffmpeg',
+  ],
   generateBuildId: async () => {
     return `build-${Date.now()}`
   },
@@ -23,7 +30,8 @@ const nextConfig: NextConfig = {
     ]
   },
   experimental: {
-    proxyClientMaxBodySize: '450mb',
+    // Match analysis: video up to 1GB + reference frame in one FormData body
+    proxyClientMaxBodySize: '1100mb',
     serverActions: {
       bodySizeLimit: '10mb',
     },

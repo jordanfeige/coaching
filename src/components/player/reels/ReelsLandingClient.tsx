@@ -46,9 +46,15 @@ type Insight = {
 type Props = {
   recentReels: ReelSummary[]
   hasAnyReels: boolean
+  /** When true, omit page title + Upload/Record (parent shell provides them). */
+  embedded?: boolean
 }
 
-export function ReelsLandingClient({ recentReels, hasAnyReels }: Props) {
+export function ReelsLandingClient({
+  recentReels,
+  hasAnyReels,
+  embedded = false,
+}: Props) {
   const [recordOpen, setRecordOpen] = useState(false)
   const [stats, setStats] = useState<Stats | null>(null)
   const [insight, setInsight] = useState<Insight | null>(null)
@@ -70,7 +76,7 @@ export function ReelsLandingClient({ recentReels, hasAnyReels }: Props) {
 
   usePageReady(statsLoaded)
 
-  if (!hasAnyReels) {
+  if (!hasAnyReels && !embedded) {
     return (
       <>
         <EmptyState onRecord={() => setRecordOpen(true)} />
@@ -81,59 +87,76 @@ export function ReelsLandingClient({ recentReels, hasAnyReels }: Props) {
     )
   }
 
+  if (!hasAnyReels && embedded) {
+    return (
+      <>
+        <EmptyState onRecord={() => setRecordOpen(true)} compact />
+        {recordOpen && (
+          <ReelsRecordModal onClose={() => setRecordOpen(false)} />
+        )}
+      </>
+    )
+  }
+
   return (
     <div
-      style={{
-        padding: '14px 16px 48px',
-        maxWidth: 880,
-        margin: '0 auto',
-      }}
+      style={
+        embedded
+          ? undefined
+          : {
+              padding: '14px 16px 48px',
+              maxWidth: 880,
+              margin: '0 auto',
+            }
+      }
     >
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
-      >
-        <h1
+      {!embedded && (
+        <header
           style={{
-            fontFamily: 'var(--font-serif), Georgia, serif',
-            fontSize: 24,
-            fontWeight: 500,
-            margin: 0,
-            color: '#111',
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            marginBottom: 14,
+            flexWrap: 'wrap',
+            gap: 10,
           }}
         >
-          Reels
-        </h1>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <UploadButton />
-          <button
-            type="button"
-            onClick={() => setRecordOpen(true)}
+          <h1
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              padding: '8px 14px',
-              borderRadius: 99,
-              cursor: 'pointer',
-              background: '#0F6E56',
-              color: 'white',
-              border: '0.5px solid #0F6E56',
+              fontFamily: 'var(--font-serif), Georgia, serif',
+              fontSize: 24,
+              fontWeight: 500,
+              margin: 0,
+              color: '#111',
             }}
           >
-            <Camera size={14} aria-hidden />
-            Record
-          </button>
-        </div>
-      </header>
+            Reels
+          </h1>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <UploadButton />
+            <button
+              type="button"
+              onClick={() => setRecordOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                padding: '8px 14px',
+                borderRadius: 99,
+                cursor: 'pointer',
+                background: '#0F6E56',
+                color: 'white',
+                border: '0.5px solid #0F6E56',
+              }}
+            >
+              <Camera size={14} aria-hidden />
+              Record
+            </button>
+          </div>
+        </header>
+      )}
 
       {stats && (
         <div
@@ -567,11 +590,17 @@ function UploadButton() {
   )
 }
 
-function EmptyState({ onRecord }: { onRecord: () => void }) {
+function EmptyState({
+  onRecord,
+  compact,
+}: {
+  onRecord: () => void
+  compact?: boolean
+}) {
   return (
     <div
       style={{
-        padding: '56px 24px 48px',
+        padding: compact ? '32px 16px' : '56px 24px 48px',
         maxWidth: 520,
         margin: '0 auto',
         textAlign: 'center',

@@ -10,7 +10,13 @@ import { triggerCoachabilitySync } from '@/lib/journey-coachability-trigger'
 export async function assignLibraryDrillToPlayer(
   supabase: SupabaseClient,
   playerId: string,
-  options: { libraryDrillId?: string; customDrillData?: CustomDrillPayload },
+  options: {
+    libraryDrillId?: string
+    customDrillData?: CustomDrillPayload
+    filmRoomMatchChunkId?: string
+    filmRoomMatchId?: string
+    filmRoomWorkOnTitle?: string
+  },
 ): Promise<
   | { success: true; drillId: string; title: string; libraryDrillId: string | null }
   | { success: false; error: string; details?: string }
@@ -95,14 +101,25 @@ export async function assignLibraryDrillToPlayer(
     }
   }
 
+  const insertRow: Record<string, unknown> = {
+    player_id: playerId,
+    title,
+    description,
+    library_drill_id: libraryDrillId,
+  }
+  if (options.filmRoomMatchChunkId) {
+    insertRow.film_room_match_chunk_id = options.filmRoomMatchChunkId
+  }
+  if (options.filmRoomMatchId) {
+    insertRow.film_room_match_id = options.filmRoomMatchId
+  }
+  if (options.filmRoomWorkOnTitle) {
+    insertRow.film_room_work_on_title = options.filmRoomWorkOnTitle
+  }
+
   const { data: assignedDrill, error: assignError } = await supabase
     .from('drills')
-    .insert({
-      player_id: playerId,
-      title,
-      description,
-      library_drill_id: libraryDrillId,
-    })
+    .insert(insertRow)
     .select('id')
     .single()
 

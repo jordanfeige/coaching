@@ -4,10 +4,9 @@ import { topIssueFromFullResult } from '@/lib/reel-insights'
 import { formatReelDisplayTitle } from '@/lib/reel-display'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { getLinkedPlayerIdForUser } from '@/lib/linked-player'
-import {
-  ReelsLandingClient,
-  type ReelSummary,
-} from '@/components/player/reels/ReelsLandingClient'
+import { isFilmRoomEnabled } from '@/lib/film-room/access'
+import { ReelsHomeClient } from '@/components/player/reels/ReelsHomeClient'
+import type { ReelSummary } from '@/components/player/reels/ReelsLandingClient'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,10 +52,13 @@ export default async function ReelsPage() {
     }
   })
 
+  const filmRoomEnabled = isFilmRoomEnabled(user)
+
   return (
-    <ReelsLandingClient
+    <ReelsHomeClient
       recentReels={summaries}
       hasAnyReels={(count ?? 0) > 0}
+      filmRoomEnabled={filmRoomEnabled}
     />
   )
 }

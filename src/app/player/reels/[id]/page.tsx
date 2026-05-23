@@ -5,8 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { getLinkedPlayerRowForUser } from '@/lib/linked-player'
 import { PLAYER_VISIBLE_SESSIONS_FILTER } from '@/lib/analysis-sessions'
-import { parseStoragePath } from '@/lib/reel-storage'
-import { shouldShowReelAnalysisStepper } from '@/lib/reel-sessions'
+import { shouldShowReelAnalysisStepper, isVideoReelSession } from '@/lib/reel-sessions'
+import { signedUrlForReelStorage } from '@/lib/player-reel-video'
 import AnalysisResultStepper, {
   mapAnalysisIssues,
   mapAnalysisStrengths,
@@ -14,6 +14,7 @@ import AnalysisResultStepper, {
 import { analysisScore } from '@/lib/analysis-display'
 import { usePageReady } from '@/contexts/PageLoadingContext'
 import { ReelTitleEditor } from '@/components/player/reels/ReelTitleEditor'
+import { ReelVideoPlayer } from '@/components/player/reels/ReelVideoPlayer'
 import { formatReelDisplayTitle } from '@/lib/reel-display'
 
 type Session = {
@@ -37,6 +38,7 @@ export default function ReelDetailPage() {
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState<Session | null>(null)
   const [playerId, setPlayerId] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [existingDrillTitles, setExistingDrillTitles] = useState<string[]>([])
 
   useEffect(() => {
@@ -77,7 +79,7 @@ export default function ReelDetailPage() {
         return
       }
 
-      setSession({
+      const loaded: Session = {
         id: data.id,
         sport: data.sport,
         title: data.title,
@@ -87,7 +89,13 @@ export default function ReelDetailPage() {
         analyzed_at: data.analyzed_at,
         storage_path: data.storage_path,
         full_result: data.full_result as Record<string, unknown> | null,
-      })
+      }
+      setSession(loaded)
+
+      if (isVideoReelSession(loaded)) {
+        const url = await signedUrlForReelStorage(supabase, loaded.storage_path)
+        setVideoUrl(url)
+      }
 
       const { data: drills } = await supabase
         .from('drills')
@@ -109,23 +117,14 @@ export default function ReelDetailPage() {
 
   if (!session) return null
 
-  if (!shouldShowReelAnalysisStepper(session)) {
-    if (session.storage_path) {
-      const { bucket, path } = parseStoragePath(session.storage_path)
-      if (path) {
-        router.replace(`/player/reels/new?session=${sessionId}`)
-        return null
-      }
-    }
-    router.replace('/player/reels')
-    return null
-  }
-
-  const full = session.full_result ?? {}
-  const issues = mapAnalysisIssues(
-    (full.areas_to_improve ?? full.issues) as unknown[] | undefined,
+  const displayTitle = formatReelDisplayTitle(
+    session.title,
+    session.shot_type,
+    session.sport,
   )
-  const strengths = mapAnalysisStrengths(full.strengths as unknown[] | undefined)
+  const full = session.full_result ?? {}
+  const showStepper = shouldShowReelAnalysisStepper(session)
+  const isVideo = isVideoReelSession(session)
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '16px 16px 48px' }}>
@@ -148,27 +147,92 @@ export default function ReelDetailPage() {
 
       <ReelTitleEditor
         reelId={session.id}
-        initialTitle={formatReelDisplayTitle(
-          session.title,
-          session.shot_type,
-          session.sport,
-        )}
+        initialTitle={displayTitle}
       />
 
-      <AnalysisResultStepper
-        score={analysisScore(full)}
-        sport={session.sport}
-        shotType={session.shot_type ?? undefined}
-        issues={issues}
-        strengths={strengths}
-        sessionId={session.id}
-        playerId={playerId ?? undefined}
-        session={full}
-        analyzedAt={session.analyzed_at}
-        viewMode="re-view"
-        existingDrillTitles={existingDrillTitles}
-        progressHref="/player/progress"
-      />
+      {isVideo && (
+        <ReelVideoPlayer
+          videoUrl={videoUrl}
+          storagePath={session.storage_path}
+          title={displayTitle}
+        />
+      )}
+
+      {showStepper ? (
+        <AnalysisResultStepper
+          score={analysisScore(full)}
+          sport={session.sport}
+          shotType={session.shot_type ?? undefined}
+          issues={mapAnalysisIssues(
+            (full.areas_to_improve ?? full.issues) as unknown[] | undefined,
+          )}
+          strengths={mapAnalysisStrengths(full.strengths as unknown[] | undefined)}
+          sessionId={session.id}
+          playerId={playerId ?? undefined}
+          session={full}
+          analyzedAt={session.analyzed_at}
+          viewMode="re-view"
+          existingDrillTitles={existingDrillTitles}
+          progressHref="/player/progress"
+        />
+      ) : (
+        <ReelLegacySummary session={session} full={full} />
+      )}
+    </div>
+  )
+}
+
+function ReelLegacySummary({
+  session,
+  full,
+}: {
+  session: Session
+  full: Record<string, unknown>
+}) {
+  const summary =
+    (typeof full.via_summary === 'string' && full.via_summary) ||
+    (typeof full.biggest_win === 'string' && full.biggest_win) ||
+    null
+  const issues =
+    (full.areas_to_improve as Array<Record<string, unknown>> | undefined) ?? []
+
+  return (
+    <div style={{ fontFamily: 'system-ui, sans-serif' }}>
+      {session.overall_score != null && (
+        <p style={{ fontSize: 14, color: 'hsl(220,10%,45%)', margin: '0 0 12px' }}>
+          Score: <strong>{session.overall_score}</strong>
+        </p>
+      )}
+      {summary && (
+        <p
+          style={{
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: 'hsl(220,20%,15%)',
+            margin: '0 0 16px',
+          }}
+        >
+          {summary}
+        </p>
+      )}
+      {issues.length > 0 && (
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+          {issues.slice(0, 5).map((item, i) => {
+            const area =
+              typeof item === 'string'
+                ? item
+                : typeof item.area === 'string'
+                  ? item.area
+                  : 'Focus area'
+            return <li key={i}>{area}</li>
+          })}
+        </ul>
+      )}
+      {!summary && issues.length === 0 && (
+        <p style={{ fontSize: 13, color: 'hsl(220,10%,45%)' }}>
+          Analysis details are limited for this reel. Your video is available above.
+        </p>
+      )}
     </div>
   )
 }

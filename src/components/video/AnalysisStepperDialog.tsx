@@ -7,6 +7,7 @@ import AnalysisResultStepper, {
   type CoachReviewConfig,
 } from '@/components/AnalysisResultStepper'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { ReelVideoPlayer } from '@/components/player/reels/ReelVideoPlayer'
 import type { JointMeasurement } from '@/lib/poseAnalysis'
 import { analysisScore, type AnalysisRecord } from '@/lib/analysis-display'
 
@@ -22,6 +23,8 @@ type Props = {
   coachReview?: CoachReviewConfig
   progressHref?: string
   analyzedAt?: string
+  videoUrl?: string | null
+  storagePath?: string | null
   viewMode?: AnalysisViewMode
   existingDrillTitles?: string[]
   onSaved?: () => void
@@ -40,6 +43,8 @@ export default function AnalysisStepperDialog({
   coachReview,
   progressHref,
   analyzedAt,
+  videoUrl,
+  storagePath,
   viewMode = 'first-view',
   existingDrillTitles,
   onSaved,
@@ -48,6 +53,13 @@ export default function AnalysisStepperDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] max-w-md overflow-y-auto p-4 sm:max-w-md">
+        {videoUrl && viewMode === 're-view' && (
+          <ReelVideoPlayer
+            videoUrl={videoUrl}
+            storagePath={storagePath}
+            title={shotType ? `${shotType} reel` : undefined}
+          />
+        )}
         {analysis ? (
           <AnalysisResultStepper
             score={analysisScore(analysis)}

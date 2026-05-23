@@ -1,4 +1,4 @@
-const CACHE_NAME = 'playvia-1779411751102'
+const CACHE_NAME = 'playvia-1779558560601'
 const STATIC_ASSETS = ['/', '/analyze', '/login', '/manifest.json']
 
 self.addEventListener('install', (event) => {
@@ -26,12 +26,14 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
-  if (event.request.url.includes('/api/')) return
-  if (event.request.url.includes('supabase')) return
-  if (event.request.url.includes('googleapis')) return
+  const url = event.request.url
+  if (url.includes('/api/')) return
+  if (url.includes('supabase')) return
+  if (url.includes('googleapis')) return
+  // App routes: never intercept — avoids stale shell + invalid undefined Response on cache miss
+  if (url.includes('/player/') || url.includes('/dashboard/')) return
 
   event.respondWith(
-    // Network first - always try to get fresh content
     fetch(event.request)
       .then((response) => {
         if (response.ok) {
@@ -40,7 +42,10 @@ self.addEventListener('fetch', (event) => {
         }
         return response
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request)
+        return cached ?? Response.error()
+      }),
   )
 })
 
