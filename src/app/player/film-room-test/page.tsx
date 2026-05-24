@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { PlayerIdentifier } from '@/components/match-analysis/PlayerIdentifier'
 import type { PlayerIdentificationPayload } from '@/components/match-analysis/PlayerIdentifier'
 import { brand } from '@/lib/brand'
+import { startFilmRoomProcessing } from '@/lib/film-room/start-processing'
 import { uploadMatchVideoFile } from '@/lib/film-room/upload-match-video'
 import { createClient } from '@/lib/supabase'
 import {
@@ -124,37 +125,21 @@ export default function FilmRoomTestPage() {
     setStep('processing')
     setError(null)
 
+    startFilmRoomProcessing({
+      matchId,
+      referenceFrameDataUrl: id.frameDataUrl,
+      tapXPercent: id.tapXPercent,
+      tapYPercent: id.tapYPercent,
+      frameCapturedAtSeconds: id.capturedAtSeconds,
+      playerDescriptionHint: playerHint.trim() || undefined,
+    })
+
     try {
-      const res = await fetch('/api/film-room/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          matchId,
-          referenceFrameDataUrl: id.frameDataUrl,
-          tapXPercent: id.tapXPercent,
-          tapYPercent: id.tapYPercent,
-          frameCapturedAtSeconds: id.capturedAtSeconds,
-          playerDescriptionHint: playerHint.trim() || undefined,
-        }),
-      })
-
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.error || 'Process failed')
-      }
-
       await fetchMatch(matchId)
       startPolling(matchId)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Process failed')
+      setError(e instanceof Error ? e.message : 'Failed to load match status')
       setStep('done')
-      if (matchId) {
-        try {
-          await fetchMatch(matchId)
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }
 
