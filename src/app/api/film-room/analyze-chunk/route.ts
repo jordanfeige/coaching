@@ -5,7 +5,7 @@ import { analyzeChunk } from '@/lib/film-room/vertex-analyzer'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 900
+export const maxDuration = 800
 
 export async function POST(req: Request) {
   const supabase = await createServerSupabaseClient()

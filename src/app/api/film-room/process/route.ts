@@ -13,7 +13,7 @@ import { analyzeChunk } from '@/lib/film-room/vertex-analyzer'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 900
+export const maxDuration = 800
 
 async function assertMatchOwnership(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
