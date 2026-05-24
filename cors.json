@@ -1,0 +1,1 @@
+[{"origin": ["https://playvia.studio", "https://*.playvia.studio", "http://localhost:3000"], "method": ["GET", "PUT", "POST", "HEAD"], "responseHeader": ["Content-Type", "x-goog-meta-*"], "maxAgeSeconds": 3600}]

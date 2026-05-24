@@ -2,26 +2,18 @@ import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import { isFilmRoomEnabled } from '@/lib/film-room/access'
-import {
-  chunkVideo,
-  probeVideo,
-  cleanupChunkTempDir,
-} from '@/lib/video/chunker'
 import { gcsChunksBucketName } from '@/lib/vertex-ai/client'
-import { uploadChunkToGcs } from '@/lib/film-room/gcs-upload'
 import {
   deleteRawVideoFromGcs,
-  downloadRawVideoToFile,
   isGcsRawStoragePath,
 } from '@/lib/film-room/gcs-raw-video'
+import { getRawMatchVideoSignedUrl } from '@/lib/film-room/raw-video-playback'
+import { streamMatchIntoChunks } from '@/lib/film-room/stream-chunking'
 import { analyzeChunk } from '@/lib/film-room/vertex-analyzer'
-import fs from 'fs/promises'
-import path from 'path'
-import os from 'os'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 900
 
 async function assertMatchOwnership(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
@@ -133,43 +125,27 @@ export async function POST(req: Request) {
     })
     .eq('id', matchId)
 
-  const tempInputDir = await fs.mkdtemp(path.join(os.tmpdir(), 'playvia-input-'))
-  const tempInputPath = path.join(tempInputDir, 'raw.mp4')
-
   try {
-    if (isGcsRawStoragePath(match.raw_video_storage_path)) {
-      await downloadRawVideoToFile(match.raw_video_storage_path, tempInputPath)
-    } else {
-      const { data: rawBlob, error: dlErr } = await supabase.storage
-        .from('match-videos')
-        .download(match.raw_video_storage_path)
-
-      if (dlErr || !rawBlob) {
-        throw new Error('Could not download raw video')
-      }
-
-      await fs.writeFile(tempInputPath, Buffer.from(await rawBlob.arrayBuffer()))
+    const sourceUrl = await getRawMatchVideoSignedUrl(match.raw_video_storage_path)
+    if (!sourceUrl) {
+      throw new Error('Could not create signed URL for raw video')
     }
 
-    const probed = await probeVideo(tempInputPath)
+    const { probed, chunks } = await streamMatchIntoChunks(matchId, sourceUrl, 600)
+
     await supabase
       .from('matches')
       .update({ raw_video_duration_seconds: probed.durationSeconds })
       .eq('id', matchId)
 
-    const chunks = await chunkVideo(tempInputPath, 600)
     const bucketName = gcsChunksBucketName || process.env.GCP_BUCKET_CHUNKS!
 
     for (const chunk of chunks) {
-      const gcsPath = `matches/${matchId}/chunks/chunk-${chunk.sequenceNumber.toString().padStart(3, '0')}.mp4`
-      await uploadChunkToGcs(chunk.localPath, gcsPath)
-
       const thumbStoragePath = `matches/${matchId}/thumbnails/thumb-${chunk.sequenceNumber.toString().padStart(3, '0')}.jpg`
-      const thumbBuffer = await fs.readFile(chunk.thumbnailLocalPath)
 
       const { error: thumbErr } = await supabaseAdmin.storage
         .from('match-videos')
-        .upload(thumbStoragePath, thumbBuffer, {
+        .upload(thumbStoragePath, chunk.thumbnailBuffer, {
           contentType: 'image/jpeg',
           upsert: true,
         })
@@ -187,8 +163,8 @@ export async function POST(req: Request) {
           end_seconds: chunk.endSeconds,
           duration_seconds: chunk.durationSeconds,
           gcs_bucket: bucketName,
-          gcs_path: gcsPath,
-          gcs_uri: `gs://${bucketName}/${gcsPath}`,
+          gcs_path: chunk.gcsPath,
+          gcs_uri: `gs://${bucketName}/${chunk.gcsPath}`,
           size_bytes: chunk.sizeBytes,
           thumbnail_storage_path: thumbStoragePath,
         })
@@ -197,9 +173,6 @@ export async function POST(req: Request) {
         throw new Error(chunkInsertErr.message)
       }
     }
-
-    await cleanupChunkTempDir(chunks)
-    await fs.rm(tempInputDir, { recursive: true, force: true })
 
     if (isGcsRawStoragePath(match.raw_video_storage_path)) {
       await deleteRawVideoFromGcs(match.raw_video_storage_path)
@@ -259,12 +232,6 @@ export async function POST(req: Request) {
       .from('matches')
       .update({ status: 'failed', status_error: message })
       .eq('id', matchId)
-
-    try {
-      await fs.rm(tempInputDir, { recursive: true, force: true })
-    } catch {
-      /* ignore cleanup errors */
-    }
 
     return NextResponse.json({ error: message }, { status: 500 })
   }
