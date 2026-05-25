@@ -17,6 +17,7 @@ export async function runMatchProcessing(
   matchId: string,
   supabase: SupabaseClient,
 ): Promise<{ chunkCount: number }> {
+  console.log('[worker] runMatchProcessing: load match', { matchId })
   const supabaseAdmin = createSupabaseAdminClient()
 
   const { data: match, error: fetchErr } = await supabaseAdmin
@@ -26,19 +27,32 @@ export async function runMatchProcessing(
     .single()
 
   if (fetchErr || !match) {
+    console.error('[worker] runMatchProcessing: match not found', { matchId, fetchErr })
     throw new Error('Match not found')
   }
 
   if (!match.raw_video_storage_path) {
+    console.error('[worker] runMatchProcessing: no raw video path', { matchId })
     throw new Error('Raw video not uploaded yet')
   }
 
+  console.log('[worker] runMatchProcessing: signing raw video URL', {
+    matchId,
+    rawPath: match.raw_video_storage_path,
+  })
   const sourceUrl = await getRawMatchVideoSignedUrl(match.raw_video_storage_path)
   if (!sourceUrl) {
+    console.error('[worker] runMatchProcessing: signed URL failed', { matchId })
     throw new Error('Could not create signed URL for raw video')
   }
 
+  console.log('[worker] runMatchProcessing: streamMatchIntoChunks starting', { matchId })
   const { probed, chunks } = await streamMatchIntoChunks(matchId, sourceUrl, 600)
+  console.log('[worker] runMatchProcessing: streamMatchIntoChunks done', {
+    matchId,
+    durationSeconds: probed.durationSeconds,
+    chunkCount: chunks.length,
+  })
 
   await supabase
     .from('matches')
@@ -46,6 +60,11 @@ export async function runMatchProcessing(
     .eq('id', matchId)
 
   const bucketName = gcsChunksBucketName || process.env.GCP_BUCKET_CHUNKS!
+  console.log('[worker] runMatchProcessing: persisting chunks', {
+    matchId,
+    chunkCount: chunks.length,
+    bucketName,
+  })
 
   for (const chunk of chunks) {
     const thumbStoragePath = `matches/${matchId}/thumbnails/thumb-${chunk.sequenceNumber.toString().padStart(3, '0')}.jpg`
@@ -81,6 +100,7 @@ export async function runMatchProcessing(
     }
   }
 
+  console.log('[worker] runMatchProcessing: deleting raw video', { matchId })
   if (isGcsRawStoragePath(match.raw_video_storage_path)) {
     await deleteRawVideoFromGcs(match.raw_video_storage_path)
   } else {
@@ -89,6 +109,7 @@ export async function runMatchProcessing(
       .remove([match.raw_video_storage_path])
   }
 
+  console.log('[worker] runMatchProcessing: status -> chunks_ready', { matchId })
   await supabase
     .from('matches')
     .update({
@@ -98,6 +119,7 @@ export async function runMatchProcessing(
     })
     .eq('id', matchId)
 
+  console.log('[worker] runMatchProcessing: status -> analyzing_first', { matchId })
   await supabase
     .from('matches')
     .update({ status: 'analyzing_first' })
@@ -111,13 +133,24 @@ export async function runMatchProcessing(
     .single()
 
   if (firstChunk) {
+    console.log('[worker] runMatchProcessing: analyzeChunk(0) starting', {
+      matchId,
+      chunkId: firstChunk.id,
+    })
     try {
       await analyzeChunk(firstChunk.id)
+      console.log('[worker] runMatchProcessing: analyzeChunk(0) done', { matchId })
     } catch (analyzeErr) {
-      console.error('[film-room/process-worker] First chunk analysis failed:', analyzeErr)
+      console.error('[worker] runMatchProcessing: analyzeChunk(0) failed', {
+        matchId,
+        err: analyzeErr,
+      })
     }
+  } else {
+    console.log('[worker] runMatchProcessing: no chunk 0 to analyze', { matchId })
   }
 
+  console.log('[worker] runMatchProcessing: status -> ready', { matchId })
   await supabase
     .from('matches')
     .update({

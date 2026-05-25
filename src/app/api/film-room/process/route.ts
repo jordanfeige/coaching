@@ -1,8 +1,9 @@
+import { after } from 'next/server'
 import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import { isFilmRoomEnabled } from '@/lib/film-room/access'
-import { getWorkerSecret } from '@/lib/film-room/app-url'
+import { getRequestOrigin, getWorkerSecret } from '@/lib/film-room/app-url'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -26,21 +27,73 @@ async function assertMatchOwnership(
   return true
 }
 
-function dispatchProcessWorker(matchId: string, requestUrl: string): void {
-  const origin = new URL(requestUrl).origin
-  const secret = getWorkerSecret()
-  const url = `${origin}/api/film-room/process-worker`
+async function runProcessWorker(
+  matchId: string,
+  origin: string,
+  supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>,
+): Promise<void> {
+  console.log('[process] runProcessWorker started', { matchId, origin })
 
-  void fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-worker-secret': secret,
-    },
-    body: JSON.stringify({ matchId }),
-  }).catch(err => {
-    console.error('[film-room/process] Worker dispatch failed:', err)
-  })
+  let secret: string
+  try {
+    secret = getWorkerSecret()
+    console.log('[process] WORKER_SECRET resolved', {
+      matchId,
+      secretLength: secret.length,
+    })
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'WORKER_SECRET is not configured'
+    console.error('[process] WORKER_SECRET missing', { matchId, message })
+    await supabaseAdmin
+      .from('matches')
+      .update({ status: 'failed', status_error: message })
+      .eq('id', matchId)
+    return
+  }
+
+  const workerUrl = `${origin}/api/film-room/process-worker`
+  console.log('[process] Firing worker fetch to:', workerUrl, { matchId })
+
+  try {
+    const res = await fetch(workerUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-worker-secret': secret,
+      },
+      body: JSON.stringify({ matchId }),
+    })
+    const bodyText = await res.text()
+    console.log('[process] Worker fetch returned:', res.status, bodyText)
+
+    if (!res.ok) {
+      let message = `Background worker failed (${res.status})`
+      try {
+        const data = JSON.parse(bodyText) as { error?: string }
+        if (data.error) message = data.error
+      } catch {
+        if (bodyText) message = bodyText.slice(0, 500)
+      }
+      await supabaseAdmin
+        .from('matches')
+        .update({ status: 'failed', status_error: message })
+        .eq('id', matchId)
+      console.error('[process] Worker non-OK response', { matchId, status: res.status, message })
+    }
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Background worker dispatch failed'
+    console.error(
+      '[process] Worker fetch FAILED:',
+      err instanceof Error ? err.message : err,
+      err instanceof Error ? err.stack : undefined,
+    )
+    await supabaseAdmin
+      .from('matches')
+      .update({ status: 'failed', status_error: `Worker fetch failed: ${message}` })
+      .eq('id', matchId)
+  }
 }
 
 export async function POST(req: Request) {
@@ -136,7 +189,7 @@ export async function POST(req: Request) {
     .eq('id', matchId)
 
   try {
-    dispatchProcessWorker(matchId, req.url)
+    getWorkerSecret()
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'Could not start background worker'
@@ -146,6 +199,10 @@ export async function POST(req: Request) {
       .eq('id', matchId)
     return NextResponse.json({ error: message }, { status: 500 })
   }
+
+  const origin = getRequestOrigin(req)
+  console.log('[process] Scheduling worker via after()', { matchId, origin })
+  after(() => runProcessWorker(matchId, origin, supabaseAdmin))
 
   return NextResponse.json({ status: 'processing', matchId })
 }
