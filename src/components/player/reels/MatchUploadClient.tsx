@@ -1,11 +1,17 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { PlayerIdentifier } from '@/components/match-analysis/PlayerIdentifier'
 import type { PlayerIdentificationPayload } from '@/components/match-analysis/PlayerIdentifier'
+import { UploadProgress } from '@/components/player/reels/film-room/UploadProgress'
 import { brand } from '@/lib/brand'
+import type { FilmRoomMatchDetail } from '@/lib/film-room/types'
+import {
+  deriveUploadPipelineStep,
+  type UploadPipelineStep,
+} from '@/lib/film-room/upload-progress'
 import { uploadMatchVideoFile } from '@/lib/film-room/upload-match-video'
 import { createClient } from '@/lib/supabase'
 import {
@@ -13,12 +19,23 @@ import {
   MAX_MATCH_VIDEO_LABEL,
 } from '@/lib/match-analysis/limits'
 
-type Step = 'metadata' | 'identify' | 'uploading'
+type FormStep = 'metadata' | 'identify' | 'progress'
 
-export function MatchUploadClient() {
+const POLL_MS = 5000
+
+type Props = {
+  initialMatchId?: string | null
+}
+
+export function MatchUploadClient({ initialMatchId = null }: Props) {
   const router = useRouter()
   const abortRef = useRef<AbortController | null>(null)
-  const [step, setStep] = useState<Step>('metadata')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [formStep, setFormStep] = useState<FormStep>(
+    initialMatchId ? 'progress' : 'metadata',
+  )
+  const [matchId, setMatchId] = useState<string | null>(initialMatchId)
   const [file, setFile] = useState<File | null>(null)
   const [opponentName, setOpponentName] = useState('')
   const [matchContext, setMatchContext] = useState('')
@@ -27,11 +44,103 @@ export function MatchUploadClient() {
   )
   const [playerHint, setPlayerHint] = useState('')
   const [uploadPct, setUploadPct] = useState<number | null>(null)
+  const [uploadComplete, setUploadComplete] = useState(Boolean(initialMatchId))
+  const [pipelineStep, setPipelineStep] = useState<UploadPipelineStep>(
+    initialMatchId ? 'chunking' : 'uploading',
+  )
+  const [statusError, setStatusError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  function cancel() {
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
+  const fetchMatchStatus = useCallback(async (id: string) => {
+    const res = await fetch(`/api/film-room/match/${id}`)
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to load match')
+    return data as FilmRoomMatchDetail
+  }, [])
+
+  const applyMatchStatus = useCallback(
+    (match: FilmRoomMatchDetail) => {
+      const firstChunk = match.match_chunks.find(c => c.sequence_number === 0)
+      const step = deriveUploadPipelineStep(match.status, {
+        uploadComplete,
+        firstChunkStatus: firstChunk?.analysis_status ?? null,
+      })
+      setPipelineStep(step)
+      setStatusError(match.status_error)
+
+      if (step === 'ready') {
+        stopPolling()
+        router.replace(`/player/reels/match/${match.id}`)
+      }
+      if (step === 'failed') {
+        stopPolling()
+      }
+    },
+    [router, stopPolling, uploadComplete],
+  )
+
+  const startPolling = useCallback(
+    (id: string) => {
+      stopPolling()
+      const tick = () => {
+        fetchMatchStatus(id)
+          .then(applyMatchStatus)
+          .catch(e => {
+            setError(e instanceof Error ? e.message : 'Failed to refresh status')
+          })
+      }
+      tick()
+      pollRef.current = setInterval(tick, POLL_MS)
+    },
+    [applyMatchStatus, fetchMatchStatus, stopPolling],
+  )
+
+  useEffect(() => {
+    if (!initialMatchId) return
+    setMatchId(initialMatchId)
+    setFormStep('progress')
+    setUploadComplete(true)
+    fetchMatchStatus(initialMatchId)
+      .then(applyMatchStatus)
+      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load match'))
+    startPolling(initialMatchId)
+    return () => stopPolling()
+  }, [initialMatchId, applyMatchStatus, fetchMatchStatus, startPolling, stopPolling])
+
+  useEffect(() => () => stopPolling(), [stopPolling])
+
+  function goToMatchFilm() {
+    stopPolling()
+    router.push('/player/reels?tab=match-film')
+  }
+
+  async function cancelUpload() {
+    if (
+      matchId &&
+      !window.confirm(
+        'Cancel this upload? The match and any partial processing will be deleted.',
+      )
+    ) {
+      return
+    }
     abortRef.current?.abort()
+    stopPolling()
+
+    if (matchId) {
+      try {
+        await fetch(`/api/film-room/match/${matchId}`, { method: 'DELETE' })
+      } catch {
+        /* ignore */
+      }
+    }
     router.push('/player/reels?tab=match-film')
   }
 
@@ -40,13 +149,16 @@ export function MatchUploadClient() {
 
     setBusy(true)
     setError(null)
-    setStep('uploading')
+    setFormStep('progress')
     setUploadPct(0)
+    setUploadComplete(false)
+    setPipelineStep('uploading')
+    setStatusError(null)
     abortRef.current = new AbortController()
 
     try {
       const supabase = createClient()
-      const { matchId } = await uploadMatchVideoFile(
+      const { matchId: newMatchId } = await uploadMatchVideoFile(
         supabase,
         file,
         {
@@ -59,11 +171,16 @@ export function MatchUploadClient() {
         pct => setUploadPct(pct),
       )
 
+      setMatchId(newMatchId)
+      setUploadComplete(true)
+      setUploadPct(100)
+      setPipelineStep('chunking')
+
       const processRes = await fetch('/api/film-room/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          matchId,
+          matchId: newMatchId,
           referenceFrameDataUrl: id.frameDataUrl,
           tapXPercent: id.tapXPercent,
           tapYPercent: id.tapYPercent,
@@ -78,17 +195,17 @@ export function MatchUploadClient() {
         throw new Error(data.error || 'Processing failed to start')
       }
 
-      router.push(`/player/reels/match/${matchId}`)
+      startPolling(newMatchId)
     } catch (e) {
       if (e instanceof Error && e.message === 'Upload cancelled') {
-        setStep('metadata')
+        setFormStep('metadata')
         return
       }
       setError(e instanceof Error ? e.message : 'Upload failed')
-      setStep('identify')
+      setFormStep('identify')
+      stopPolling()
     } finally {
       setBusy(false)
-      setUploadPct(null)
     }
   }
 
@@ -109,7 +226,7 @@ export function MatchUploadClient() {
           margin: '16px 0 8px',
         }}
       >
-        Upload match
+        {formStep === 'progress' ? 'Processing match' : 'Upload match'}
       </h1>
 
       {error && (
@@ -127,7 +244,7 @@ export function MatchUploadClient() {
         </p>
       )}
 
-      {step === 'metadata' && (
+      {formStep === 'metadata' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <label style={{ fontSize: 13 }}>
             Match video
@@ -190,7 +307,7 @@ export function MatchUploadClient() {
           <button
             type="button"
             disabled={!file || busy}
-            onClick={() => setStep('identify')}
+            onClick={() => setFormStep('identify')}
             style={{
               padding: '10px 18px',
               borderRadius: 99,
@@ -205,7 +322,7 @@ export function MatchUploadClient() {
           </button>
           <button
             type="button"
-            onClick={cancel}
+            onClick={goToMatchFilm}
             style={{
               background: 'none',
               border: 'none',
@@ -220,7 +337,7 @@ export function MatchUploadClient() {
         </div>
       )}
 
-      {step === 'identify' && file && (
+      {formStep === 'identify' && file && (
         <div>
           <p style={{ fontSize: 13, marginBottom: 12 }}>
             Tap yourself in the reference frame.
@@ -229,7 +346,7 @@ export function MatchUploadClient() {
           {!busy && (
             <button
               type="button"
-              onClick={() => setStep('metadata')}
+              onClick={() => setFormStep('metadata')}
               style={{
                 marginTop: 12,
                 background: 'none',
@@ -245,29 +362,67 @@ export function MatchUploadClient() {
         </div>
       )}
 
-      {step === 'uploading' && (
-        <div style={{ marginTop: 24 }}>
-          <p style={{ fontSize: 14, fontWeight: 600 }}>
-            Uploading your match…
-            {uploadPct != null ? ` ${uploadPct}%` : ''}
-          </p>
-          <p style={{ fontSize: 12, color: brand.muted, marginTop: 8 }}>
-            Then we&apos;ll split it into segments and analyze the first one.
-          </p>
-          <button
-            type="button"
-            onClick={cancel}
+      {formStep === 'progress' && (
+        <div style={{ marginTop: 8 }}>
+          <UploadProgress
+            currentStep={pipelineStep}
+            uploadPercent={uploadPct}
+            statusError={statusError}
+          />
+
+          <p
             style={{
-              marginTop: 16,
-              background: 'none',
-              border: 'none',
-              color: brand.muted,
               fontSize: 12,
-              cursor: 'pointer',
+              color: brand.muted,
+              lineHeight: 1.55,
+              margin: '16px 0 0',
+              padding: '12px 14px',
+              background: brand.tealTint,
+              borderRadius: 10,
             }}
           >
-            Cancel
-          </button>
+            You can leave this page — we&apos;ll notify you when your match is ready.
+          </p>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              marginTop: 20,
+            }}
+          >
+            <button
+              type="button"
+              onClick={goToMatchFilm}
+              style={{
+                padding: '10px 18px',
+                borderRadius: 99,
+                border: 'none',
+                background: brand.tealDarkHex,
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              Go to Match Film
+            </button>
+            <button
+              type="button"
+              onClick={cancelUpload}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: brand.muted,
+                fontSize: 12,
+                cursor: 'pointer',
+                textAlign: 'center',
+              }}
+            >
+              Cancel upload
+            </button>
+          </div>
         </div>
       )}
     </div>

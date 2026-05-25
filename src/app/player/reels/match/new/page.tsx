@@ -5,7 +5,11 @@ import { MatchUploadClient } from '@/components/player/reels/MatchUploadClient'
 
 export const dynamic = 'force-dynamic'
 
-export default async function MatchUploadPage() {
+export default async function MatchUploadPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ matchId?: string }>
+}) {
   const supabase = await createServerSupabaseClient()
   const {
     data: { user },
@@ -17,5 +21,7 @@ export default async function MatchUploadPage() {
     redirect('/player/reels')
   }
 
-  return <MatchUploadClient />
+  const { matchId } = await searchParams
+
+  return <MatchUploadClient initialMatchId={matchId ?? null} />
 }

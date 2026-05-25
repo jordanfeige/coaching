@@ -1,5 +1,6 @@
 'use client'
 
+import { Toaster } from 'sonner'
 import AppLoadingRoot from '@/components/navigation/AppLoadingRoot'
 import { AskViaProvider } from '@/components/player/ask-via/AskViaContext'
 
@@ -10,7 +11,10 @@ export default function PlayerLayoutProviders({
 }) {
   return (
     <AppLoadingRoot>
-      <AskViaProvider>{children}</AskViaProvider>
+      <AskViaProvider>
+        {children}
+        <Toaster richColors position="top-center" />
+      </AskViaProvider>
     </AppLoadingRoot>
   )
 }
