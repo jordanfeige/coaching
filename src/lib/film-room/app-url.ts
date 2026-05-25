@@ -12,9 +12,12 @@ export function getAppBaseUrl(): string {
 }
 
 export function getWorkerSecret(): string {
-  const secret = process.env.WORKER_SECRET
+  // Bracket access: read at runtime (not inlined empty at build when var was missing during `next build`).
+  const secret = process.env['WORKER_SECRET']?.trim()
   if (!secret) {
-    throw new Error('WORKER_SECRET is not configured')
+    throw new Error(
+      'WORKER_SECRET is not configured. Add it to .env.local and restart `npm run dev`, or set it in Vercel for Production and Preview, then redeploy.',
+    )
   }
   return secret
 }

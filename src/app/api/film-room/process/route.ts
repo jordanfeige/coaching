@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase-server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
 import { isFilmRoomEnabled } from '@/lib/film-room/access'
-import { getAppBaseUrl, getWorkerSecret } from '@/lib/film-room/app-url'
+import { getWorkerSecret } from '@/lib/film-room/app-url'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -26,10 +26,10 @@ async function assertMatchOwnership(
   return true
 }
 
-function dispatchProcessWorker(matchId: string): void {
-  const baseUrl = getAppBaseUrl()
+function dispatchProcessWorker(matchId: string, requestUrl: string): void {
+  const origin = new URL(requestUrl).origin
   const secret = getWorkerSecret()
-  const url = `${baseUrl}/api/film-room/process-worker`
+  const url = `${origin}/api/film-room/process-worker`
 
   void fetch(url, {
     method: 'POST',
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
     .eq('id', matchId)
 
   try {
-    dispatchProcessWorker(matchId)
+    dispatchProcessWorker(matchId, req.url)
   } catch (err) {
     const message =
       err instanceof Error ? err.message : 'Could not start background worker'
