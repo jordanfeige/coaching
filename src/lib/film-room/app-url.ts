@@ -1,3 +1,16 @@
+/** Origin for the incoming request (proxy-aware; use for same-deployment worker fan-out). */
+export function getRequestOrigin(req: Request): string {
+  const forwardedHost = req.headers.get('x-forwarded-host')
+  const host = forwardedHost ?? req.headers.get('host')
+  if (host) {
+    const proto =
+      req.headers.get('x-forwarded-proto') ??
+      (host.includes('localhost') ? 'http' : 'https')
+    return `${proto}://${host}`.replace(/\/$/, '')
+  }
+  return new URL(req.url).origin
+}
+
 /** Base URL for server-side callbacks (worker fan-out, cron, etc.). */
 export function getAppBaseUrl(): string {
   const explicit =

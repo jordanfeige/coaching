@@ -31,6 +31,7 @@ export function MatchUploadClient({ initialMatchId = null }: Props) {
   const router = useRouter()
   const abortRef = useRef<AbortController | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollingMatchIdRef = useRef<string | null>(null)
 
   const [formStep, setFormStep] = useState<FormStep>(
     initialMatchId ? 'progress' : 'metadata',
@@ -60,6 +61,7 @@ export function MatchUploadClient({ initialMatchId = null }: Props) {
       clearInterval(pollRef.current)
       pollRef.current = null
     }
+    pollingMatchIdRef.current = null
   }, [])
 
   const fetchMatchStatus = useCallback(async (id: string) => {
@@ -92,7 +94,9 @@ export function MatchUploadClient({ initialMatchId = null }: Props) {
 
   const startPolling = useCallback(
     (id: string) => {
+      if (pollingMatchIdRef.current === id && pollRef.current !== null) return
       stopPolling()
+      pollingMatchIdRef.current = id
       const tick = () => {
         fetchMatchStatus(id)
           .then(applyMatchStatus)
