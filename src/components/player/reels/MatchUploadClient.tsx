@@ -51,6 +51,9 @@ export function MatchUploadClient({ initialMatchId = null }: Props) {
   const [statusError, setStatusError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const uploadCompleteRef = useRef(uploadComplete)
+
+  uploadCompleteRef.current = uploadComplete
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -70,7 +73,7 @@ export function MatchUploadClient({ initialMatchId = null }: Props) {
     (match: FilmRoomMatchDetail) => {
       const firstChunk = match.match_chunks.find(c => c.sequence_number === 0)
       const step = deriveUploadPipelineStep(match.status, {
-        uploadComplete,
+        uploadComplete: uploadCompleteRef.current,
         firstChunkStatus: firstChunk?.analysis_status ?? null,
       })
       setPipelineStep(step)
@@ -84,7 +87,7 @@ export function MatchUploadClient({ initialMatchId = null }: Props) {
         stopPolling()
       }
     },
-    [router, stopPolling, uploadComplete],
+    [router, stopPolling],
   )
 
   const startPolling = useCallback(
@@ -113,7 +116,9 @@ export function MatchUploadClient({ initialMatchId = null }: Props) {
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load match'))
     startPolling(initialMatchId)
     return () => stopPolling()
-  }, [initialMatchId, applyMatchStatus, fetchMatchStatus, startPolling, stopPolling])
+    // Resume polling for a specific match from URL — not when callbacks are recreated.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMatchId])
 
   useEffect(() => () => stopPolling(), [stopPolling])
 

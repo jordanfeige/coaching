@@ -86,6 +86,11 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const drawerPushed = useRef(false)
   const [batchBusy, setBatchBusy] = useState(false)
+  const analyzingIdsRef = useRef(analyzingIds)
+  const batchBusyRef = useRef(batchBusy)
+
+  analyzingIdsRef.current = analyzingIds
+  batchBusyRef.current = batchBusy
 
   const fetchMatch = useCallback(async () => {
     const res = await fetch(`/api/film-room/match/${matchId}`)
@@ -144,7 +149,7 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
           const anyServerAnalyzing = m.match_chunks.some(
             c => c.analysis_status === 'analyzing',
           )
-          if (!anyServerAnalyzing && !batchBusy) {
+          if (!anyServerAnalyzing && !batchBusyRef.current) {
             setAnalyzingIds(prev => {
               const next = new Set(prev)
               for (const c of m.match_chunks) {
@@ -161,7 +166,11 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
           const anyPendingActive = m.match_chunks.some(
             c => c.analysis_status === 'analyzing',
           )
-          if (!anyPendingActive && analyzingIds.size === 0 && !batchBusy) {
+          if (
+            !anyPendingActive &&
+            analyzingIdsRef.current.size === 0 &&
+            !batchBusyRef.current
+          ) {
             if (pollRef.current) {
               clearInterval(pollRef.current)
               pollRef.current = null
@@ -174,7 +183,7 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
     if (pollRef.current) return
     tick()
     pollRef.current = setInterval(tick, POLL_MS)
-  }, [fetchMatch, loadSynthesis, analyzingIds.size, batchBusy])
+  }, [fetchMatch, loadSynthesis])
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -184,8 +193,10 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
     fetchMatch()
       .then(m => {
+        if (cancelled) return
         if (m.status === 'ready' && countAnalyzed(m.match_chunks) >= 2) {
           loadSynthesis().catch(() => {})
         }
@@ -193,17 +204,29 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
           startPolling()
         }
       })
-      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load'))
-    return () => stopPolling()
-  }, [fetchMatch, loadSynthesis, startPolling, stopPolling])
+      .catch(e => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Failed to load')
+        }
+      })
+    return () => {
+      cancelled = true
+      stopPolling()
+    }
+    // Initial load only — avoid refetch storm when polling callbacks are recreated.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchId])
 
   useEffect(() => {
-    if (!match || !PROCESSING.has(match.status)) return
-    startPolling()
-    return () => {
-      if (!batchBusy && analyzingIds.size === 0) stopPolling()
+    if (!match || !PROCESSING.has(match.status)) {
+      stopPolling()
+      return
     }
-  }, [match?.status, startPolling, stopPolling, analyzingIds.size, batchBusy])
+    startPolling()
+    return stopPolling
+    // startPolling/stopPolling are stable; only react to pipeline status changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match?.status, matchId])
 
   const openDrawer = useCallback((seq: number) => {
     setDrawerSeq(seq)

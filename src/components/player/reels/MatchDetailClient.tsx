@@ -49,6 +49,13 @@ export function MatchDetailClient({ matchId }: { matchId: string }) {
     return data as FilmRoomMatchDetail
   }, [matchId])
 
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     fetchMatch().catch(e => {
       setError(e instanceof Error ? e.message : 'Failed to load')
@@ -57,16 +64,17 @@ export function MatchDetailClient({ matchId }: { matchId: string }) {
 
   useEffect(() => {
     if (!match || !PROCESSING_STATUSES.has(match.status)) {
-      if (pollRef.current) clearInterval(pollRef.current)
+      stopPolling()
       return
     }
-    pollRef.current = setInterval(() => {
+    stopPolling()
+    const tick = () => {
       fetchMatch().catch(() => {})
-    }, 3000)
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [match?.status, fetchMatch])
+    tick()
+    pollRef.current = setInterval(tick, 3000)
+    return stopPolling
+  }, [match?.status, matchId, fetchMatch, stopPolling])
 
   const selectedChunk =
     match?.match_chunks?.find(c => c.sequence_number === selectedSeq) ??
