@@ -52,8 +52,6 @@ const PLATFORM = [
   },
 ]
 
-const SPORTS = ['Tennis', 'Golf', 'Basketball', 'Pickleball', 'Baseball']
-
 const PROBLEMS = [
   'Who was moving?',
   'How much did each player hit?',
@@ -511,48 +509,6 @@ export default function LandingPage() {
           >
             <CoachRosterMock />
           </div>
-        </div>
-      </section>
-
-      {/* MULTI-SPORT */}
-      <section className="landing-section" style={{ textAlign: 'center' }}>
-        <h2 className="landing-h2" style={{ marginBottom: 14 }}>
-          One intelligence platform. Any sport.
-        </h2>
-        <p className="landing-lead" style={{ maxWidth: 520, margin: '0 auto 32px' }}>
-          The intelligence layer adapts to the sport. The coaching context stays
-          specific to the athlete.
-        </p>
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'center',
-            gap: 10,
-          }}
-        >
-          {SPORTS.map(sport => (
-            <div
-              key={sport}
-              style={{
-                minWidth: 120,
-                padding: '16px 20px',
-                borderRadius: 12,
-                border: `1px solid ${landing.border}`,
-                background: landing.surface,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: landing.ink,
-                }}
-              >
-                {sport}
-              </div>
-            </div>
-          ))}
         </div>
       </section>
 
