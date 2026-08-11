@@ -10,6 +10,12 @@ import {
   formatMatchDate,
 } from '@/lib/film-room/format'
 import type { FilmRoomMatchSummary } from '@/lib/film-room/types'
+import {
+  isMatchStillProcessing,
+  matchProcessingPillLabel,
+} from '@/lib/film-room/upload-progress'
+import { useFilmRoomMatchRealtime } from '@/lib/film-room/use-film-room-match-realtime'
+import { createClient } from '@/lib/supabase'
 
 const BORDER = brand.border
 
@@ -19,20 +25,50 @@ function statusPill(match: FilmRoomMatchSummary) {
   if (status === 'failed') {
     return { label: 'Failed', bg: '#FBEAF0', color: '#993556' }
   }
-  if (status === 'uploading' || status === 'chunking') {
-    return { label: 'Uploading…', bg: brand.warmTint, color: brand.warm }
-  }
-  if (status === 'chunks_ready' || status === 'analyzing_first') {
-    return { label: 'Processing', bg: brand.warmTint, color: brand.warm }
+  if (isMatchStillProcessing(status)) {
+    return {
+      label: matchProcessingPillLabel(status),
+      bg: brand.warmTint,
+      color: brand.warm,
+    }
   }
   if (status === 'ready') {
+    if (analyzed_count === 0) {
+      return { label: 'Ready to analyze', bg: brand.tealTint, color: brand.tealDarkHex }
+    }
     return {
-      label: `${analyzed_count} of ${chunk_count} analyzed`,
+      label: analyzed_count >= 2 ? 'Coach take ready' : `${analyzed_count} of ${chunk_count} analyzed`,
       bg: brand.tealTint,
       color: brand.tealDarkHex,
     }
   }
   return { label: status, bg: brand.lineSoft, color: brand.sub }
+}
+
+function cardSubtitle(match: FilmRoomMatchSummary): string {
+  if (isMatchStillProcessing(match.status)) {
+    return 'Tap to see progress — you can leave and come back'
+  }
+  if (match.status === 'failed') {
+    return match.status_error || 'Processing failed'
+  }
+  if (match.status === 'ready' && match.analyzed_count === 0) {
+    return 'Analyze your first segment'
+  }
+  if (match.status === 'ready' && match.analyzed_count < 2) {
+    return 'One more segment unlocks your coach take'
+  }
+  const duration = formatDurationLong(match.raw_video_duration_seconds)
+  const bits = [duration]
+  if (match.chunk_count > 0) bits.push(`${match.chunk_count} segments`)
+  return bits.filter(Boolean).join(' · ')
+}
+
+function matchHref(match: FilmRoomMatchSummary): string {
+  if (isMatchStillProcessing(match.status) || match.status === 'failed') {
+    return `/player/reels/match/new?matchId=${match.id}`
+  }
+  return `/player/reels/match/${match.id}`
 }
 
 function MatchCard({
@@ -48,6 +84,7 @@ function MatchCard({
     ? `vs ${match.opponent_name}`
     : 'Untitled match'
   const dateLabel = formatMatchDate(match.match_date, match.created_at)
+  const href = matchHref(match)
 
   async function handleDelete(e: React.MouseEvent) {
     e.stopPropagation()
@@ -65,10 +102,10 @@ function MatchCard({
     <div
       role="button"
       tabIndex={0}
-      onClick={() => router.push(`/player/reels/match/${match.id}`)}
+      onClick={() => router.push(href)}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') {
-          router.push(`/player/reels/match/${match.id}`)
+          router.push(href)
         }
       }}
       style={{
@@ -116,7 +153,7 @@ function MatchCard({
               color: 'rgba(255,255,255,0.6)',
             }}
           >
-            {match.status === 'uploading' || match.status === 'chunking' ? '…' : '—'}
+            {isMatchStillProcessing(match.status) ? '…' : '—'}
           </div>
         )}
         {match.raw_video_duration_seconds != null && (
@@ -189,9 +226,8 @@ function MatchCard({
             </button>
           </div>
         </div>
-        <div style={{ fontSize: 11, color: brand.muted }}>
-          {formatDurationLong(match.raw_video_duration_seconds)}
-          {match.chunk_count > 0 ? ` · ${match.chunk_count} chunks` : ''}
+        <div style={{ fontSize: 11, color: brand.muted, lineHeight: 1.4 }}>
+          {cardSubtitle(match)}
         </div>
       </div>
     </div>
@@ -202,6 +238,7 @@ export function MatchFilmTab() {
   const [matches, setMatches] = useState<FilmRoomMatchSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [playerId, setPlayerId] = useState<string | null>(null)
 
   const loadMatches = useCallback(() => {
     setLoading(true)
@@ -220,6 +257,25 @@ export function MatchFilmTab() {
   useEffect(() => {
     loadMatches()
   }, [loadMatches])
+
+  useEffect(() => {
+    const supabase = createClient()
+    void supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('player_id')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (profile?.player_id) setPlayerId(profile.player_id)
+    })
+  }, [])
+
+  const onRealtimeUpdate = useCallback(() => {
+    loadMatches()
+  }, [loadMatches])
+
+  useFilmRoomMatchRealtime(playerId, onRealtimeUpdate)
 
   async function deleteMatch(matchId: string) {
     setError(null)

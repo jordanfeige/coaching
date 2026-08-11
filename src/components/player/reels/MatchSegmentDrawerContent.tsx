@@ -131,7 +131,6 @@ export function MatchSegmentDrawerContent({
     return <p style={{ padding: 20, color: brand.muted, fontSize: 13 }}>Loading segment…</p>
   }
 
-  const workOnCount = analysis.work_on_top_three?.length ?? 0
   const plan = analysis.tactical_game_plan
 
   const unifiedMoments: Array<
@@ -154,21 +153,6 @@ export function MatchSegmentDrawerContent({
 
   return (
     <div style={{ padding: '12px 18px 24px' }}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: 8,
-          paddingBottom: 14,
-          marginBottom: 16,
-          borderBottom: `0.5px solid ${brand.line}`,
-        }}
-      >
-        <StatCell label="Score" value="—" />
-        <StatCell label="vs seg prior" value="—" />
-        <StatCell label="Work on" value={String(workOnCount)} />
-      </div>
-
       {plan && (
         <div
           style={{
@@ -434,17 +418,6 @@ export function MatchSegmentDrawerContent({
           setAssignRank(null)
         }}
       />
-    </div>
-  )
-}
-
-function StatCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <p style={{ fontSize: 10, color: brand.muted, margin: '0 0 4px', textTransform: 'uppercase' }}>
-        {label}
-      </p>
-      <p style={{ fontSize: 15, fontWeight: 500, margin: 0 }}>{value}</p>
     </div>
   )
 }

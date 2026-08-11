@@ -13,7 +13,12 @@ export default function PlayerLayoutProviders({
     <AppLoadingRoot>
       <AskViaProvider>
         {children}
-        <Toaster richColors position="top-center" />
+        <Toaster
+          richColors
+          position="bottom-center"
+          mobileOffset={{ bottom: 80 }}
+          offset={{ bottom: 24 }}
+        />
       </AskViaProvider>
     </AppLoadingRoot>
   )

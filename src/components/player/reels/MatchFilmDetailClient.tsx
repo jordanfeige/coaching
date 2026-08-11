@@ -23,9 +23,14 @@ import type {
 import type { MatchSynthesisV1 } from '@/lib/match-analysis/synthesis-types'
 import { MatchFilmVideoPlayer } from '@/components/player/reels/film-room/MatchFilmVideoPlayer'
 import { TendencyBars } from '@/components/player/reels/film-room/TendencyBars'
+import { UploadProgress } from '@/components/player/reels/film-room/UploadProgress'
 import { MatchFilmDrawer } from '@/components/player/reels/film-room/MatchFilmDrawer'
 import { MatchSegmentDrawerContent } from '@/components/player/reels/MatchSegmentDrawerContent'
 import { AssignDrillModal } from '@/components/player/reels/AssignDrillModal'
+import {
+  deriveUploadPipelineStep,
+  isMatchStillProcessing,
+} from '@/lib/film-room/upload-progress'
 
 const PROCESSING = new Set([
   'uploading',
@@ -83,6 +88,7 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
   } | null>(null)
   const [matchAssignTitle, setMatchAssignTitle] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [showAllWorkOns, setShowAllWorkOns] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const drawerPushed = useRef(false)
   const [batchBusy, setBatchBusy] = useState(false)
@@ -422,6 +428,14 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
     0
   const showMatchPlanContent =
     analyzedCount >= 2 && synthesis?.match_game_plan && !synthesisLoading
+  const primaryWorkOn = synthesis?.work_on_list?.[0] ?? null
+  const extraWorkOns = synthesis?.work_on_list?.slice(1) ?? []
+  const pipelineStep = deriveUploadPipelineStep(match.status, {
+    uploadComplete: true,
+    firstChunkStatus:
+      chunks.find(c => c.sequence_number === 0)?.analysis_status ?? null,
+  })
+  const stillProcessing = isMatchStillProcessing(match.status)
 
   return (
     <div style={{ padding: '14px 16px 48px', maxWidth: 720, margin: '0 auto' }}>
@@ -442,11 +456,9 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
       >
         {title}
       </h1>
-      <p style={{ fontSize: 12, color: brand.muted, margin: '0 0 12px' }}>
+      <p style={{ fontSize: 12, color: brand.muted, margin: '0 0 16px' }}>
         {dateLabel}
         {duration > 0 && ` · ${formatDurationLong(duration)}`}
-        {totalChunks > 0 &&
-          ` · ${analyzedCount} of ${totalChunks} segments analyzed`}
       </p>
 
       {batchProgress && (
@@ -471,25 +483,79 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
       )}
 
       {match.status === 'failed' && (
-        <p style={{ color: brand.red, fontSize: 13 }}>{match.status_error}</p>
+        <div style={{ marginBottom: 16 }}>
+          <UploadProgress
+            currentStep="failed"
+            uploadPercent={null}
+            statusError={match.status_error}
+          />
+          <Link
+            href="/player/reels/match/new"
+            style={{
+              display: 'inline-block',
+              marginTop: 12,
+              fontSize: 13,
+              fontWeight: 600,
+              color: brand.tealDarkHex,
+            }}
+          >
+            Try uploading again →
+          </Link>
+        </div>
       )}
 
-      {PROCESSING.has(match.status) && (
-        <p style={{ fontSize: 13, color: brand.muted }}>Processing match…</p>
+      {stillProcessing && (
+        <div style={{ marginBottom: 8 }}>
+          <UploadProgress
+            currentStep={pipelineStep === 'ready' ? 'analyzing' : pipelineStep}
+            uploadPercent={null}
+            statusError={null}
+          />
+          <p
+            style={{
+              fontSize: 12,
+              color: brand.muted,
+              lineHeight: 1.55,
+              margin: '14px 0 0',
+              padding: '12px 14px',
+              background: brand.tealTint,
+              borderRadius: 10,
+            }}
+          >
+            You can leave this page — we&apos;ll notify you when your match is ready.
+          </p>
+          <Link
+            href="/player/reels?tab=match-film"
+            style={{
+              display: 'inline-block',
+              marginTop: 14,
+              padding: '10px 18px',
+              borderRadius: 99,
+              background: brand.tealDarkHex,
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Go to Match Film
+          </Link>
+        </div>
       )}
 
       {match.status === 'ready' && (
         <>
+          {/* 1. Watch */}
           <MatchFilmVideoPlayer
             activeChunk={activeChunk}
             videoUrl={chunkVideoUrl}
             loading={chunkVideoLoading}
           />
 
+          {/* 2. Coach take */}
           {analyzedCount < 2 ? (
             <MatchPlanUnlockCard
               analyzedCount={analyzedCount}
-              totalChunks={totalChunks}
               pending={pending}
               batchBusy={batchProgress != null || batchBusy}
               onAnalyzeAll={analyzeAllRemaining}
@@ -497,17 +563,10 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
             />
           ) : synthesisLoading ? (
             <div style={{ padding: 16, marginBottom: 24, fontSize: 13, color: brand.muted }}>
-              Building your match plan…
+              Building your coach take…
             </div>
           ) : showMatchPlanContent ? (
-            <div
-              style={{
-                padding: '18px 16px',
-                borderRadius: 12,
-                background: 'linear-gradient(180deg, #E1F5EE 0%, #ffffff 100%)',
-                marginBottom: 24,
-              }}
-            >
+            <section style={{ marginBottom: 28 }}>
               <p
                 style={{
                   fontSize: 10,
@@ -518,110 +577,209 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
                   margin: '0 0 10px',
                 }}
               >
-                The match in one sentence
+                Coach take
               </p>
               <h2
                 style={{
                   fontFamily: fonts.serif,
-                  fontSize: 20,
+                  fontSize: 22,
                   fontWeight: 500,
-                  lineHeight: 1.35,
-                  margin: '0 0 10px',
+                  lineHeight: 1.3,
+                  margin: '0 0 8px',
+                  color: brand.ink,
                 }}
               >
                 {synthesis!.match_game_plan.theme}
               </h2>
-              <p style={{ fontSize: 13, lineHeight: 1.65, color: brand.sub, margin: 0 }}>
+              <p
+                style={{
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  color: brand.sub,
+                  margin: '0 0 16px',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
                 {synthesis!.match_game_plan.reasoning}
               </p>
-            </div>
-          ) : null}
 
-          {showMatchPlanContent && (
-            <>
-              <TendencyBars sectionTitle="How the match played" rows={tendencyRows} />
-
-              {synthesis!.work_on_list?.length > 0 && (
-                <section style={{ marginBottom: 28 }}>
-                  <p
+              {primaryWorkOn && (
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 12,
+                    border: `0.5px solid ${brand.border}`,
+                    background: brand.card,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div
                     style={{
-                      fontSize: 10,
-                      fontWeight: 500,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      color: brand.muted,
-                      margin: '0 0 12px',
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: 8,
+                      marginBottom: 6,
                     }}
                   >
-                    Work on across the match
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: severityColor(
+                          primaryWorkOn.severity_summary,
+                          primaryWorkOn.frequency,
+                        ),
+                      }}
+                    >
+                      ×{primaryWorkOn.frequency}
+                    </span>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: brand.ink }}>
+                      {primaryWorkOn.title}
+                    </span>
+                  </div>
+                  <p
+                    style={{
+                      fontSize: 12,
+                      color: brand.sub,
+                      margin: '0 0 12px',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {primaryWorkOn.description ?? primaryWorkOn.severity_summary}
                   </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {synthesis!.work_on_list.map((item, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: 12,
-                          borderRadius: 10,
-                          background: 'var(--color-background-secondary, #F3F4F6)',
-                        }}
-                      >
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span
-                              style={{
-                                fontSize: 11,
-                                fontWeight: 500,
-                                color: severityColor(
-                                  item.severity_summary,
-                                  item.frequency,
-                                ),
-                              }}
-                            >
-                              ×{item.frequency}
-                            </span>
-                            <span style={{ fontSize: 13, fontWeight: 500 }}>
-                              {item.title}
-                            </span>
-                          </div>
-                          <p
-                            style={{
-                              fontSize: 11,
-                              color: brand.sub,
-                              margin: '4px 0 0',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {item.description ?? item.severity_summary}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setMatchAssignTitle(item.title)}
+                  <button
+                    type="button"
+                    onClick={() => setMatchAssignTitle(primaryWorkOn.title)}
+                    style={{
+                      width: '100%',
+                      padding: '11px 16px',
+                      borderRadius: 99,
+                      border: 'none',
+                      background: brand.tealDarkHex,
+                      color: '#fff',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Practice this — add drill
+                  </button>
+                </div>
+              )}
+
+              <p style={{ fontSize: 11, color: brand.muted, margin: 0 }}>
+                From {analyzedCount} of {totalChunks} segments · AI coaching
+              </p>
+            </section>
+          ) : null}
+
+          {/* 3. Evidence */}
+          {showMatchPlanContent && (
+            <section style={{ marginBottom: 28 }}>
+              <p
+                style={{
+                  fontSize: 10,
+                  fontWeight: 500,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: brand.muted,
+                  margin: '0 0 12px',
+                }}
+              >
+                Evidence
+              </p>
+              <TendencyBars sectionTitle="How the match played" rows={tendencyRows} />
+
+              {extraWorkOns.length > 0 && (
+                <div style={{ marginTop: 8, marginBottom: 8 }}>
+                  {!showAllWorkOns ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllWorkOns(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: brand.tealDarkHex,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      See all {synthesis!.work_on_list.length} work-ons →
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {extraWorkOns.map((item, i) => (
+                        <div
+                          key={i}
                           style={{
-                            flexShrink: 0,
-                            padding: '5px 10px',
-                            borderRadius: 8,
-                            border: 'none',
-                            background: brand.tealDarkHex,
-                            color: '#fff',
-                            fontSize: 11,
-                            fontWeight: 500,
-                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: 12,
+                            borderRadius: 10,
+                            background: 'var(--color-background-secondary, #F3F4F6)',
                           }}
                         >
-                          Add drill
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 500,
+                                  color: severityColor(
+                                    item.severity_summary,
+                                    item.frequency,
+                                  ),
+                                }}
+                              >
+                                ×{item.frequency}
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 500 }}>
+                                {item.title}
+                              </span>
+                            </div>
+                            <p
+                              style={{
+                                fontSize: 11,
+                                color: brand.sub,
+                                margin: '4px 0 0',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {item.description ?? item.severity_summary}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setMatchAssignTitle(item.title)}
+                            style={{
+                              flexShrink: 0,
+                              padding: '5px 10px',
+                              borderRadius: 8,
+                              border: 'none',
+                              background: brand.tealDarkHex,
+                              color: '#fff',
+                              fontSize: 11,
+                              fontWeight: 500,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Add drill
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
-            </>
+            </section>
           )}
 
           <section style={{ marginBottom: 24 }}>
@@ -654,7 +812,7 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
           <p style={{ fontSize: 11, color: brand.sub, margin: 0 }}>
             {analyzedCount > 0
               ? 'Tap analyzed segments to dig in'
-              : 'Analyze segments below to unlock your match plan'}
+              : 'Analyze a segment to unlock your coach take'}
           </p>
         </>
       )}
@@ -737,14 +895,12 @@ export function MatchFilmDetailClient({ matchId }: { matchId: string }) {
 
 function MatchPlanUnlockCard({
   analyzedCount,
-  totalChunks,
   pending,
   batchBusy,
   onAnalyzeAll,
   onAnalyzeOne,
 }: {
   analyzedCount: number
-  totalChunks: number
   pending: FilmRoomChunk[]
   batchBusy: boolean
   onAnalyzeAll: () => void
@@ -758,7 +914,8 @@ function MatchPlanUnlockCard({
       style={{
         padding: '18px 16px',
         borderRadius: 12,
-        background: 'linear-gradient(180deg, #E1F5EE 0%, #ffffff 100%)',
+        border: `0.5px solid ${brand.border}`,
+        background: brand.card,
         marginBottom: 24,
       }}
     >
@@ -772,56 +929,61 @@ function MatchPlanUnlockCard({
           margin: '0 0 8px',
         }}
       >
-        Match plan
+        Next step
       </p>
-      {analyzedCount === 0 ? (
-        <p style={{ fontSize: 13, lineHeight: 1.55, color: brand.sub, margin: '0 0 14px' }}>
-          Analyze 2+ segments to see your match plan.
-        </p>
-      ) : (
-        <p style={{ fontSize: 13, lineHeight: 1.55, color: brand.sub, margin: '0 0 14px' }}>
-          Analyze 1 more segment to unlock your match plan.
-        </p>
-      )}
+      <h2
+        style={{
+          fontFamily: fonts.serif,
+          fontSize: 18,
+          fontWeight: 500,
+          margin: '0 0 8px',
+          color: brand.ink,
+        }}
+      >
+        {analyzedCount === 0
+          ? 'Analyze your first segment'
+          : 'One more segment unlocks your coach take'}
+      </h2>
+      <p style={{ fontSize: 13, lineHeight: 1.55, color: brand.sub, margin: '0 0 14px' }}>
+        {analyzedCount === 0
+          ? 'Start with segment 1. We’ll build your match plan after two segments are analyzed.'
+          : 'Analyze one more segment to see your theme and primary work-on.'}
+      </p>
 
-      {remaining > 0 && (
-        <button
-          type="button"
-          disabled={batchBusy}
-          onClick={() => onAnalyzeAll()}
-          style={primaryAnalyzeBtn(batchBusy)}
-        >
-          {analyzedCount === 0
-            ? `Analyze all ${totalChunks} segments`
-            : `Analyze remaining ${remaining} segment${remaining === 1 ? '' : 's'}`}
-        </button>
-      )}
-
-      {analyzedCount === 0 && firstPending && (
+      {firstPending && (
         <button
           type="button"
           disabled={batchBusy}
           onClick={() => onAnalyzeOne(firstPending.id)}
+          style={primaryAnalyzeBtn(batchBusy)}
+        >
+          {analyzedCount === 0
+            ? `Analyze segment ${firstPending.sequence_number + 1}`
+            : `Analyze segment ${firstPending.sequence_number + 1}`}
+        </button>
+      )}
+
+      {remaining > 1 && (
+        <button
+          type="button"
+          disabled={batchBusy}
+          onClick={() => onAnalyzeAll()}
           style={{
             display: 'block',
             marginTop: 10,
+            width: '100%',
             background: 'none',
             border: 'none',
-            padding: 0,
+            padding: '8px 0',
             fontSize: 12,
+            fontWeight: 600,
             color: brand.tealDarkHex,
             cursor: batchBusy ? 'default' : 'pointer',
             opacity: batchBusy ? 0.5 : 1,
           }}
         >
-          Or analyze segment 1 first
+          Or analyze all {remaining} remaining
         </button>
-      )}
-
-      {analyzedCount === 1 && (
-        <p style={{ fontSize: 11, color: brand.muted, margin: '12px 0 0' }}>
-          Or scroll down and tap any segment individually
-        </p>
       )}
     </div>
   )
@@ -831,13 +993,13 @@ function primaryAnalyzeBtn(disabled: boolean) {
   return {
     display: 'block',
     width: '100%',
-    padding: '10px 16px',
-    borderRadius: 8,
+    padding: '11px 16px',
+    borderRadius: 99,
     border: 'none',
     background: disabled ? brand.muted : brand.tealDarkHex,
     color: '#fff',
     fontSize: 13,
-    fontWeight: 500,
+    fontWeight: 600,
     cursor: disabled ? 'default' : 'pointer',
   } as const
 }

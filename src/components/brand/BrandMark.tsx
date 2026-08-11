@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
-export const BRAND_TAGLINE = 'AI Coaching for Modern Athletes'
+export const BRAND_TAGLINE = 'Sports Intelligence Platform'
 
 type BrandMarkProps = {
   variant?: 'sidebar' | 'authHero' | 'authPanel' | 'public'

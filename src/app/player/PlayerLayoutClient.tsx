@@ -15,6 +15,7 @@ import { BrandMark } from '@/components/brand/BrandMark'
 import PlayerBottomNav from '@/components/player/PlayerBottomNav'
 import PlayerHeaderAvatar from '@/components/player/PlayerHeaderAvatar'
 import PlayerSideNav from '@/components/player/PlayerSideNav'
+import { MatchReadyToastWatcher } from '@/components/player/reels/film-room/MatchReadyToastWatcher'
 import { createClient } from '@/lib/supabase'
 import { brand, layout } from '@/lib/brand'
 
@@ -144,6 +145,7 @@ export default function PlayerLayoutClient({ children, player }: Props) {
               <PlayerHeaderAvatar playerName={player?.name} />
             </div>
             {children}
+            <MatchReadyToastWatcher playerId={player?.id} />
           </div>
         </main>
 
