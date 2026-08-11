@@ -33,8 +33,7 @@ const STEPS = [
     title: 'Improve',
     body: 'Turn observations into better coaching.',
     detail:
-      'As Playvia evolves, intelligence moves from describing what happened to helping coaches understand why — and eventually where to focus next.',
-    future: true,
+      'Structured intelligence helps coaches understand what happened — and where to focus next.',
   },
 ]
 
@@ -42,20 +41,14 @@ const PLATFORM = [
   {
     title: 'Practice Intelligence',
     body: 'See what happened. Understand activity, shot volume, movement, positioning and observable patterns.',
-    status: 'Building now',
-    statusTone: 'live' as const,
   },
   {
     title: 'Match Intelligence',
     body: 'Understand what happened in context. Connect performance to outcomes, score context, pressure, rally length, errors, serve placement and other match-specific signals.',
-    status: 'Next',
-    statusTone: 'next' as const,
   },
   {
     title: 'Coaching Intelligence',
-    body: 'Know where to focus next. Build a longitudinal understanding of players across practices and matches and eventually help coaches identify meaningful areas of focus.',
-    status: 'The vision',
-    statusTone: 'vision' as const,
+    body: 'Know where to focus next. Build a longitudinal understanding of players across practices and matches and identify meaningful areas of focus.',
   },
 ]
 
@@ -116,16 +109,6 @@ function SecondaryCta({ href = '#product' }: { href?: string }) {
   )
 }
 
-function statusStyle(tone: 'live' | 'next' | 'vision') {
-  if (tone === 'live') {
-    return { bg: landing.tealTint, color: landing.teal }
-  }
-  if (tone === 'next') {
-    return { bg: landing.borderSoft, color: landing.sub }
-  }
-  return { bg: '#EEF2FF', color: '#4338CA' }
-}
-
 export default function LandingPage() {
   return (
     <div className="landing-root">
@@ -166,7 +149,7 @@ export default function LandingPage() {
             ['Product', '#product'],
             ['For Coaches', '#coaches'],
             ['For Athletes', '#athletes'],
-            ['Vision', '#vision'],
+            ['Platform', '#platform'],
           ].map(([label, href]) => (
             <a
               key={label}
@@ -245,7 +228,7 @@ export default function LandingPage() {
               margin: '0 0 28px',
             }}
           >
-            Practice intelligence today. Coaching intelligence tomorrow.
+            Structured intelligence for every practice and match.
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
             <PrimaryCta />
@@ -339,7 +322,7 @@ export default function LandingPage() {
                 padding: 20,
                 borderRadius: 14,
                 border: `1px solid ${landing.border}`,
-                background: step.future ? landing.tealTint : landing.surface,
+                background: landing.surface,
                 minHeight: 220,
               }}
             >
@@ -379,20 +362,6 @@ export default function LandingPage() {
               <p style={{ fontSize: 13, color: landing.sub, margin: 0, lineHeight: 1.55 }}>
                 {step.detail}
               </p>
-              {step.future && (
-                <p
-                  style={{
-                    marginTop: 12,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: '0.06em',
-                    textTransform: 'uppercase',
-                    color: landing.teal,
-                  }}
-                >
-                  Long-term destination
-                </p>
-              )}
             </div>
           ))}
         </div>
@@ -450,13 +419,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* PLATFORM / VISION */}
-      <section id="vision" className="landing-section">
+      {/* PLATFORM */}
+      <section id="platform" className="landing-section">
         <div style={{ maxWidth: 640, marginBottom: 40 }}>
           <p className="landing-eyebrow" style={{ marginBottom: 12 }}>
             Platform
           </p>
-          <h2 className="landing-h2">Practice is just the beginning.</h2>
+          <h2 className="landing-h2">Intelligence across every layer of the game.</h2>
         </div>
         <div
           className="landing-platform"
@@ -466,60 +435,43 @@ export default function LandingPage() {
             gap: 14,
           }}
         >
-          {PLATFORM.map(item => {
-            const tone = statusStyle(item.statusTone)
-            return (
-              <div
-                key={item.title}
+          {PLATFORM.map(item => (
+            <div
+              key={item.title}
+              style={{
+                padding: 22,
+                borderRadius: 14,
+                border: `1px solid ${landing.border}`,
+                background: landing.surface,
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 220,
+              }}
+            >
+              <h3
                 style={{
-                  padding: 22,
-                  borderRadius: 14,
-                  border: `1px solid ${landing.border}`,
-                  background: landing.surface,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  minHeight: 240,
+                  fontSize: 18,
+                  fontWeight: 600,
+                  margin: '0 0 10px',
+                  letterSpacing: '-0.02em',
+                  color: landing.ink,
                 }}
               >
-                <span
-                  style={{
-                    alignSelf: 'flex-start',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: '4px 9px',
-                    borderRadius: 6,
-                    background: tone.bg,
-                    color: tone.color,
-                    marginBottom: 16,
-                  }}
-                >
-                  {item.status}
-                </span>
-                <h3
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 600,
-                    margin: '0 0 10px',
-                    letterSpacing: '-0.02em',
-                    color: landing.ink,
-                  }}
-                >
-                  {item.title}
-                </h3>
-                <p
-                  style={{
-                    fontSize: 14,
-                    lineHeight: 1.65,
-                    color: landing.sub,
-                    margin: 0,
-                    flex: 1,
-                  }}
-                >
-                  {item.body}
-                </p>
-              </div>
-            )
-          })}
+                {item.title}
+              </h3>
+              <p
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1.65,
+                  color: landing.sub,
+                  margin: 0,
+                  flex: 1,
+                }}
+              >
+                {item.body}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -579,7 +531,7 @@ export default function LandingPage() {
             gap: 10,
           }}
         >
-          {SPORTS.map((sport, i) => (
+          {SPORTS.map(sport => (
             <div
               key={sport}
               style={{
@@ -587,30 +539,18 @@ export default function LandingPage() {
                 padding: '16px 20px',
                 borderRadius: 12,
                 border: `1px solid ${landing.border}`,
-                background: i === 0 ? landing.tealTint : landing.surface,
+                background: landing.surface,
               }}
             >
               <div
                 style={{
                   fontSize: 14,
                   fontWeight: 600,
-                  color: i === 0 ? landing.teal : landing.ink,
+                  color: landing.ink,
                 }}
               >
                 {sport}
               </div>
-              {i === 0 && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: landing.teal,
-                    marginTop: 4,
-                    fontWeight: 500,
-                  }}
-                >
-                  First focus
-                </div>
-              )}
             </div>
           ))}
         </div>
@@ -650,9 +590,6 @@ export default function LandingPage() {
           <div style={{ marginBottom: 16 }}>
             <SecondaryCta href="#product" />
           </div>
-          <p style={{ fontSize: 13, color: landing.muted, margin: 0 }}>
-            Practice intelligence is coming first.
-          </p>
         </div>
       </section>
 
